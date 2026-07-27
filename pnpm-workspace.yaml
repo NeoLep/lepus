@@ -1,0 +1,10 @@
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  vue-demi: true
+dedupePeerDependents: true
+onlyBuiltDependencies:
+  - electron
+  - electron-winstaller
+  - esbuild
