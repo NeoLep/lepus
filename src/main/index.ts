@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { createDemoChatBackend, registerChatHandlers } from './chat'
 
 function createWindow(): void {
   // Create the browser window.
@@ -9,6 +10,19 @@ function createWindow(): void {
     width: 900,
     height: 670,
     show: false,
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset',
+          trafficLightPosition: { x: 14, y: 20 }
+        }
+      : {
+          titleBarStyle: 'hidden',
+          titleBarOverlay: {
+            color: '#ffffff',
+            symbolColor: '#344054',
+            height: 52
+          }
+        }),
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
@@ -51,6 +65,7 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  registerChatHandlers(createDemoChatBackend())
 
   createWindow()
 

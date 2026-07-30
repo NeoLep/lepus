@@ -1,0 +1,147 @@
+.window-drag-region {
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.no-drag,
+button {
+  -webkit-app-region: no-drag;
+}
+
+button {
+  font: inherit;
+}
+
+.icon-button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #475467;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.icon-button:hover {
+  background: #eef0f3;
+  color: #101828;
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid #98a2b3;
+  outline-offset: 1px;
+}
+
+.menu-content {
+  z-index: 50;
+  min-width: 190px;
+  padding: 5px;
+  border: 1px solid #e4e7ec;
+  border-radius: 11px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgb(16 24 40 / 14%);
+  color: #344054;
+  animation: menu-in 120ms ease-out;
+}
+
+.model-menu {
+  min-width: 230px;
+}
+
+.account-menu {
+  min-width: 180px;
+}
+
+.menu-label {
+  padding: 7px 9px 5px;
+  color: #98a2b3;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.menu-item {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  outline: none;
+  font-size: 13px;
+  cursor: default;
+}
+
+.menu-item[data-highlighted] {
+  background: #f2f4f7;
+  color: #101828;
+}
+
+.model-item > span:last-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-item strong {
+  font-weight: 600;
+}
+
+.model-item small {
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.model-dot {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid #98a2b3;
+  border-radius: 50%;
+}
+
+.model-dot.selected {
+  border-color: #101828;
+  background: #101828;
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 5px;
+  background: #eaecf0;
+}
+
+.muted-item {
+  color: #667085;
+}
+
+.danger-item {
+  color: #d92d20;
+}
+
+.tooltip-content {
+  z-index: 60;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #101828;
+  color: #ffffff;
+  font-size: 11px;
+  box-shadow: 0 4px 10px rgb(16 24 40 / 18%);
+  animation: menu-in 100ms ease-out;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
