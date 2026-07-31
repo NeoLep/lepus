@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import { LoaderCircle, Sparkles, UserRound } from '@lucide/vue'
-import type { ChatMessage } from '../../../../shared/chat'
+import type { Message } from '@ipc/chat/constants'
 
 const props = defineProps<{
-  messages: ChatMessage[]
+  messages: Message[]
   sending: boolean
 }>()
 
@@ -102,14 +102,19 @@ watch(
 }
 
 .message {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  display: flex;
   gap: 12px;
   padding: 14px 4px;
+  &.user {
+    flex-direction: row-reverse;
+    .message-body {
+      text-align: right;
+    }
+  }
 }
 
 .message + .message {
-  border-top: 1px solid #f0f2f5;
+  /* border-top: 1px solid #f0f2f5; */
 }
 
 .message-avatar {

@@ -31,7 +31,7 @@ function openSidebar(): void {
         ref="sidebarPanel"
         :order="1"
         :default-size="28"
-        :min-size="20"
+        :min-size="10"
         :max-size="42"
         :collapsed-size="0"
         collapsible

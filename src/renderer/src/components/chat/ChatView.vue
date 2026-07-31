@@ -1,19 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { ChatMessage } from '../../../../shared/chat'
-import { chatService } from '../../services/chat'
 import ChatComposer from './ChatComposer.vue'
 import ChatMessageList from './ChatMessageList.vue'
 
-const messages = ref<ChatMessage[]>([])
+import type { Message } from '@ipc/chat/constants'
+
+const messages = ref<Message[]>([])
 const draft = ref('')
-const conversationId = ref<string>()
 const sending = ref(false)
 
-function createLocalMessage(content: string): ChatMessage {
+function createLocalMessage(role: Message['role'], content: string): Message {
   return {
     id: crypto.randomUUID(),
-    role: 'user',
+    role,
     content,
     createdAt: new Date().toISOString()
   }
@@ -23,22 +22,19 @@ async function sendMessage(): Promise<void> {
   const content = draft.value.trim()
   if (!content || sending.value) return
 
-  const userMessage = createLocalMessage(content)
+  const userMessage = createLocalMessage('user', content)
   messages.value.push(userMessage)
   draft.value = ''
   sending.value = true
 
+  console.log(messages.value)
   try {
-    const response = await chatService.sendMessage({
-      conversationId: conversationId.value,
-      messages: messages.value.map(({ role, content: messageContent }) => ({
-        role,
-        content: messageContent
-      }))
+    const response = await window.api.chat.sendChatMessage({
+      conversationId: 'abcd',
+      messages: [userMessage]
     })
 
-    conversationId.value = response.conversationId
-    messages.value.push(response.message)
+    messages.value.push(createLocalMessage('assistant', response))
   } catch (error) {
     messages.value.push({
       id: crypto.randomUUID(),

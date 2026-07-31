@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { createDemoChatBackend, registerChatHandlers } from './chat'
+import { initial } from '../ipc/node'
 
 function createWindow(): void {
   // Create the browser window.
@@ -65,7 +65,7 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
-  registerChatHandlers(createDemoChatBackend())
+  initial()
 
   createWindow()
 

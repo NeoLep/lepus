@@ -4,17 +4,21 @@ import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  main: {},
+  main: {
+    resolve: {
+      alias: {
+        '@': resolve('src')
+      }
+    }
+  },
   preload: {},
   renderer: {
     resolve: {
       alias: {
-        '@': resolve('src/renderer/src')
+        '@web': resolve('src/renderer/src'),
+        '@': resolve('src')
       }
     },
-    plugins: [
-      vue(), 
-      tailwindcss()
-    ]
+    plugins: [vue(), tailwindcss()]
   }
 })
