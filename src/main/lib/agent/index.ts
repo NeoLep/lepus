@@ -1,27 +1,68 @@
 import OpenAI from 'openai'
-import { Message, ModelConfig } from '@/ipc/chat/constants'
+import { Message, ModelConfig, SearchProviderConfig } from '@/ipc/chat/constants'
 import type { AgentInputMessage } from './types'
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
+import { createFunctionToolRuntime } from './tools'
+
+const MAX_TOOL_ROUNDS = 8
 
 export class Agent {
   public client: OpenAI
   private readonly model: string
 
-  constructor(config: ModelConfig) {
+  private readonly toolRuntime
+
+  constructor(config: ModelConfig, searchConfigs: SearchProviderConfig[] = []) {
     this.client = new OpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseURL
     })
     this.model = config.model
+    this.toolRuntime = createFunctionToolRuntime(searchConfigs)
   }
   async chat(message: AgentInputMessage[]) {
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      messages: message
-    })
-    return {
-      message: response.choices[0].message,
-      promptTokens: response.usage?.prompt_tokens ?? null
+    const messages: ChatCompletionMessageParam[] = [...message]
+    let initialPromptTokens: number | null = null
+
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages,
+        tools: this.toolRuntime.schemas,
+        tool_choice: 'auto'
+      })
+      initialPromptTokens ??= response.usage?.prompt_tokens ?? null
+      const responseMessage = response.choices[0]?.message
+      if (!responseMessage) throw new Error('模型没有返回消息')
+
+      if (!responseMessage.tool_calls?.length) {
+        return { message: responseMessage, promptTokens: initialPromptTokens }
+      }
+
+      messages.push(responseMessage)
+      const toolMessages = await Promise.all(
+        responseMessage.tool_calls.map(async (toolCall): Promise<ChatCompletionMessageParam> => {
+          if (toolCall.type !== 'function') {
+            return {
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: JSON.stringify({ ok: false, error: '不支持的工具调用类型' })
+            }
+          }
+          return {
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: await this.toolRuntime.execute(
+              toolCall.function.name,
+              toolCall.function.arguments
+            )
+          }
+        })
+      )
+      messages.push(...toolMessages)
     }
+
+    throw new Error(`工具调用超过最大轮数（${MAX_TOOL_ROUNDS}）`)
   }
 
   async summarizeConversation(

@@ -53,6 +53,7 @@ function makeConfig(): ModelConfig {
     baseURL: '',
     model: '',
     apiKey: '',
+    hasApiKey: false,
     contextWindowOverride: null,
     detectedContextWindow: null,
     maxOutputTokensOverride: null,
@@ -65,7 +66,7 @@ function makeConfig(): ModelConfig {
 
 function editConfig(config: ModelConfig): void {
   selectedId.value = config.id
-  draft.value = { ...config }
+  draft.value = { ...config, apiKey: '' }
   localError.value = ''
   showApiKey.value = false
 }
@@ -90,7 +91,7 @@ function validate(): boolean {
     ? Math.round(Number(config.maxOutputTokensOverride))
     : null
 
-  if (!config.name || !config.baseURL || !config.model || !config.apiKey) {
+  if (!config.name || !config.baseURL || !config.model || (!config.apiKey && !config.hasApiKey)) {
     localError.value = t('validation.required')
     return false
   }
@@ -129,7 +130,7 @@ async function save(): Promise<void> {
   saving.value = false
   if (saved) {
     selectedId.value = config.id
-    draft.value = config
+    draft.value = { ...config, apiKey: '', hasApiKey: true }
   }
 }
 
@@ -244,8 +245,8 @@ watch(
                 <input
                   v-model="draft.apiKey"
                   :type="showApiKey ? 'text' : 'password'"
-                  autocomplete="off"
-                  placeholder="sk-..."
+                  autocomplete="new-password"
+                  :placeholder="draft.hasApiKey ? t('apiKeyStored') : 'sk-...'"
                 />
                 <button
                   type="button"
@@ -256,6 +257,9 @@ watch(
                   <Eye v-else :size="16" />
                 </button>
               </div>
+              <small v-if="draft.hasApiKey && !draft.apiKey" class="stored-secret-note">
+                {{ t('apiKeyStoredHelp') }}
+              </small>
             </label>
 
             <details class="advanced-settings">
@@ -570,6 +574,13 @@ watch(
   background: #f2f4f7;
 }
 
+.stored-secret-note {
+  display: block;
+  margin-top: 5px;
+  color: #667085;
+  font-size: 10px;
+}
+
 .form-error {
   margin: -4px 0 0;
   color: #d92d20;
@@ -667,6 +678,8 @@ zh-CN:
   modelNameExample: 例如：deepseek-chat
   hideApiKey: 隐藏 API Key
   showApiKey: 显示 API Key
+  apiKeyStored: 已安全保存，输入新 Key 可替换
+  apiKeyStoredHelp: API Key 已由系统密钥链加密；留空将保留现有 Key。
   advancedTokenSettings: 高级 Token 设置
   contextWindowOptional: 上下文窗口（可选）
   autoDetect: 自动识别
@@ -699,6 +712,8 @@ en:
   modelNameExample: 'Example: deepseek-chat'
   hideApiKey: Hide API key
   showApiKey: Show API key
+  apiKeyStored: Securely stored; enter a new key to replace it
+  apiKeyStoredHelp: The API key is encrypted with the system keychain. Leave empty to keep it.
   advancedTokenSettings: Advanced token settings
   contextWindowOptional: Context window (optional)
   autoDetect: Detect automatically

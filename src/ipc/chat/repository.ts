@@ -1,9 +1,20 @@
 import Database from 'better-sqlite3'
-import { app } from 'electron'
+import { app, safeStorage } from 'electron'
 import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { Message, ModelConfig, Session } from './constants'
+import type {
+  Message,
+  ModelConfig,
+  PromptSettings,
+  SearchProviderConfig,
+  SearchProviderId,
+  Session
+} from './constants'
 import { detectModelContextWindow } from '@/shared/agent/history-compression'
+import {
+  DEFAULT_PROMPT_SETTINGS,
+  PROMPT_CUSTOM_INSTRUCTIONS_MAX_LENGTH
+} from '@/shared/agent/prompt-settings'
 
 type SessionRow = {
   id: string
@@ -43,6 +54,50 @@ type ConversationSummaryRow = {
   updated_at: string
 }
 
+const ENCRYPTED_API_KEY_PREFIX = 'safe-storage:v1:'
+
+function secureStorageAvailable(): boolean {
+  if (!safeStorage.isEncryptionAvailable()) return false
+  if (process.platform !== 'linux') return true
+  return safeStorage.getSelectedStorageBackend() !== 'basic_text'
+}
+
+function encryptApiKey(apiKey: string): string {
+  if (!secureStorageAvailable()) {
+    throw new Error('系统安全存储不可用，无法保存 API Key')
+  }
+  const encrypted = safeStorage.encryptString(apiKey)
+  return `${ENCRYPTED_API_KEY_PREFIX}${encrypted.toString('base64')}`
+}
+
+function decryptApiKey(storedValue: string): string {
+  if (!storedValue.startsWith(ENCRYPTED_API_KEY_PREFIX)) {
+    throw new Error('检测到未加密的 API Key，请重新保存模型配置')
+  }
+  if (!secureStorageAvailable()) {
+    throw new Error('系统安全存储不可用，无法读取 API Key')
+  }
+  const encrypted = Buffer.from(storedValue.slice(ENCRYPTED_API_KEY_PREFIX.length), 'base64')
+  return safeStorage.decryptString(encrypted)
+}
+
+type SearchProviderRow = {
+  provider: SearchProviderId
+  enabled: number
+  api_key: string
+  base_url: string
+  updated_at: string
+}
+
+const SEARCH_PROVIDERS: SearchProviderId[] = [
+  'brave',
+  'tavily',
+  'exa',
+  'perplexity',
+  'firecrawl',
+  'searxng'
+]
+
 export type ConversationSummary = {
   sessionId: string
   summary: string
@@ -70,13 +125,14 @@ function toMessage(row: MessageRow): Message {
   }
 }
 
-function toModelConfig(row: ModelConfigRow): ModelConfig {
+function toModelConfig(row: ModelConfigRow, apiKey = ''): ModelConfig {
   return {
     id: row.id,
     name: row.config_name,
     baseURL: row.base_url,
     model: row.model,
-    apiKey: row.api_key,
+    apiKey,
+    hasApiKey: row.api_key.length > 0,
     contextWindowOverride: row.context_window_override,
     detectedContextWindow: row.detected_context_window,
     maxOutputTokensOverride: row.max_output_tokens_override,
@@ -197,6 +253,31 @@ export class ChatRepository {
       .run({ ...message, sessionId })
   }
 
+  reviseUserMessage(sessionId: string, messageId: string, content: string): void {
+    const revisedContent = content.trim()
+    if (!revisedContent) throw new Error('Message content cannot be empty')
+    this.database.transaction(() => {
+      const target = this.database
+        .prepare(
+          `SELECT rowid, role
+           FROM messages
+           WHERE session_id = ? AND id = ?`
+        )
+        .get(sessionId, messageId) as { rowid: number; role: Message['role'] } | undefined
+      if (!target || target.role !== 'user') throw new Error('User message not found')
+
+      this.database
+        .prepare('UPDATE messages SET content = ? WHERE session_id = ? AND id = ?')
+        .run(revisedContent, sessionId, messageId)
+      this.database
+        .prepare('DELETE FROM messages WHERE session_id = ? AND rowid > ?')
+        .run(sessionId, target.rowid)
+      this.database
+        .prepare('DELETE FROM conversation_summaries WHERE session_id = ?')
+        .run(sessionId)
+    })()
+  }
+
   getConversationSummary(sessionId: string): ConversationSummary | null {
     const row = this.database
       .prepare(
@@ -239,24 +320,17 @@ export class ChatRepository {
          ORDER BY is_active DESC, updated_at DESC`
       )
       .all() as ModelConfigRow[]
-    return rows.map(toModelConfig)
+    return rows.map((row) => toModelConfig(row))
   }
 
   getModelConfig(id: string): ModelConfig | null {
-    const row = this.database
-      .prepare(
-        `SELECT id, config_name, base_url, model, api_key,
-                context_window_override, detected_context_window,
-                max_output_tokens_override, token_estimate_ratio,
-                is_active, created_at, updated_at
-         FROM model_configs
-         WHERE id = ?`
-      )
-      .get(id) as ModelConfigRow | undefined
-    return row ? toModelConfig(row) : null
+    const row = this.getModelConfigRow(id)
+    return row ? toModelConfig(row, decryptApiKey(row.api_key)) : null
   }
 
   createModelConfig(config: ModelConfig): ModelConfig {
+    const apiKey = config.apiKey.trim()
+    if (!apiKey) throw new Error('API Key 不能为空')
     const create = this.database.transaction(() => {
       const count = this.database.prepare('SELECT COUNT(*) AS count FROM model_configs').get() as {
         count: number
@@ -275,25 +349,31 @@ export class ChatRepository {
         )
         .run({
           ...config,
+          apiKey: encryptApiKey(apiKey),
           detectedContextWindow: detectModelContextWindow(config.model),
           tokenEstimateRatio: 1,
           isActive: count.count === 0 ? 1 : 0
         })
     })
     create()
-    return this.getModelConfig(config.id) as ModelConfig
+    return this.getPublicModelConfig(config.id) as ModelConfig
   }
 
   updateModelConfig(config: ModelConfig): ModelConfig {
-    const current = this.getModelConfig(config.id)
+    const current = this.getPublicModelConfig(config.id)
     const modelChanged = current?.model !== config.model
+    const currentRow = this.getModelConfigRow(config.id)
+    if (!currentRow) throw new Error(`Model config not found: ${config.id}`)
+    const storedApiKey = config.apiKey.trim()
+      ? encryptApiKey(config.apiKey.trim())
+      : currentRow.api_key
     const result = this.database
       .prepare(
         `UPDATE model_configs
          SET config_name = @name,
              base_url = @baseURL,
              model = @model,
-             api_key = @apiKey,
+             api_key = @storedApiKey,
              context_window_override = @contextWindowOverride,
              detected_context_window = @detectedContextWindow,
              max_output_tokens_override = @maxOutputTokensOverride,
@@ -303,16 +383,17 @@ export class ChatRepository {
       )
       .run({
         ...config,
+        storedApiKey,
         detectedContextWindow: detectModelContextWindow(config.model),
         tokenEstimateRatio: modelChanged ? 1 : config.tokenEstimateRatio
       })
     if (result.changes === 0) throw new Error(`Model config not found: ${config.id}`)
-    return this.getModelConfig(config.id) as ModelConfig
+    return this.getPublicModelConfig(config.id) as ModelConfig
   }
 
   deleteModelConfig(id: string): void {
     this.database.transaction(() => {
-      const current = this.getModelConfig(id)
+      const current = this.getPublicModelConfig(id)
       this.database.prepare('DELETE FROM model_configs WHERE id = ?').run(id)
       if (current?.isActive) {
         const next = this.database
@@ -333,9 +414,157 @@ export class ChatRepository {
     })()
   }
 
+  getPromptSettings(): PromptSettings {
+    const rows = this.database
+      .prepare(
+        `SELECT key, value
+         FROM app_settings
+         WHERE key LIKE 'prompt.%'`
+      )
+      .all() as Array<{ key: string; value: string }>
+    const values = new Map(rows.map((row) => [row.key, row.value]))
+    const readBoolean = (key: string, fallback: boolean): boolean => {
+      const value = values.get(key)
+      return value === undefined ? fallback : value === '1'
+    }
+    return {
+      customInstructions:
+        values.get('prompt.customInstructions') ?? DEFAULT_PROMPT_SETTINGS.customInstructions,
+      includeCurrentTime: readBoolean(
+        'prompt.includeCurrentTime',
+        DEFAULT_PROMPT_SETTINGS.includeCurrentTime
+      ),
+      includeTimezone: readBoolean(
+        'prompt.includeTimezone',
+        DEFAULT_PROMPT_SETTINGS.includeTimezone
+      ),
+      includeLocale: readBoolean('prompt.includeLocale', DEFAULT_PROMPT_SETTINGS.includeLocale),
+      includePlatform: readBoolean(
+        'prompt.includePlatform',
+        DEFAULT_PROMPT_SETTINGS.includePlatform
+      )
+    }
+  }
+
+  savePromptSettings(settings: PromptSettings): PromptSettings {
+    const customInstructions = settings.customInstructions.trim()
+    if (customInstructions.length > PROMPT_CUSTOM_INSTRUCTIONS_MAX_LENGTH) {
+      throw new Error(
+        `Custom instructions cannot exceed ${PROMPT_CUSTOM_INSTRUCTIONS_MAX_LENGTH} characters`
+      )
+    }
+    const save = this.database.prepare(
+      `INSERT INTO app_settings (key, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    const now = new Date().toISOString()
+    this.database.transaction(() => {
+      save.run('prompt.customInstructions', customInstructions, now)
+      save.run('prompt.includeCurrentTime', settings.includeCurrentTime ? '1' : '0', now)
+      save.run('prompt.includeTimezone', settings.includeTimezone ? '1' : '0', now)
+      save.run('prompt.includeLocale', settings.includeLocale ? '1' : '0', now)
+      save.run('prompt.includePlatform', settings.includePlatform ? '1' : '0', now)
+    })()
+    return this.getPromptSettings()
+  }
+
+  querySearchProviderConfigs(): SearchProviderConfig[] {
+    const rows = this.database
+      .prepare(
+        `SELECT provider, enabled, api_key, base_url, updated_at
+         FROM search_provider_configs`
+      )
+      .all() as SearchProviderRow[]
+    const byProvider = new Map(rows.map((row) => [row.provider, row]))
+    return SEARCH_PROVIDERS.map((provider) => {
+      const row = byProvider.get(provider)
+      return {
+        provider,
+        enabled: row?.enabled === 1,
+        apiKey: '',
+        hasApiKey: Boolean(row?.api_key),
+        baseURL: row?.base_url ?? '',
+        updatedAt: row?.updated_at ?? ''
+      }
+    })
+  }
+
+  getSearchProviderConfigs(): SearchProviderConfig[] {
+    const rows = this.database
+      .prepare(
+        `SELECT provider, enabled, api_key, base_url, updated_at
+         FROM search_provider_configs`
+      )
+      .all() as SearchProviderRow[]
+    const byProvider = new Map(rows.map((row) => [row.provider, row]))
+    return SEARCH_PROVIDERS.map((provider) => {
+      const row = byProvider.get(provider)
+      return {
+        provider,
+        enabled: row?.enabled === 1,
+        apiKey: row?.api_key ? decryptApiKey(row.api_key) : '',
+        hasApiKey: Boolean(row?.api_key),
+        baseURL: row?.base_url ?? '',
+        updatedAt: row?.updated_at ?? ''
+      }
+    })
+  }
+
+  saveSearchProviderConfigs(configs: SearchProviderConfig[]): SearchProviderConfig[] {
+    const byProvider = new Map(configs.map((config) => [config.provider, config]))
+    if (byProvider.size !== SEARCH_PROVIDERS.length) {
+      throw new Error('Search provider configuration is incomplete')
+    }
+    const save = this.database.prepare(
+      `INSERT INTO search_provider_configs (provider, enabled, api_key, base_url, updated_at)
+       VALUES (@provider, @enabled, @apiKey, @baseURL, @updatedAt)
+       ON CONFLICT(provider) DO UPDATE SET
+         enabled = excluded.enabled,
+         api_key = excluded.api_key,
+         base_url = excluded.base_url,
+         updated_at = excluded.updated_at`
+    )
+    const existingRows = this.database
+      .prepare('SELECT provider, api_key FROM search_provider_configs')
+      .all() as Array<{ provider: SearchProviderId; api_key: string }>
+    const existingKeys = new Map(existingRows.map((row) => [row.provider, row.api_key]))
+    const now = new Date().toISOString()
+    this.database.transaction(() => {
+      for (const provider of SEARCH_PROVIDERS) {
+        const config = byProvider.get(provider)
+        if (!config) throw new Error(`Missing search provider: ${provider}`)
+        const apiKeyInput = config.apiKey.trim()
+        const storedApiKey = apiKeyInput
+          ? encryptApiKey(apiKeyInput)
+          : (existingKeys.get(provider) ?? '')
+        const baseURL = config.baseURL.trim().replace(/\/+$/, '')
+        if (config.enabled && provider !== 'searxng' && !storedApiKey) {
+          throw new Error(`${provider} API Key is required when enabled`)
+        }
+        if (config.enabled && provider === 'searxng') {
+          try {
+            const url = new URL(baseURL)
+            if (!['http:', 'https:'].includes(url.protocol)) throw new Error()
+          } catch {
+            throw new Error('SearXNG URL must be a valid HTTP(S) URL')
+          }
+        }
+        save.run({
+          provider,
+          enabled: config.enabled ? 1 : 0,
+          apiKey: storedApiKey,
+          baseURL,
+          updatedAt: now
+        })
+      }
+    })()
+    return this.querySearchProviderConfigs()
+  }
+
   updateModelTokenEstimateRatio(id: string, estimatedTokens: number, actualTokens: number): void {
     if (estimatedTokens <= 0 || actualTokens <= 0) return
-    const config = this.getModelConfig(id)
+    const config = this.getPublicModelConfig(id)
     if (!config) return
     const observedRatio = Math.min(2, Math.max(0.5, actualTokens / estimatedTokens))
     const nextRatio = config.tokenEstimateRatio * 0.8 + observedRatio * 0.2
@@ -350,6 +579,25 @@ export class ChatRepository {
 
   close(): void {
     if (this.database.open) this.database.close()
+  }
+
+  private getModelConfigRow(id: string): ModelConfigRow | null {
+    const row = this.database
+      .prepare(
+        `SELECT id, config_name, base_url, model, api_key,
+                context_window_override, detected_context_window,
+                max_output_tokens_override, token_estimate_ratio,
+                is_active, created_at, updated_at
+         FROM model_configs
+         WHERE id = ?`
+      )
+      .get(id) as ModelConfigRow | undefined
+    return row ?? null
+  }
+
+  private getPublicModelConfig(id: string): ModelConfig | null {
+    const row = this.getModelConfigRow(id)
+    return row ? toModelConfig(row) : null
   }
 
   private migrateSchema(): void {
@@ -440,6 +688,71 @@ export class ChatRepository {
           update.run(detectModelContextWindow(config.model), config.id)
         }
       })()
+    }
+
+    if (version < 5) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+
+          PRAGMA user_version = 5;
+        `)
+      })()
+    }
+
+    if (version < 6) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE search_provider_configs (
+            provider TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+            api_key TEXT NOT NULL DEFAULT '',
+            base_url TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+          );
+
+          PRAGMA user_version = 6;
+        `)
+      })()
+    }
+
+    if (version < 7) {
+      this.database.pragma('secure_delete = ON')
+      const modelRows = this.database
+        .prepare('SELECT id, api_key FROM model_configs')
+        .all() as Array<{ id: string; api_key: string }>
+      const searchRows = this.database
+        .prepare('SELECT provider, api_key FROM search_provider_configs')
+        .all() as Array<{ provider: string; api_key: string }>
+      const modelMigrations = modelRows
+        .filter((row) => row.api_key && !row.api_key.startsWith(ENCRYPTED_API_KEY_PREFIX))
+        .map((row) => ({ id: row.id, apiKey: encryptApiKey(row.api_key) }))
+      const searchMigrations = searchRows
+        .filter((row) => row.api_key && !row.api_key.startsWith(ENCRYPTED_API_KEY_PREFIX))
+        .map((row) => ({ provider: row.provider, apiKey: encryptApiKey(row.api_key) }))
+
+      this.database.transaction(() => {
+        const updateModel = this.database.prepare(
+          'UPDATE model_configs SET api_key = ? WHERE id = ?'
+        )
+        const updateSearch = this.database.prepare(
+          'UPDATE search_provider_configs SET api_key = ? WHERE provider = ?'
+        )
+        for (const migration of modelMigrations) updateModel.run(migration.apiKey, migration.id)
+        for (const migration of searchMigrations) {
+          updateSearch.run(migration.apiKey, migration.provider)
+        }
+        this.database.pragma('user_version = 7')
+      })()
+      if (modelMigrations.length > 0 || searchMigrations.length > 0) {
+        this.database.pragma('wal_checkpoint(TRUNCATE)')
+        this.database.exec('VACUUM')
+        this.database.pragma('wal_checkpoint(TRUNCATE)')
+      }
     }
   }
 

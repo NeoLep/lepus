@@ -5,6 +5,8 @@ import AppSidebar from './components/layout/AppSidebar.vue'
 import AppTopbar from './components/layout/AppTopbar.vue'
 import ChatView from './components/chat/ChatView.vue'
 import ModelManagerDialog from './components/model/ModelManagerDialog.vue'
+import PromptSettingsDialog from './components/settings/PromptSettingsDialog.vue'
+import SearchProviderDialog from './components/settings/SearchProviderDialog.vue'
 import type { ModelConfig, Session } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 
@@ -26,6 +28,9 @@ const modelConfigs = ref<ModelConfig[]>([])
 const modelsLoading = ref(true)
 const modelError = ref('')
 const modelManagerOpen = ref(false)
+const promptSettingsOpen = ref(false)
+const searchSettingsOpen = ref(false)
+const promptSettingsVersion = ref(0)
 const { t } = useI18n({ useScope: 'local' })
 const defaultSessionTitles = new Set(['新对话', 'New chat'])
 
@@ -300,6 +305,8 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
           @rename="renameSession"
           @delete="deleteSession"
           @manage-models="modelManagerOpen = true"
+          @manage-prompts="promptSettingsOpen = true"
+          @manage-search="searchSettingsOpen = true"
         />
       </SplitterPanel>
 
@@ -328,6 +335,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
             :session-id="activeSessionId"
             :session-persisted="activeSessionPersisted"
             :model-config="activeModelConfig"
+            :prompt-settings-version="promptSettingsVersion"
             :disabled="sessionsLoading || modelsLoading || !activeSessionId || !activeModelConfig"
             :disabled-reason="!activeModelConfig ? t('configureModelFirst') : undefined"
             :ensure-session="persistSession"
@@ -345,6 +353,8 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
       :delete-config="deleteModelConfig"
       :select-config="selectModelConfig"
     />
+    <PromptSettingsDialog v-model:open="promptSettingsOpen" @saved="promptSettingsVersion += 1" />
+    <SearchProviderDialog v-model:open="searchSettingsOpen" />
   </TooltipProvider>
 </template>
 

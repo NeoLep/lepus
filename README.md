@@ -20,6 +20,13 @@ $ pnpm install
 $ pnpm dev
 ```
 
+### Web search
+
+The `search_web` function tool supports Brave Search, Tavily, Exa, Perplexity, Firecrawl, and
+SearXNG. Open **Web search** in the sidebar, enable any number of providers, and enter the
+corresponding API Keys. SearXNG uses the URL of a self-hosted instance with JSON output enabled.
+Only enabled providers are exposed to the AI.
+
 ### Build
 
 ```bash

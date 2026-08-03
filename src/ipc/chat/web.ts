@@ -6,7 +6,11 @@ import {
   CompressionStatus,
   CompressionStatusEvent,
   CompressionStatusQuery,
+  MessageReviseRequest,
   ModelConfig,
+  PromptPreviewRequest,
+  PromptSettings,
+  SearchProviderConfig,
   Session
 } from './constants'
 
@@ -20,6 +24,8 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.SESSION_DELETE, id),
   queryMessages: (sessionId: string): Promise<ChatMessage['messages']> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MESSAGE_QUERY, sessionId),
+  reviseMessage: (request: MessageReviseRequest): Promise<void> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.MESSAGE_REVISE, request),
   queryModelConfigs: (): Promise<ModelConfig[]> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_QUERY),
   createModelConfig: (request: ModelConfig): Promise<ModelConfig> =>
@@ -30,6 +36,16 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_DELETE, id),
   selectModelConfig: (id: string): Promise<void> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_SELECT, id),
+  queryPromptSettings: (): Promise<PromptSettings> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.PROMPT_SETTINGS_QUERY),
+  updatePromptSettings: (request: PromptSettings): Promise<PromptSettings> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.PROMPT_SETTINGS_UPDATE, request),
+  previewPrompt: (request: PromptPreviewRequest): Promise<string> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.PROMPT_PREVIEW, request),
+  querySearchProviderConfigs: (): Promise<SearchProviderConfig[]> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SEARCH_CONFIG_QUERY),
+  updateSearchProviderConfigs: (request: SearchProviderConfig[]): Promise<SearchProviderConfig[]> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SEARCH_CONFIG_UPDATE, request),
   queryCompressionStatus: (request: CompressionStatusQuery): Promise<CompressionStatus> =>
     ipcRenderer.invoke(CHAT_CHANNELS.COMPRESSION_STATUS_QUERY, request),
   onCompressionStatusChanged: (listener: (event: CompressionStatusEvent) => void): (() => void) => {

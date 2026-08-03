@@ -18,6 +18,8 @@ import {
   PanelLeft,
   Pencil,
   Search,
+  Globe2,
+  SlidersHorizontal,
   Settings2,
   SquarePen,
   Trash2
@@ -40,6 +42,8 @@ const emit = defineEmits<{
   rename: [session: Session]
   delete: [session: Session]
   manageModels: []
+  managePrompts: []
+  manageSearch: []
 }>()
 
 const searchOpen = ref(false)
@@ -179,10 +183,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
       </div>
     </nav>
 
-    <button class="settings-button" type="button" @click="emit('manageModels')">
-      <Settings2 :size="17" />
-      <span>{{ t('modelManagement') }}</span>
-    </button>
+    <div class="settings-actions">
+      <button class="settings-button" type="button" @click="emit('manageSearch')">
+        <Globe2 :size="17" />
+        <span>{{ t('webSearch') }}</span>
+      </button>
+      <button class="settings-button" type="button" @click="emit('managePrompts')">
+        <SlidersHorizontal :size="17" />
+        <span>{{ t('promptSettings') }}</span>
+      </button>
+      <button class="settings-button" type="button" @click="emit('manageModels')">
+        <Settings2 :size="17" />
+        <span>{{ t('modelManagement') }}</span>
+      </button>
+    </div>
   </aside>
 </template>
 
@@ -389,13 +403,23 @@ kbd {
 
 .settings-button {
   gap: 10px;
-  margin: 4px 8px 9px;
+  margin: 0;
   width: calc(100% - 16px);
   height: 40px;
   padding: 0 10px;
   border-radius: 11px;
   background: transparent;
   font-size: 13px;
+}
+
+.settings-actions {
+  display: grid;
+  gap: 2px;
+  padding: 4px 8px 9px;
+}
+
+.settings-actions .settings-button {
+  width: 100%;
 }
 </style>
 
@@ -411,6 +435,8 @@ zh-CN:
   noChats: 还没有对话
   moreActions: '{title} 更多操作'
   modelManagement: 模型管理
+  promptSettings: 提示词设置
+  webSearch: 互联网搜索
 en:
   collapseSidebar: Collapse sidebar
   chatNavigation: Chat navigation
@@ -422,4 +448,6 @@ en:
   noChats: No chats yet
   moreActions: More actions for {title}
   modelManagement: Model management
+  promptSettings: Prompt settings
+  webSearch: Web search
 </i18n>

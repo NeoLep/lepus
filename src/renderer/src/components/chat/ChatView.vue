@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import ChatComposer from './ChatComposer.vue'
 import ChatMessageList from './ChatMessageList.vue'
 
-import type { CompressionStatus, Message, ModelConfig } from '@ipc/chat/constants'
+import type { ChatLocale, CompressionStatus, Message, ModelConfig } from '@ipc/chat/constants'
 import {
   createCompressionPolicy,
   estimateMessageTokens,
@@ -15,6 +15,7 @@ const props = defineProps<{
   sessionId: string | null
   sessionPersisted: boolean
   modelConfig: ModelConfig | null
+  promptSettingsVersion: number
   disabled: boolean
   disabledReason?: string
   ensureSession: (id: string) => Promise<boolean>
@@ -24,7 +25,7 @@ const emit = defineEmits<{
   messageSent: [sessionId: string, content: string]
 }>()
 
-const { t } = useI18n({ useScope: 'local' })
+const { t, locale } = useI18n({ useScope: 'local' })
 
 const messagesBySession = ref<Record<string, Message[]>>({})
 const loadedSessions = ref<Record<string, boolean>>({})
@@ -134,12 +135,79 @@ async function sendMessage(): Promise<void> {
   }
 
   emit('messageSent', sessionId, content)
+  await requestAssistant(sessionId, modelConfigId, sessionMessages)
+}
+
+async function reviseAndResend(message: Message, revisedContent: string): Promise<void> {
+  const sessionId = props.sessionId
+  const modelConfigId = props.modelConfig?.id ?? null
+  if (
+    message.role !== 'user' ||
+    sending.value ||
+    loading.value ||
+    props.disabled ||
+    !props.sessionPersisted ||
+    !sessionId ||
+    !modelConfigId
+  ) {
+    return
+  }
+
+  const sessionMessages = messagesBySession.value[sessionId] ?? []
+  const messageIndex = sessionMessages.findIndex((item) => item.id === message.id)
+  const hasLaterUserMessage = sessionMessages
+    .slice(messageIndex + 1)
+    .some((item) => item.role === 'user')
+  if (messageIndex === -1 || hasLaterUserMessage) return
+
+  sendingBySession.value[sessionId] = true
+  try {
+    await window.api.chat.reviseMessage({
+      sessionId,
+      messageId: message.id,
+      content: revisedContent
+    })
+    sessionMessages[messageIndex] = { ...message, content: revisedContent.trim() }
+    sessionMessages.splice(messageIndex + 1)
+    compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
+      sessionId,
+      modelConfigId,
+      locale: locale.value as ChatLocale
+    })
+    compressingBySession.value[sessionId] = compressionStatusBySession.value[sessionId].willCompress
+  } catch (error) {
+    sessionMessages.push(createSendErrorMessage(error))
+    sendingBySession.value[sessionId] = false
+    return
+  }
+
+  await requestAssistant(sessionId, modelConfigId, sessionMessages)
+}
+
+function createSendErrorMessage(error: unknown): Message {
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      error instanceof Error
+        ? t('sendFailedWithReason', { reason: error.message })
+        : t('sendFailed'),
+    createdAt: new Date().toISOString()
+  }
+}
+
+async function requestAssistant(
+  sessionId: string,
+  modelConfigId: string,
+  sessionMessages: Message[]
+): Promise<void> {
   const compressionEventVersion = compressionEventVersionBySession.value[sessionId] ?? 0
 
   try {
     const response = await window.api.chat.sendChatMessage({
       conversationId: sessionId,
       modelConfigId,
+      locale: locale.value as ChatLocale,
       messages: sessionMessages.map((message) => ({ ...message }))
     })
 
@@ -148,19 +216,12 @@ async function sendMessage(): Promise<void> {
       compressionStatusBySession.value[sessionId] = response.compression
     }
   } catch (error) {
-    sessionMessages.push({
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content:
-        error instanceof Error
-          ? t('sendFailedWithReason', { reason: error.message })
-          : t('sendFailed'),
-      createdAt: new Date().toISOString()
-    })
+    sessionMessages.push(createSendErrorMessage(error))
     try {
       compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
         sessionId,
-        modelConfigId
+        modelConfigId,
+        locale: locale.value as ChatLocale
       })
     } catch (statusError) {
       console.error('Failed to refresh compression status', statusError)
@@ -177,32 +238,58 @@ async function sendMessage(): Promise<void> {
 }
 
 watch(
+  () => props.sessionId,
+  () => {
+    draft.value = ''
+  }
+)
+
+watch(
   () =>
     [
       props.sessionId,
       props.sessionPersisted,
       props.modelConfig?.id,
-      props.modelConfig?.updatedAt
+      props.modelConfig?.updatedAt,
+      locale.value,
+      props.promptSettingsVersion
     ] as const,
-  async ([sessionId, sessionPersisted, modelConfigId, modelConfigUpdatedAt]) => {
-    draft.value = ''
+  async ([
+    sessionId,
+    sessionPersisted,
+    modelConfigId,
+    modelConfigUpdatedAt,
+    activeLocale,
+    promptSettingsVersion
+  ]) => {
     if (!sessionId) return
 
     if (!sessionPersisted) {
       messagesBySession.value[sessionId] = []
-      compressionStatusBySession.value[sessionId] = emptyCompressionStatus()
+      compressionStatusBySession.value[sessionId] = modelConfigId
+        ? await window.api.chat.queryCompressionStatus({
+            sessionId,
+            modelConfigId,
+            locale: activeLocale as ChatLocale
+          })
+        : emptyCompressionStatus()
+      if (modelConfigId) {
+        statusModelBySession.value[sessionId] =
+          `${modelConfigId}:${modelConfigUpdatedAt ?? ''}:${activeLocale}:${promptSettingsVersion}`
+      }
       loadedSessions.value[sessionId] = true
       return
     }
 
     if (!modelConfigId) return
-    const modelConfigKey = `${modelConfigId}:${modelConfigUpdatedAt ?? ''}`
+    const modelConfigKey = `${modelConfigId}:${modelConfigUpdatedAt ?? ''}:${activeLocale}:${promptSettingsVersion}`
 
     if (loadedSessions.value[sessionId]) {
       if (statusModelBySession.value[sessionId] !== modelConfigKey) {
         compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
           sessionId,
-          modelConfigId
+          modelConfigId,
+          locale: activeLocale as ChatLocale
         })
         statusModelBySession.value[sessionId] = modelConfigKey
       }
@@ -214,7 +301,8 @@ watch(
       messagesBySession.value[sessionId] = await window.api.chat.queryMessages(sessionId)
       compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
         sessionId,
-        modelConfigId
+        modelConfigId,
+        locale: activeLocale as ChatLocale
       })
       statusModelBySession.value[sessionId] = modelConfigKey
       loadedSessions.value[sessionId] = true
@@ -236,6 +324,7 @@ watch(
       :status-text="
         loading ? t('loadingChat') : compressing ? t('compressingHistory') : t('thinking')
       "
+      @resend="reviseAndResend"
     />
     <ChatComposer
       v-model="draft"
