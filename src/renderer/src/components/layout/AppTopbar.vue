@@ -12,8 +12,10 @@ import {
   TooltipRoot,
   TooltipTrigger
 } from 'reka-ui'
-import { Check, ChevronDown, Ellipsis, PanelLeft, Settings2, Share2 } from '@lucide/vue'
+import { Check, ChevronDown, Ellipsis, Languages, PanelLeft, Settings2, Share2 } from '@lucide/vue'
 import type { ModelConfig, Session } from '@ipc/chat/constants'
+import { useI18n } from 'vue-i18n'
+import { setAppLocale, type AppLocale } from '../../i18n'
 
 defineProps<{
   isMac: boolean
@@ -31,6 +33,12 @@ const emit = defineEmits<{
   selectModel: [id: string]
   manageModels: []
 }>()
+
+const { t, locale } = useI18n({ useScope: 'local' })
+
+function changeLocale(nextLocale: AppLocale): void {
+  setAppLocale(nextLocale)
+}
 </script>
 
 <template>
@@ -47,7 +55,7 @@ const emit = defineEmits<{
           <button
             class="icon-button"
             type="button"
-            aria-label="展开侧边栏"
+            :aria-label="t('expandSidebar')"
             @click="emit('openSidebar')"
           >
             <PanelLeft :size="18" />
@@ -55,7 +63,7 @@ const emit = defineEmits<{
         </TooltipTrigger>
         <TooltipPortal>
           <TooltipContent class="tooltip-content" side="bottom" :side-offset="7">
-            展开侧边栏
+            {{ t('expandSidebar') }}
           </TooltipContent>
         </TooltipPortal>
       </TooltipRoot>
@@ -63,13 +71,18 @@ const emit = defineEmits<{
       <DropdownMenuRoot>
         <DropdownMenuTrigger as-child>
           <button class="model-trigger" type="button">
-            <span>{{ activeModelConfig?.name ?? (modelsLoading ? '加载中…' : '配置模型') }}</span>
+            <span>
+              {{
+                activeModelConfig?.name ??
+                (modelsLoading ? t('common.loading') : t('configureModel'))
+              }}
+            </span>
             <ChevronDown :size="15" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
           <DropdownMenuContent class="menu-content model-menu" align="start" :side-offset="6">
-            <DropdownMenuLabel class="menu-label">选择模型配置</DropdownMenuLabel>
+            <DropdownMenuLabel class="menu-label">{{ t('selectModelConfig') }}</DropdownMenuLabel>
             <DropdownMenuItem
               v-for="config in modelConfigs"
               :key="config.id"
@@ -83,12 +96,12 @@ const emit = defineEmits<{
               >
             </DropdownMenuItem>
             <p v-if="!modelsLoading && modelConfigs.length === 0" class="empty-models">
-              还没有模型配置
+              {{ t('noModelConfigs') }}
             </p>
             <DropdownMenuSeparator class="menu-separator" />
             <DropdownMenuItem class="menu-item" @select="emit('manageModels')">
               <Settings2 :size="15" />
-              管理模型
+              {{ t('manageModels') }}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenuPortal>
@@ -98,30 +111,52 @@ const emit = defineEmits<{
     <div class="topbar-drag-space" aria-hidden="true"></div>
 
     <div class="topbar-actions no-drag">
+      <DropdownMenuRoot>
+        <DropdownMenuTrigger as-child>
+          <button class="text-button" type="button" :aria-label="t('locale.language')">
+            <Languages :size="16" />
+            <span>{{ locale === 'zh-CN' ? t('locale.zhCN') : t('locale.en') }}</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuPortal>
+          <DropdownMenuContent class="menu-content" align="end" :side-offset="6">
+            <DropdownMenuLabel class="menu-label">{{ t('locale.language') }}</DropdownMenuLabel>
+            <DropdownMenuItem class="menu-item" @select="changeLocale('zh-CN')">
+              <Check :class="{ 'locale-check-hidden': locale !== 'zh-CN' }" :size="15" />
+              {{ t('locale.zhCN') }}
+            </DropdownMenuItem>
+            <DropdownMenuItem class="menu-item" @select="changeLocale('en')">
+              <Check :class="{ 'locale-check-hidden': locale !== 'en' }" :size="15" />
+              {{ t('locale.en') }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenuPortal>
+      </DropdownMenuRoot>
+
       <button class="text-button" type="button">
         <Share2 :size="16" />
-        <span>分享</span>
+        <span>{{ t('common.share') }}</span>
       </button>
 
       <DropdownMenuRoot>
         <DropdownMenuTrigger as-child>
-          <button class="icon-button" type="button" aria-label="更多选项">
+          <button class="icon-button" type="button" :aria-label="t('common.more')">
             <Ellipsis :size="19" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
           <DropdownMenuContent class="menu-content" align="end" :side-offset="6">
             <DropdownMenuItem class="menu-item" :disabled="!session" @select="emit('rename')">
-              重命名
+              {{ t('common.rename') }}
             </DropdownMenuItem>
-            <DropdownMenuItem class="menu-item">归档对话</DropdownMenuItem>
+            <DropdownMenuItem class="menu-item">{{ t('archiveChat') }}</DropdownMenuItem>
             <DropdownMenuSeparator class="menu-separator" />
             <DropdownMenuItem
               class="menu-item danger-item"
               :disabled="!session"
               @select="emit('delete')"
             >
-              删除对话
+              {{ t('deleteChat') }}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenuPortal>
@@ -218,6 +253,10 @@ const emit = defineEmits<{
   opacity: 1;
 }
 
+.locale-check-hidden {
+  opacity: 0;
+}
+
 .empty-models {
   margin: 4px 9px 7px;
   color: #98a2b3;
@@ -230,3 +269,22 @@ const emit = defineEmits<{
   }
 }
 </style>
+
+<i18n lang="yaml">
+zh-CN:
+  expandSidebar: 展开侧边栏
+  configureModel: 配置模型
+  selectModelConfig: 选择模型配置
+  noModelConfigs: 还没有模型配置
+  manageModels: 管理模型
+  archiveChat: 归档对话
+  deleteChat: 删除对话
+en:
+  expandSidebar: Expand sidebar
+  configureModel: Configure model
+  selectModelConfig: Select model configuration
+  noModelConfigs: No model configurations yet
+  manageModels: Manage models
+  archiveChat: Archive chat
+  deleteChat: Delete chat
+</i18n>

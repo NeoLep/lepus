@@ -2,6 +2,8 @@
 import { ref, watch, nextTick } from 'vue'
 import { LoaderCircle, Sparkles, UserRound } from '@lucide/vue'
 import type { Message } from '@ipc/chat/constants'
+import MarkdownContent from './MarkdownContent.vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   messages: Message[]
@@ -10,6 +12,7 @@ const props = defineProps<{
 }>()
 
 const messageEnd = ref<HTMLElement | null>(null)
+const { t } = useI18n({ useScope: 'local' })
 
 watch(
   () => [props.messages.length, props.sending],
@@ -24,8 +27,8 @@ watch(
   <div class="message-scroll">
     <div v-if="messages.length === 0" class="welcome-state">
       <div class="welcome-mark"><Sparkles :size="22" /></div>
-      <h1>有什么可以帮忙的？</h1>
-      <p>这是一个最小聊天示例，试着发送一条消息。</p>
+      <h1>{{ t('welcomeTitle') }}</h1>
+      <p>{{ t('welcomeDescription') }}</p>
     </div>
 
     <div v-else class="message-list" aria-live="polite">
@@ -35,8 +38,9 @@ watch(
           <Sparkles v-else :size="16" />
         </div>
         <div class="message-body">
-          <strong>{{ message.role === 'user' ? '你' : 'Lepus' }}</strong>
-          <p>{{ message.content }}</p>
+          <strong>{{ message.role === 'user' ? t('you') : 'Lepus' }}</strong>
+          <p v-if="message.role === 'user'" class="plain-content">{{ message.content }}</p>
+          <MarkdownContent v-else :content="message.content" />
         </div>
       </article>
 
@@ -44,7 +48,9 @@ watch(
         <div class="message-avatar"><Sparkles :size="16" /></div>
         <div class="message-body">
           <strong>Lepus</strong>
-          <span class="thinking"><LoaderCircle :size="15" /> {{ statusText ?? '正在思考' }}</span>
+          <span class="thinking"
+            ><LoaderCircle :size="15" /> {{ statusText ?? t('thinking') }}</span
+          >
         </div>
       </article>
       <div ref="messageEnd" class="message-end"></div>
@@ -149,7 +155,7 @@ watch(
   font-weight: 650;
 }
 
-.message-body p {
+.plain-content {
   margin: 0;
   color: #344054;
   font-size: 14px;
@@ -180,3 +186,16 @@ watch(
   }
 }
 </style>
+
+<i18n lang="yaml">
+zh-CN:
+  welcomeTitle: 有什么可以帮忙的？
+  welcomeDescription: 试着发送一条消息，开始新的对话。
+  you: 你
+  thinking: 正在思考
+en:
+  welcomeTitle: How can I help?
+  welcomeDescription: Send a message to start a new conversation.
+  you: You
+  thinking: Thinking
+</i18n>

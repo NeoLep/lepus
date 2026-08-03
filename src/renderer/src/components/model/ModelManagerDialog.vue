@@ -15,6 +15,7 @@ import {
   createCompressionPolicy,
   detectModelContextWindow
 } from '@/shared/agent/history-compression'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   configs: ModelConfig[]
@@ -31,6 +32,7 @@ const draft = ref<ModelConfig>(makeConfig())
 const saving = ref(false)
 const localError = ref('')
 const showApiKey = ref(false)
+const { t } = useI18n({ useScope: 'local' })
 
 const isExisting = computed(() => props.configs.some((config) => config.id === draft.value.id))
 const tokenPolicy = computed(() =>
@@ -40,12 +42,7 @@ const tokenPolicy = computed(() =>
   })
 )
 const contextSourceText = computed(() => {
-  const labels = {
-    manual: '手动设置',
-    detected: '根据模型名称自动识别',
-    fallback: '未识别，使用保守默认值'
-  }
-  return labels[tokenPolicy.value.contextWindowSource]
+  return t(`contextSource.${tokenPolicy.value.contextWindowSource}`)
 })
 
 function makeConfig(): ModelConfig {
@@ -94,22 +91,22 @@ function validate(): boolean {
     : null
 
   if (!config.name || !config.baseURL || !config.model || !config.apiKey) {
-    localError.value = '请填写全部配置项'
+    localError.value = t('validation.required')
     return false
   }
   try {
     const url = new URL(config.baseURL)
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error()
   } catch {
-    localError.value = 'Base URL 必须是有效的 HTTP(S) 地址'
+    localError.value = t('validation.invalidBaseUrl')
     return false
   }
   if (config.contextWindowOverride !== null && config.contextWindowOverride < 2_048) {
-    localError.value = '上下文窗口不能小于 2,048 Token'
+    localError.value = t('validation.contextMinimum')
     return false
   }
   if (config.maxOutputTokensOverride !== null && config.maxOutputTokensOverride < 256) {
-    localError.value = '最大输出不能小于 256 Token'
+    localError.value = t('validation.outputMinimum')
     return false
   }
   const effectiveContext = config.contextWindowOverride ?? tokenPolicy.value.contextWindow
@@ -117,7 +114,7 @@ function validate(): boolean {
     config.maxOutputTokensOverride !== null &&
     config.maxOutputTokensOverride >= effectiveContext
   ) {
-    localError.value = '最大输出必须小于上下文窗口'
+    localError.value = t('validation.outputLessThanContext')
     return false
   }
   return true
@@ -138,7 +135,7 @@ async function save(): Promise<void> {
 
 async function remove(): Promise<void> {
   if (!isExisting.value || saving.value) return
-  if (!window.confirm(`确定删除模型配置“${draft.value.name}”吗？`)) return
+  if (!window.confirm(t('deleteConfirm', { name: draft.value.name }))) return
   saving.value = true
   const removed = await props.deleteConfig(draft.value.id)
   saving.value = false
@@ -181,19 +178,21 @@ watch(
       <DialogContent class="model-dialog-content" @open-auto-focus.prevent>
         <header class="dialog-header">
           <div>
-            <DialogTitle class="dialog-title">模型管理</DialogTitle>
+            <DialogTitle class="dialog-title">{{ t('title') }}</DialogTitle>
             <DialogDescription class="dialog-description">
-              配置 OpenAI 兼容的模型服务，数据仅保存在本机。
+              {{ t('description') }}
             </DialogDescription>
           </div>
-          <DialogClose class="dialog-close" aria-label="关闭"><X :size="18" /></DialogClose>
+          <DialogClose class="dialog-close" :aria-label="t('common.close')">
+            <X :size="18" />
+          </DialogClose>
         </header>
 
         <div class="dialog-body">
           <aside class="config-list">
             <button class="new-config-button" type="button" @click="createConfig">
               <Plus :size="16" />
-              新建配置
+              {{ t('newConfig') }}
             </button>
             <div class="config-items">
               <button
@@ -215,8 +214,12 @@ watch(
 
           <form class="config-form" @submit.prevent="save">
             <label>
-              <span>配置名称</span>
-              <input v-model="draft.name" autocomplete="off" placeholder="例如：DeepSeek" />
+              <span>{{ t('configName') }}</span>
+              <input
+                v-model="draft.name"
+                autocomplete="off"
+                :placeholder="t('configNameExample')"
+              />
             </label>
             <label>
               <span>Base URL</span>
@@ -228,8 +231,12 @@ watch(
               />
             </label>
             <label>
-              <span>模型名称</span>
-              <input v-model="draft.model" autocomplete="off" placeholder="例如：deepseek-chat" />
+              <span>{{ t('modelName') }}</span>
+              <input
+                v-model="draft.model"
+                autocomplete="off"
+                :placeholder="t('modelNameExample')"
+              />
             </label>
             <label>
               <span>API Key</span>
@@ -242,7 +249,7 @@ watch(
                 />
                 <button
                   type="button"
-                  :aria-label="showApiKey ? '隐藏 API Key' : '显示 API Key'"
+                  :aria-label="showApiKey ? t('hideApiKey') : t('showApiKey')"
                   @click="showApiKey = !showApiKey"
                 >
                   <EyeOff v-if="showApiKey" :size="16" />
@@ -252,32 +259,32 @@ watch(
             </label>
 
             <details class="advanced-settings">
-              <summary>高级 Token 设置</summary>
+              <summary>{{ t('advancedTokenSettings') }}</summary>
               <p class="context-detection">
                 {{ contextSourceText }}：{{ tokenPolicy.contextWindow.toLocaleString() }} Token
               </p>
               <div class="advanced-fields">
                 <label>
-                  <span>上下文窗口（可选）</span>
+                  <span>{{ t('contextWindowOptional') }}</span>
                   <input
                     v-model.number="draft.contextWindowOverride"
                     type="number"
                     min="2048"
                     step="1024"
-                    placeholder="自动识别"
+                    :placeholder="t('autoDetect')"
                   />
-                  <small>留空时根据模型名称识别，无法识别则按 16K 估算。</small>
+                  <small>{{ t('contextWindowHelp') }}</small>
                 </label>
                 <label>
-                  <span>最大输出 Token（可选）</span>
+                  <span>{{ t('maxOutputOptional') }}</span>
                   <input
                     v-model.number="draft.maxOutputTokensOverride"
                     type="number"
                     min="256"
                     step="256"
-                    placeholder="自动预留"
+                    :placeholder="t('autoReserve')"
                   />
-                  <small>用于为模型回复预留空间，不会作为每次请求的强制输出长度。</small>
+                  <small>{{ t('maxOutputHelp') }}</small>
                 </label>
               </div>
             </details>
@@ -293,7 +300,7 @@ watch(
                 @click="remove"
               >
                 <Trash2 :size="15" />
-                删除
+                {{ t('common.delete') }}
               </button>
               <span class="action-spacer"></span>
               <button
@@ -303,13 +310,13 @@ watch(
                 :disabled="saving"
                 @click="selectCurrent"
               >
-                设为当前
+                {{ t('setCurrent') }}
               </button>
               <span v-else-if="draft.isActive" class="active-label"
-                ><Check :size="14" /> 当前配置</span
+                ><Check :size="14" /> {{ t('currentConfig') }}</span
               >
               <button class="primary-button" type="submit" :disabled="saving">
-                {{ saving ? '保存中…' : '保存配置' }}
+                {{ saving ? t('saving') : t('saveConfig') }}
               </button>
             </footer>
           </form>
@@ -648,3 +655,70 @@ watch(
   }
 }
 </style>
+
+<i18n lang="yaml">
+zh-CN:
+  title: 模型管理
+  description: 配置 OpenAI 兼容的模型服务，数据仅保存在本机。
+  newConfig: 新建配置
+  configName: 配置名称
+  configNameExample: 例如：DeepSeek
+  modelName: 模型名称
+  modelNameExample: 例如：deepseek-chat
+  hideApiKey: 隐藏 API Key
+  showApiKey: 显示 API Key
+  advancedTokenSettings: 高级 Token 设置
+  contextWindowOptional: 上下文窗口（可选）
+  autoDetect: 自动识别
+  contextWindowHelp: 留空时根据模型名称识别，无法识别则按 16K 估算。
+  maxOutputOptional: 最大输出 Token（可选）
+  autoReserve: 自动预留
+  maxOutputHelp: 用于为模型回复预留空间，不会作为每次请求的强制输出长度。
+  setCurrent: 设为当前
+  currentConfig: 当前配置
+  saving: 保存中…
+  saveConfig: 保存配置
+  deleteConfirm: 确定删除模型配置“{name}”吗？
+  contextSource:
+    manual: 手动设置
+    detected: 根据模型名称自动识别
+    fallback: 未识别，使用保守默认值
+  validation:
+    required: 请填写全部配置项
+    invalidBaseUrl: Base URL 必须是有效的 HTTP(S) 地址
+    contextMinimum: 上下文窗口不能小于 2,048 Token
+    outputMinimum: 最大输出不能小于 256 Token
+    outputLessThanContext: 最大输出必须小于上下文窗口
+en:
+  title: Model management
+  description: Configure an OpenAI-compatible model service. Data is stored only on this device.
+  newConfig: New configuration
+  configName: Configuration name
+  configNameExample: 'Example: DeepSeek'
+  modelName: Model name
+  modelNameExample: 'Example: deepseek-chat'
+  hideApiKey: Hide API key
+  showApiKey: Show API key
+  advancedTokenSettings: Advanced token settings
+  contextWindowOptional: Context window (optional)
+  autoDetect: Detect automatically
+  contextWindowHelp: Leave empty to detect it from the model name. Unknown models use a conservative 16K estimate.
+  maxOutputOptional: Maximum output tokens (optional)
+  autoReserve: Reserve automatically
+  maxOutputHelp: Reserves space for model replies without forcing every response to use this length.
+  setCurrent: Set as current
+  currentConfig: Current configuration
+  saving: Saving…
+  saveConfig: Save configuration
+  deleteConfirm: Delete model configuration “{name}”?
+  contextSource:
+    manual: Manually set
+    detected: Automatically detected from the model name
+    fallback: Unknown model; using a conservative default
+  validation:
+    required: Complete all required fields
+    invalidBaseUrl: Base URL must be a valid HTTP(S) address
+    contextMinimum: Context window cannot be less than 2,048 tokens
+    outputMinimum: Maximum output cannot be less than 256 tokens
+    outputLessThanContext: Maximum output must be smaller than the context window
+</i18n>

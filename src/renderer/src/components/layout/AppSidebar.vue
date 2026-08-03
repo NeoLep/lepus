@@ -23,6 +23,7 @@ import {
   Trash2
 } from '@lucide/vue'
 import type { Session } from '@ipc/chat/constants'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   isMac: boolean
@@ -44,6 +45,7 @@ const emit = defineEmits<{
 const searchOpen = ref(false)
 const searchQuery = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
+const { t } = useI18n({ useScope: 'local' })
 
 const filteredSessions = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase()
@@ -87,7 +89,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
             <button
               class="icon-button"
               type="button"
-              aria-label="收起侧边栏"
+              :aria-label="t('collapseSidebar')"
               @click="emit('close')"
             >
               <PanelLeft :size="18" />
@@ -95,22 +97,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
           </TooltipTrigger>
           <TooltipPortal>
             <TooltipContent class="tooltip-content" side="bottom" :side-offset="7">
-              收起侧边栏
+              {{ t('collapseSidebar') }}
             </TooltipContent>
           </TooltipPortal>
         </TooltipRoot>
       </div>
     </div>
 
-    <nav class="sidebar-body" aria-label="对话导航">
+    <nav class="sidebar-body" :aria-label="t('chatNavigation')">
       <button class="sidebar-action" type="button" @click="emit('create')">
         <SquarePen :size="17" />
-        <span>新建对话</span>
+        <span>{{ t('newChat') }}</span>
         <kbd>{{ isMac ? '⌘ N' : 'Ctrl N' }}</kbd>
       </button>
       <button v-if="!searchOpen" class="sidebar-action" type="button" @click="openSearch">
         <Search :size="17" />
-        <span>搜索对话</span>
+        <span>{{ t('searchChats') }}</span>
         <kbd>{{ isMac ? '⌘ K' : 'Ctrl K' }}</kbd>
       </button>
       <div v-else class="search-box">
@@ -119,19 +121,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
           ref="searchInput"
           v-model="searchQuery"
           type="search"
-          placeholder="搜索对话"
-          aria-label="搜索对话"
+          :placeholder="t('searchChats')"
+          :aria-label="t('searchChats')"
           @keydown.esc="closeSearch"
         />
-        <button type="button" @click="closeSearch">取消</button>
+        <button type="button" @click="closeSearch">{{ t('common.cancel') }}</button>
       </div>
 
       <div class="conversation-section">
-        <p class="section-label">最近</p>
-        <p v-if="loading" class="conversation-status">正在加载…</p>
-        <p v-else-if="error" class="conversation-status error" :title="error">会话操作失败</p>
+        <p class="section-label">{{ t('recent') }}</p>
+        <p v-if="loading" class="conversation-status">{{ t('common.loading') }}</p>
+        <p v-else-if="error" class="conversation-status error" :title="error">
+          {{ t('operationFailed') }}
+        </p>
         <p v-else-if="filteredSessions.length === 0" class="conversation-status">
-          {{ searchQuery ? '没有匹配的对话' : '还没有对话' }}
+          {{ searchQuery ? t('noMatchingChats') : t('noChats') }}
         </p>
         <div
           v-for="session in filteredSessions"
@@ -151,7 +155,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
               <button
                 class="conversation-more"
                 type="button"
-                :aria-label="`${session.title} 更多操作`"
+                :aria-label="t('moreActions', { title: session.title })"
                 @click.stop
               >
                 <Ellipsis :size="16" />
@@ -161,12 +165,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
               <DropdownMenuContent class="menu-content" align="start" :side-offset="4">
                 <DropdownMenuItem class="menu-item" @select="emit('rename', session)">
                   <Pencil :size="15" />
-                  重命名
+                  {{ t('common.rename') }}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator class="menu-separator" />
                 <DropdownMenuItem class="menu-item danger-item" @select="emit('delete', session)">
                   <Trash2 :size="15" />
-                  删除
+                  {{ t('common.delete') }}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenuPortal>
@@ -177,7 +181,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
 
     <button class="settings-button" type="button" @click="emit('manageModels')">
       <Settings2 :size="17" />
-      <span>模型管理</span>
+      <span>{{ t('modelManagement') }}</span>
     </button>
   </aside>
 </template>
@@ -394,3 +398,28 @@ kbd {
   font-size: 13px;
 }
 </style>
+
+<i18n lang="yaml">
+zh-CN:
+  collapseSidebar: 收起侧边栏
+  chatNavigation: 对话导航
+  newChat: 新建对话
+  searchChats: 搜索对话
+  recent: 最近
+  operationFailed: 会话操作失败
+  noMatchingChats: 没有匹配的对话
+  noChats: 还没有对话
+  moreActions: '{title} 更多操作'
+  modelManagement: 模型管理
+en:
+  collapseSidebar: Collapse sidebar
+  chatNavigation: Chat navigation
+  newChat: New chat
+  searchChats: Search chats
+  recent: Recent
+  operationFailed: Chat operation failed
+  noMatchingChats: No matching chats
+  noChats: No chats yet
+  moreActions: More actions for {title}
+  modelManagement: Model management
+</i18n>

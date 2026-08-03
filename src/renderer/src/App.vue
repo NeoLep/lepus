@@ -6,6 +6,7 @@ import AppTopbar from './components/layout/AppTopbar.vue'
 import ChatView from './components/chat/ChatView.vue'
 import ModelManagerDialog from './components/model/ModelManagerDialog.vue'
 import type { ModelConfig, Session } from '@ipc/chat/constants'
+import { useI18n } from 'vue-i18n'
 
 type SplitterPanelInstance = {
   collapse: () => void
@@ -25,6 +26,8 @@ const modelConfigs = ref<ModelConfig[]>([])
 const modelsLoading = ref(true)
 const modelError = ref('')
 const modelManagerOpen = ref(false)
+const { t } = useI18n({ useScope: 'local' })
+const defaultSessionTitles = new Set(['新对话', 'New chat'])
 
 const activeSession = computed(
   () => sessions.value.find((session) => session.id === activeSessionId.value) ?? null
@@ -47,7 +50,7 @@ function makeSession(): Session {
   const now = new Date().toISOString()
   return {
     id: crypto.randomUUID(),
-    title: '新对话',
+    title: t('newConversation'),
     createdAt: now,
     updatedAt: now
   }
@@ -93,7 +96,7 @@ async function persistSession(id: string): Promise<boolean> {
     sortSessions()
     return true
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : '创建对话失败'
+    sessionError.value = error instanceof Error ? error.message : t('errors.createSession')
     return false
   } finally {
     persistingSessionIds.value.delete(id)
@@ -105,7 +108,7 @@ async function persistSession(id: string): Promise<boolean> {
 }
 
 async function renameSession(session: Session): Promise<void> {
-  const title = window.prompt('重命名对话', session.title)?.trim()
+  const title = window.prompt(t('renamePrompt'), session.title)?.trim()
   if (!title || title === session.title) return
 
   sessionError.value = ''
@@ -128,12 +131,12 @@ async function renameSession(session: Session): Promise<void> {
     if (index !== -1) sessions.value[index] = updated
     sortSessions()
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : '重命名对话失败'
+    sessionError.value = error instanceof Error ? error.message : t('errors.renameSession')
   }
 }
 
 async function deleteSession(session: Session): Promise<void> {
-  if (!window.confirm(`确定删除“${session.title}”吗？`)) return
+  if (!window.confirm(t('deleteConfirm', { title: session.title }))) return
 
   sessionError.value = ''
   if (pendingSessionIds.value.has(session.id)) {
@@ -154,7 +157,7 @@ async function deleteSession(session: Session): Promise<void> {
     }
     if (!activeSessionId.value) startNewSession()
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : '删除对话失败'
+    sessionError.value = error instanceof Error ? error.message : t('errors.deleteSession')
   }
 }
 
@@ -162,8 +165,9 @@ async function updateSessionFromMessage(sessionId: string, content: string): Pro
   const session = sessions.value.find((item) => item.id === sessionId)
   if (!session) return
 
-  const title =
-    session.title === '新对话' ? content.replace(/\s+/g, ' ').trim().slice(0, 28) : session.title
+  const title = defaultSessionTitles.has(session.title)
+    ? content.replace(/\s+/g, ' ').trim().slice(0, 28)
+    : session.title
   if (!title) return
 
   try {
@@ -176,7 +180,7 @@ async function updateSessionFromMessage(sessionId: string, content: string): Pro
     if (index !== -1) sessions.value[index] = updated
     sortSessions()
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : '更新对话失败'
+    sessionError.value = error instanceof Error ? error.message : t('errors.updateSession')
   }
 }
 
@@ -192,7 +196,7 @@ async function loadSessions(): Promise<void> {
       startNewSession()
     }
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : '加载对话失败'
+    sessionError.value = error instanceof Error ? error.message : t('errors.loadSessions')
   } finally {
     sessionsLoading.value = false
   }
@@ -204,7 +208,7 @@ async function loadModelConfigs(): Promise<void> {
   try {
     modelConfigs.value = await window.api.chat.queryModelConfigs()
   } catch (error) {
-    modelError.value = error instanceof Error ? error.message : '加载模型配置失败'
+    modelError.value = error instanceof Error ? error.message : t('errors.loadModels')
   } finally {
     modelsLoading.value = false
   }
@@ -225,7 +229,7 @@ async function saveModelConfig(config: ModelConfig): Promise<boolean> {
     )
     return true
   } catch (error) {
-    modelError.value = error instanceof Error ? error.message : '保存模型配置失败'
+    modelError.value = error instanceof Error ? error.message : t('errors.saveModel')
     return false
   }
 }
@@ -237,7 +241,7 @@ async function deleteModelConfig(id: string): Promise<boolean> {
     await loadModelConfigs()
     return true
   } catch (error) {
-    modelError.value = error instanceof Error ? error.message : '删除模型配置失败'
+    modelError.value = error instanceof Error ? error.message : t('errors.deleteModel')
     return false
   }
 }
@@ -252,7 +256,7 @@ async function selectModelConfig(id: string): Promise<boolean> {
     }))
     return true
   } catch (error) {
-    modelError.value = error instanceof Error ? error.message : '切换模型配置失败'
+    modelError.value = error instanceof Error ? error.message : t('errors.selectModel')
     return false
   }
 }
@@ -325,7 +329,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
             :session-persisted="activeSessionPersisted"
             :model-config="activeModelConfig"
             :disabled="sessionsLoading || modelsLoading || !activeSessionId || !activeModelConfig"
-            :disabled-reason="!activeModelConfig ? '请先配置模型' : undefined"
+            :disabled-reason="!activeModelConfig ? t('configureModelFirst') : undefined"
             :ensure-session="persistSession"
             @message-sent="updateSessionFromMessage"
           />
@@ -409,3 +413,16 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
   display: none;
 }
 </style>
+
+<i18n lang="yaml">
+zh-CN:
+  newConversation: 新对话
+  renamePrompt: 重命名对话
+  deleteConfirm: 确定删除“{title}”吗？
+  configureModelFirst: 请先配置模型
+en:
+  newConversation: New chat
+  renamePrompt: Rename chat
+  deleteConfirm: Delete “{title}”?
+  configureModelFirst: Configure a model first
+</i18n>

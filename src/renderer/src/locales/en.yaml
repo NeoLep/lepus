@@ -1,0 +1,25 @@
+app:
+  name: Lepus
+locale:
+  language: Language
+  zhCN: 简体中文
+  en: English
+common:
+  cancel: Cancel
+  close: Close
+  delete: Delete
+  rename: Rename
+  loading: Loading…
+  save: Save
+  share: Share
+  more: More options
+errors:
+  createSession: Failed to create chat
+  renameSession: Failed to rename chat
+  deleteSession: Failed to delete chat
+  updateSession: Failed to update chat
+  loadSessions: Failed to load chats
+  loadModels: Failed to load model configurations
+  saveModel: Failed to save model configuration
+  deleteModel: Failed to delete model configuration
+  selectModel: Failed to switch model configuration

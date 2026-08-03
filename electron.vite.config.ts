@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { defineConfig } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
+import VueI18nPlugin from '@intlify/unplugin-vue-i18n/vite'
 
 export default defineConfig({
   main: {
@@ -19,6 +20,12 @@ export default defineConfig({
         '@': resolve('src')
       }
     },
-    plugins: [vue(), tailwindcss()]
+    plugins: [
+      vue(),
+      VueI18nPlugin({
+        include: [resolve('src/renderer/src/locales/**')]
+      }),
+      tailwindcss()
+    ]
   }
 })

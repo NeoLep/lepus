@@ -29,16 +29,20 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "electron-updater": "^6.3.9",
+    "markdown-it": "^15.0.0",
     "openai": "^7.1.0",
     "reka-ui": "^2.10.1",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "vue-i18n": "^11.4.8"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
+    "@intlify/unplugin-vue-i18n": "^11.2.4",
     "@tailwindcss/vite": "^4.3.3",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.20.1",
     "@vitejs/plugin-vue": "^6.0.2",
     "electron": "^39.2.6",

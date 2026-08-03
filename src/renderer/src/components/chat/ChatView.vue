@@ -9,6 +9,7 @@ import {
   estimateMessageTokens,
   HISTORY_COMPRESSION
 } from '@/shared/agent/history-compression'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   sessionId: string | null
@@ -22,6 +23,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   messageSent: [sessionId: string, content: string]
 }>()
+
+const { t } = useI18n({ useScope: 'local' })
 
 const messagesBySession = ref<Record<string, Message[]>>({})
 const loadedSessions = ref<Record<string, boolean>>({})
@@ -148,7 +151,10 @@ async function sendMessage(): Promise<void> {
     sessionMessages.push({
       id: crypto.randomUUID(),
       role: 'assistant',
-      content: error instanceof Error ? `发送失败：${error.message}` : '发送失败，请稍后重试。',
+      content:
+        error instanceof Error
+          ? t('sendFailedWithReason', { reason: error.message })
+          : t('sendFailed'),
       createdAt: new Date().toISOString()
     })
     try {
@@ -227,7 +233,9 @@ watch(
     <ChatMessageList
       :messages="messages"
       :sending="sending || loading"
-      :status-text="loading ? '正在加载对话' : compressing ? '正在压缩历史对话' : '正在思考'"
+      :status-text="
+        loading ? t('loadingChat') : compressing ? t('compressingHistory') : t('thinking')
+      "
     />
     <ChatComposer
       v-model="draft"
@@ -250,3 +258,18 @@ watch(
   background: #ffffff;
 }
 </style>
+
+<i18n lang="yaml">
+zh-CN:
+  sendFailedWithReason: 发送失败：{reason}
+  sendFailed: 发送失败，请稍后重试。
+  loadingChat: 正在加载对话
+  compressingHistory: 正在压缩历史对话
+  thinking: 正在思考
+en:
+  sendFailedWithReason: 'Failed to send: {reason}'
+  sendFailed: Failed to send. Please try again later.
+  loadingChat: Loading chat
+  compressingHistory: Compressing chat history
+  thinking: Thinking
+</i18n>
