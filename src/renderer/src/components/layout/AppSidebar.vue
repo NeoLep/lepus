@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuPortal,
   DropdownMenuRoot,
   DropdownMenuSeparator,
@@ -16,26 +16,66 @@ import {
   Ellipsis,
   MessageSquare,
   PanelLeft,
+  Pencil,
   Search,
-  Settings,
+  Settings2,
   SquarePen,
-  UserRound
+  Trash2
 } from '@lucide/vue'
+import type { Session } from '@ipc/chat/constants'
 
-defineProps<{
+const props = defineProps<{
   isMac: boolean
+  sessions: Session[]
+  activeSessionId: string | null
+  loading: boolean
+  error: string
 }>()
 
 const emit = defineEmits<{
   close: []
+  create: []
+  select: [id: string]
+  rename: [session: Session]
+  delete: [session: Session]
+  manageModels: []
 }>()
 
-const conversations = [
-  { id: 1, title: '设计一个聊天应用框架', active: true },
-  { id: 2, title: 'Electron 窗口配置', active: false },
-  { id: 3, title: '前端项目开发计划', active: false },
-  { id: 4, title: '整理本周工作内容', active: false }
-]
+const searchOpen = ref(false)
+const searchQuery = ref('')
+const searchInput = ref<HTMLInputElement | null>(null)
+
+const filteredSessions = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase()
+  if (!query) return props.sessions
+  return props.sessions.filter((session) => session.title.toLocaleLowerCase().includes(query))
+})
+
+async function openSearch(): Promise<void> {
+  searchOpen.value = true
+  await nextTick()
+  searchInput.value?.focus()
+}
+
+function closeSearch(): void {
+  searchOpen.value = false
+  searchQuery.value = ''
+}
+
+function handleShortcut(event: KeyboardEvent): void {
+  if (!(event.metaKey || event.ctrlKey)) return
+  const key = event.key.toLowerCase()
+  if (key === 'n') {
+    event.preventDefault()
+    emit('create')
+  } else if (key === 'k') {
+    event.preventDefault()
+    void openSearch()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', handleShortcut))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
 </script>
 
 <template>
@@ -63,61 +103,82 @@ const conversations = [
     </div>
 
     <nav class="sidebar-body" aria-label="对话导航">
-      <button class="sidebar-action" type="button">
+      <button class="sidebar-action" type="button" @click="emit('create')">
         <SquarePen :size="17" />
         <span>新建对话</span>
         <kbd>{{ isMac ? '⌘ N' : 'Ctrl N' }}</kbd>
       </button>
-      <button class="sidebar-action" type="button">
+      <button v-if="!searchOpen" class="sidebar-action" type="button" @click="openSearch">
         <Search :size="17" />
         <span>搜索对话</span>
         <kbd>{{ isMac ? '⌘ K' : 'Ctrl K' }}</kbd>
       </button>
+      <div v-else class="search-box">
+        <Search :size="16" />
+        <input
+          ref="searchInput"
+          v-model="searchQuery"
+          type="search"
+          placeholder="搜索对话"
+          aria-label="搜索对话"
+          @keydown.esc="closeSearch"
+        />
+        <button type="button" @click="closeSearch">取消</button>
+      </div>
 
       <div class="conversation-section">
         <p class="section-label">最近</p>
-        <button
-          v-for="conversation in conversations"
-          :key="conversation.id"
+        <p v-if="loading" class="conversation-status">正在加载…</p>
+        <p v-else-if="error" class="conversation-status error" :title="error">会话操作失败</p>
+        <p v-else-if="filteredSessions.length === 0" class="conversation-status">
+          {{ searchQuery ? '没有匹配的对话' : '还没有对话' }}
+        </p>
+        <div
+          v-for="session in filteredSessions"
+          :key="session.id"
           class="conversation-item"
-          :class="{ active: conversation.active }"
-          type="button"
+          :class="{ active: session.id === activeSessionId }"
+          role="button"
+          tabindex="0"
+          @click="emit('select', session.id)"
+          @keydown.enter="emit('select', session.id)"
+          @keydown.space.prevent="emit('select', session.id)"
         >
           <MessageSquare :size="15" />
-          <span>{{ conversation.title }}</span>
-          <Ellipsis class="conversation-more" :size="16" />
-        </button>
+          <span>{{ session.title }}</span>
+          <DropdownMenuRoot>
+            <DropdownMenuTrigger as-child>
+              <button
+                class="conversation-more"
+                type="button"
+                :aria-label="`${session.title} 更多操作`"
+                @click.stop
+              >
+                <Ellipsis :size="16" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuContent class="menu-content" align="start" :side-offset="4">
+                <DropdownMenuItem class="menu-item" @select="emit('rename', session)">
+                  <Pencil :size="15" />
+                  重命名
+                </DropdownMenuItem>
+                <DropdownMenuSeparator class="menu-separator" />
+                <DropdownMenuItem class="menu-item danger-item" @select="emit('delete', session)">
+                  <Trash2 :size="15" />
+                  删除
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenuPortal>
+          </DropdownMenuRoot>
+        </div>
       </div>
     </nav>
 
-    <DropdownMenuRoot>
-      <DropdownMenuTrigger as-child>
-        <button class="account-button" type="button">
-          <span class="avatar"><UserRound :size="16" /></span>
-          <span class="account-copy">
-            <strong>Lee</strong>
-            <small>个人账户</small>
-          </span>
-          <Ellipsis :size="17" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuPortal>
-        <DropdownMenuContent
-          class="menu-content account-menu"
-          side="right"
-          align="end"
-          :side-offset="8"
-        >
-          <DropdownMenuLabel class="menu-label">账户</DropdownMenuLabel>
-          <DropdownMenuItem class="menu-item">
-            <Settings :size="16" />
-            设置
-          </DropdownMenuItem>
-          <DropdownMenuSeparator class="menu-separator" />
-          <DropdownMenuItem class="menu-item muted-item">退出登录</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenuPortal>
-    </DropdownMenuRoot>
+    <button class="settings-button" type="button" @click="emit('manageModels')">
+      <Settings2 :size="17" />
+      <span>模型管理</span>
+    </button>
   </aside>
 </template>
 
@@ -173,7 +234,7 @@ const conversations = [
 
 .sidebar-action,
 .conversation-item,
-.account-button {
+.settings-button {
   display: flex;
   width: 100%;
   align-items: center;
@@ -195,7 +256,7 @@ const conversations = [
 
 .sidebar-action:hover,
 .conversation-item:hover,
-.account-button:hover {
+.settings-button:hover {
   background: #eceef1;
 }
 
@@ -228,6 +289,8 @@ kbd {
   border-radius: 9px;
   background: transparent;
   font-size: 13px;
+  cursor: pointer;
+  outline: none;
 }
 
 .conversation-item.active {
@@ -244,48 +307,90 @@ kbd {
 }
 
 .conversation-more {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
   opacity: 0;
 }
 
 .conversation-item:hover .conversation-more,
-.conversation-item.active .conversation-more {
+.conversation-item.active .conversation-more,
+.conversation-more:focus-visible,
+.conversation-more[data-state='open'] {
   opacity: 1;
 }
 
-.account-button {
+.conversation-more:hover {
+  background: #dfe3e8;
+}
+
+.conversation-item:focus-visible {
+  outline: 2px solid #98a2b3;
+  outline-offset: -2px;
+}
+
+.conversation-status {
+  margin: 4px 10px;
+  color: #98a2b3;
+  font-size: 12px;
+}
+
+.conversation-status.error {
+  color: #d92d20;
+}
+
+.search-box {
+  display: flex;
+  height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #667085;
+}
+
+.search-box input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #344054;
+  font: inherit;
+  font-size: 13px;
+}
+
+.search-box input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-box button {
+  padding: 3px;
+  border: 0;
+  background: transparent;
+  color: #667085;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.settings-button {
   gap: 10px;
   margin: 4px 8px 9px;
   width: calc(100% - 16px);
-  padding: 8px;
+  height: 40px;
+  padding: 0 10px;
   border-radius: 11px;
   background: transparent;
-}
-
-.avatar {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  place-items: center;
-  border: 1px solid #d0d5dd;
-  border-radius: 50%;
-  background: #ffffff;
-}
-
-.account-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-}
-
-.account-copy strong {
   font-size: 13px;
-  font-weight: 600;
-}
-
-.account-copy small {
-  color: #98a2b3;
-  font-size: 11px;
 }
 </style>

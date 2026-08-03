@@ -12,15 +12,24 @@ import {
   TooltipRoot,
   TooltipTrigger
 } from 'reka-ui'
-import { ChevronDown, Ellipsis, PanelLeft, Share2 } from '@lucide/vue'
+import { Check, ChevronDown, Ellipsis, PanelLeft, Settings2, Share2 } from '@lucide/vue'
+import type { ModelConfig, Session } from '@ipc/chat/constants'
 
 defineProps<{
   isMac: boolean
   sidebarOpen: boolean
+  session: Session | null
+  modelConfigs: ModelConfig[]
+  activeModelConfig: ModelConfig | null
+  modelsLoading: boolean
 }>()
 
 const emit = defineEmits<{
   openSidebar: []
+  rename: []
+  delete: []
+  selectModel: [id: string]
+  manageModels: []
 }>()
 </script>
 
@@ -54,20 +63,32 @@ const emit = defineEmits<{
       <DropdownMenuRoot>
         <DropdownMenuTrigger as-child>
           <button class="model-trigger" type="button">
-            <span>GPT-5</span>
+            <span>{{ activeModelConfig?.name ?? (modelsLoading ? '加载中…' : '配置模型') }}</span>
             <ChevronDown :size="15" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
           <DropdownMenuContent class="menu-content model-menu" align="start" :side-offset="6">
-            <DropdownMenuLabel class="menu-label">选择模型</DropdownMenuLabel>
-            <DropdownMenuItem class="menu-item model-item">
-              <span class="model-dot selected"></span>
-              <span><strong>GPT-5</strong><small>适合复杂任务</small></span>
+            <DropdownMenuLabel class="menu-label">选择模型配置</DropdownMenuLabel>
+            <DropdownMenuItem
+              v-for="config in modelConfigs"
+              :key="config.id"
+              class="menu-item model-item"
+              @select="emit('selectModel', config.id)"
+            >
+              <Check class="model-check" :class="{ visible: config.isActive }" :size="15" />
+              <span
+                ><strong>{{ config.name }}</strong
+                ><small>{{ config.model }}</small></span
+              >
             </DropdownMenuItem>
-            <DropdownMenuItem class="menu-item model-item">
-              <span class="model-dot"></span>
-              <span><strong>GPT-5 mini</strong><small>快速日常问答</small></span>
+            <p v-if="!modelsLoading && modelConfigs.length === 0" class="empty-models">
+              还没有模型配置
+            </p>
+            <DropdownMenuSeparator class="menu-separator" />
+            <DropdownMenuItem class="menu-item" @select="emit('manageModels')">
+              <Settings2 :size="15" />
+              管理模型
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenuPortal>
@@ -90,10 +111,18 @@ const emit = defineEmits<{
         </DropdownMenuTrigger>
         <DropdownMenuPortal>
           <DropdownMenuContent class="menu-content" align="end" :side-offset="6">
-            <DropdownMenuItem class="menu-item">重命名</DropdownMenuItem>
+            <DropdownMenuItem class="menu-item" :disabled="!session" @select="emit('rename')">
+              重命名
+            </DropdownMenuItem>
             <DropdownMenuItem class="menu-item">归档对话</DropdownMenuItem>
             <DropdownMenuSeparator class="menu-separator" />
-            <DropdownMenuItem class="menu-item danger-item">删除对话</DropdownMenuItem>
+            <DropdownMenuItem
+              class="menu-item danger-item"
+              :disabled="!session"
+              @select="emit('delete')"
+            >
+              删除对话
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenuPortal>
       </DropdownMenuRoot>
@@ -178,6 +207,21 @@ const emit = defineEmits<{
 .text-button:focus-visible {
   outline: 2px solid #98a2b3;
   outline-offset: 1px;
+}
+
+.model-check {
+  color: #101828;
+  opacity: 0;
+}
+
+.model-check.visible {
+  opacity: 1;
+}
+
+.empty-models {
+  margin: 4px 9px 7px;
+  color: #98a2b3;
+  font-size: 12px;
 }
 
 @media (max-width: 720px) {

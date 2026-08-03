@@ -137,6 +137,7 @@ watch(
 .message-body {
   min-width: 0;
   padding-top: 4px;
+  flex: 1;
 }
 
 .message-body strong {

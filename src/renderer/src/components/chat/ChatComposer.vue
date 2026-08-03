@@ -4,6 +4,8 @@ import { ArrowUp, LoaderCircle, Paperclip } from '@lucide/vue'
 
 const props = defineProps<{
   sending: boolean
+  disabled: boolean
+  placeholder?: string
 }>()
 
 const emit = defineEmits<{
@@ -22,7 +24,7 @@ function resizeTextarea(): void {
 }
 
 function submit(): void {
-  if (!model.value.trim() || props.sending) return
+  if (!model.value.trim() || props.sending || props.disabled) return
   emit('submit')
 }
 
@@ -45,8 +47,9 @@ watch(model, async () => {
         ref="textarea"
         v-model="model"
         rows="1"
-        placeholder="给 Lepus 发送消息"
+        :placeholder="disabled ? (placeholder ?? '正在加载对话…') : '给 Lepus 发送消息'"
         aria-label="聊天消息"
+        :disabled="disabled"
         @keydown="handleKeydown"
       ></textarea>
 
@@ -59,7 +62,7 @@ watch(model, async () => {
           class="send-button"
           type="submit"
           :class="{ sending }"
-          :disabled="!model.trim() || sending"
+          :disabled="!model.trim() || sending || disabled"
           :aria-label="sending ? '正在等待回复' : '发送消息'"
         >
           <LoaderCircle v-if="sending" :size="16" />

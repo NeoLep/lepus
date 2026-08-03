@@ -1,17 +1,20 @@
 import OpenAI from 'openai'
-import { Message } from '@/ipc/chat/constants'
+import { Message, ModelConfig } from '@/ipc/chat/constants'
 
 export class Agent {
   public client: OpenAI
-  constructor() {
+  private readonly model: string
+
+  constructor(config: ModelConfig) {
     this.client = new OpenAI({
-      apiKey: import.meta.env['VITE_DEEPSEEK_API_KEY'],
-      baseURL: 'https://api.deepseek.com'
+      apiKey: config.apiKey,
+      baseURL: config.baseURL
     })
+    this.model = config.model
   }
   async chat(message: Message[]) {
     const response = await this.client.chat.completions.create({
-      model: 'deepseek-v4-flash',
+      model: this.model,
       messages: message
     })
     return response.choices[0].message
