@@ -3,6 +3,7 @@ import { app } from 'electron'
 import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Message, ModelConfig, Session } from './constants'
+import { detectModelContextWindow } from '@/shared/agent/history-compression'
 
 type SessionRow = {
   id: string
@@ -24,9 +25,31 @@ type ModelConfigRow = {
   base_url: string
   model: string
   api_key: string
+  context_window_override: number | null
+  detected_context_window: number | null
+  max_output_tokens_override: number | null
+  token_estimate_ratio: number
   is_active: number
   created_at: string
   updated_at: string
+}
+
+type ConversationSummaryRow = {
+  session_id: string
+  summary: string
+  compressed_through_message_id: string
+  source_message_count: number
+  estimated_tokens: number
+  updated_at: string
+}
+
+export type ConversationSummary = {
+  sessionId: string
+  summary: string
+  compressedThroughMessageId: string
+  sourceMessageCount: number
+  estimatedTokens: number
+  updatedAt: string
 }
 
 function toSession(row: SessionRow): Session {
@@ -54,8 +77,23 @@ function toModelConfig(row: ModelConfigRow): ModelConfig {
     baseURL: row.base_url,
     model: row.model,
     apiKey: row.api_key,
+    contextWindowOverride: row.context_window_override,
+    detectedContextWindow: row.detected_context_window,
+    maxOutputTokensOverride: row.max_output_tokens_override,
+    tokenEstimateRatio: row.token_estimate_ratio,
     isActive: row.is_active === 1,
     createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
+
+function toConversationSummary(row: ConversationSummaryRow): ConversationSummary {
+  return {
+    sessionId: row.session_id,
+    summary: row.summary,
+    compressedThroughMessageId: row.compressed_through_message_id,
+    sourceMessageCount: row.source_message_count,
+    estimatedTokens: row.estimated_tokens,
     updatedAt: row.updated_at
   }
 }
@@ -159,10 +197,44 @@ export class ChatRepository {
       .run({ ...message, sessionId })
   }
 
+  getConversationSummary(sessionId: string): ConversationSummary | null {
+    const row = this.database
+      .prepare(
+        `SELECT session_id, summary, compressed_through_message_id,
+                source_message_count, estimated_tokens, updated_at
+         FROM conversation_summaries
+         WHERE session_id = ?`
+      )
+      .get(sessionId) as ConversationSummaryRow | undefined
+    return row ? toConversationSummary(row) : null
+  }
+
+  saveConversationSummary(summary: ConversationSummary): void {
+    this.database
+      .prepare(
+        `INSERT INTO conversation_summaries
+           (session_id, summary, compressed_through_message_id,
+            source_message_count, estimated_tokens, updated_at)
+         VALUES
+           (@sessionId, @summary, @compressedThroughMessageId,
+            @sourceMessageCount, @estimatedTokens, @updatedAt)
+         ON CONFLICT(session_id) DO UPDATE SET
+           summary = excluded.summary,
+           compressed_through_message_id = excluded.compressed_through_message_id,
+           source_message_count = excluded.source_message_count,
+           estimated_tokens = excluded.estimated_tokens,
+           updated_at = excluded.updated_at`
+      )
+      .run(summary)
+  }
+
   queryModelConfigs(): ModelConfig[] {
     const rows = this.database
       .prepare(
-        `SELECT id, config_name, base_url, model, api_key, is_active, created_at, updated_at
+        `SELECT id, config_name, base_url, model, api_key,
+                context_window_override, detected_context_window,
+                max_output_tokens_override, token_estimate_ratio,
+                is_active, created_at, updated_at
          FROM model_configs
          ORDER BY is_active DESC, updated_at DESC`
       )
@@ -173,7 +245,10 @@ export class ChatRepository {
   getModelConfig(id: string): ModelConfig | null {
     const row = this.database
       .prepare(
-        `SELECT id, config_name, base_url, model, api_key, is_active, created_at, updated_at
+        `SELECT id, config_name, base_url, model, api_key,
+                context_window_override, detected_context_window,
+                max_output_tokens_override, token_estimate_ratio,
+                is_active, created_at, updated_at
          FROM model_configs
          WHERE id = ?`
       )
@@ -189,16 +264,29 @@ export class ChatRepository {
       this.database
         .prepare(
           `INSERT INTO model_configs
-             (id, config_name, base_url, model, api_key, is_active, created_at, updated_at)
-           VALUES (@id, @name, @baseURL, @model, @apiKey, @isActive, @createdAt, @updatedAt)`
+             (id, config_name, base_url, model, api_key,
+              context_window_override, detected_context_window,
+              max_output_tokens_override, token_estimate_ratio,
+              is_active, created_at, updated_at)
+           VALUES (@id, @name, @baseURL, @model, @apiKey,
+                   @contextWindowOverride, @detectedContextWindow,
+                   @maxOutputTokensOverride, @tokenEstimateRatio,
+                   @isActive, @createdAt, @updatedAt)`
         )
-        .run({ ...config, isActive: count.count === 0 ? 1 : 0 })
+        .run({
+          ...config,
+          detectedContextWindow: detectModelContextWindow(config.model),
+          tokenEstimateRatio: 1,
+          isActive: count.count === 0 ? 1 : 0
+        })
     })
     create()
     return this.getModelConfig(config.id) as ModelConfig
   }
 
   updateModelConfig(config: ModelConfig): ModelConfig {
+    const current = this.getModelConfig(config.id)
+    const modelChanged = current?.model !== config.model
     const result = this.database
       .prepare(
         `UPDATE model_configs
@@ -206,10 +294,18 @@ export class ChatRepository {
              base_url = @baseURL,
              model = @model,
              api_key = @apiKey,
+             context_window_override = @contextWindowOverride,
+             detected_context_window = @detectedContextWindow,
+             max_output_tokens_override = @maxOutputTokensOverride,
+             token_estimate_ratio = @tokenEstimateRatio,
              updated_at = @updatedAt
          WHERE id = @id`
       )
-      .run(config)
+      .run({
+        ...config,
+        detectedContextWindow: detectModelContextWindow(config.model),
+        tokenEstimateRatio: modelChanged ? 1 : config.tokenEstimateRatio
+      })
     if (result.changes === 0) throw new Error(`Model config not found: ${config.id}`)
     return this.getModelConfig(config.id) as ModelConfig
   }
@@ -235,6 +331,21 @@ export class ChatRepository {
       this.database.prepare('UPDATE model_configs SET is_active = 0').run()
       this.database.prepare('UPDATE model_configs SET is_active = 1 WHERE id = ?').run(id)
     })()
+  }
+
+  updateModelTokenEstimateRatio(id: string, estimatedTokens: number, actualTokens: number): void {
+    if (estimatedTokens <= 0 || actualTokens <= 0) return
+    const config = this.getModelConfig(id)
+    if (!config) return
+    const observedRatio = Math.min(2, Math.max(0.5, actualTokens / estimatedTokens))
+    const nextRatio = config.tokenEstimateRatio * 0.8 + observedRatio * 0.2
+    this.database
+      .prepare(
+        `UPDATE model_configs
+         SET token_estimate_ratio = ?, updated_at = updated_at
+         WHERE id = ?`
+      )
+      .run(nextRatio, id)
   }
 
   close(): void {
@@ -288,6 +399,46 @@ export class ChatRepository {
             ON model_configs(is_active) WHERE is_active = 1;
           PRAGMA user_version = 2;
         `)
+      })()
+    }
+
+    if (version < 3) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE conversation_summaries (
+            session_id TEXT PRIMARY KEY,
+            summary TEXT NOT NULL,
+            compressed_through_message_id TEXT NOT NULL,
+            source_message_count INTEGER NOT NULL,
+            estimated_tokens INTEGER NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+          );
+
+          PRAGMA user_version = 3;
+        `)
+      })()
+    }
+
+    if (version < 4) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE model_configs ADD COLUMN context_window_override INTEGER;
+          ALTER TABLE model_configs ADD COLUMN detected_context_window INTEGER;
+          ALTER TABLE model_configs ADD COLUMN max_output_tokens_override INTEGER;
+          ALTER TABLE model_configs ADD COLUMN token_estimate_ratio REAL NOT NULL DEFAULT 1;
+
+          PRAGMA user_version = 4;
+        `)
+        const configs = this.database
+          .prepare('SELECT id, model FROM model_configs')
+          .all() as Array<{ id: string; model: string }>
+        const update = this.database.prepare(
+          'UPDATE model_configs SET detected_context_window = ? WHERE id = ?'
+        )
+        for (const config of configs) {
+          update.run(detectModelContextWindow(config.model), config.id)
+        }
       })()
     }
   }

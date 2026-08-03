@@ -16,6 +16,8 @@ const sidebarOpen = ref(true)
 const sidebarPanel = ref<SplitterPanelInstance | null>(null)
 const isMac = navigator.userAgent.includes('Mac')
 const sessions = ref<Session[]>([])
+const pendingSessionIds = ref(new Set<string>())
+const persistingSessionIds = ref(new Set<string>())
 const activeSessionId = ref<string | null>(null)
 const sessionsLoading = ref(true)
 const sessionError = ref('')
@@ -29,6 +31,12 @@ const activeSession = computed(
 )
 const activeModelConfig = computed(
   () => modelConfigs.value.find((config) => config.isActive) ?? null
+)
+const activeSessionPersisted = computed(
+  () => !!activeSessionId.value && !pendingSessionIds.value.has(activeSessionId.value)
+)
+const persistedSessions = computed(() =>
+  sessions.value.filter((session) => !pendingSessionIds.value.has(session.id))
 )
 
 function sortSessions(): void {
@@ -45,14 +53,54 @@ function makeSession(): Session {
   }
 }
 
-async function createSession(): Promise<void> {
+function discardPendingSessions(exceptId?: string): void {
+  for (const id of pendingSessionIds.value) {
+    if (id === exceptId || persistingSessionIds.value.has(id)) continue
+    pendingSessionIds.value.delete(id)
+    sessions.value = sessions.value.filter((session) => session.id !== id)
+    if (activeSessionId.value === id) activeSessionId.value = null
+  }
+}
+
+function startNewSession(): void {
   sessionError.value = ''
+  discardPendingSessions()
+  const session = makeSession()
+  pendingSessionIds.value.add(session.id)
+  sessions.value.unshift(session)
+  activeSessionId.value = session.id
+}
+
+function selectSession(id: string): void {
+  discardPendingSessions(id)
+  activeSessionId.value = id
+}
+
+async function persistSession(id: string): Promise<boolean> {
+  if (!pendingSessionIds.value.has(id)) return true
+
+  const session = sessions.value.find((item) => item.id === id)
+  if (!session) return false
+
+  sessionError.value = ''
+  persistingSessionIds.value.add(id)
   try {
-    const session = await window.api.chat.createSession(makeSession())
-    sessions.value.unshift(session)
-    activeSessionId.value = session.id
+    const created = await window.api.chat.createSession({ ...session })
+    const index = sessions.value.findIndex((item) => item.id === id)
+    if (index !== -1) sessions.value[index] = created
+    else sessions.value.push(created)
+    pendingSessionIds.value.delete(id)
+    sortSessions()
+    return true
   } catch (error) {
     sessionError.value = error instanceof Error ? error.message : '创建对话失败'
+    return false
+  } finally {
+    persistingSessionIds.value.delete(id)
+    if (activeSessionId.value !== id && pendingSessionIds.value.has(id)) {
+      pendingSessionIds.value.delete(id)
+      sessions.value = sessions.value.filter((item) => item.id !== id)
+    }
   }
 }
 
@@ -61,6 +109,15 @@ async function renameSession(session: Session): Promise<void> {
   if (!title || title === session.title) return
 
   sessionError.value = ''
+  if (persistingSessionIds.value.has(session.id)) return
+  if (pendingSessionIds.value.has(session.id)) {
+    const index = sessions.value.findIndex((item) => item.id === session.id)
+    if (index !== -1) {
+      sessions.value[index] = { ...session, title, updatedAt: new Date().toISOString() }
+    }
+    return
+  }
+
   try {
     const updated = await window.api.chat.updateSession({
       ...session,
@@ -79,6 +136,14 @@ async function deleteSession(session: Session): Promise<void> {
   if (!window.confirm(`确定删除“${session.title}”吗？`)) return
 
   sessionError.value = ''
+  if (pendingSessionIds.value.has(session.id)) {
+    pendingSessionIds.value.delete(session.id)
+    sessions.value = sessions.value.filter((item) => item.id !== session.id)
+    activeSessionId.value = sessions.value[0]?.id ?? null
+    if (!activeSessionId.value) startNewSession()
+    return
+  }
+
   try {
     await window.api.chat.deleteSession(session.id)
     const deletedIndex = sessions.value.findIndex((item) => item.id === session.id)
@@ -87,13 +152,14 @@ async function deleteSession(session: Session): Promise<void> {
       activeSessionId.value =
         sessions.value[Math.min(Math.max(deletedIndex, 0), sessions.value.length - 1)]?.id ?? null
     }
+    if (!activeSessionId.value) startNewSession()
   } catch (error) {
     sessionError.value = error instanceof Error ? error.message : '删除对话失败'
   }
 }
 
-async function updateSessionFromMessage(content: string): Promise<void> {
-  const session = activeSession.value
+async function updateSessionFromMessage(sessionId: string, content: string): Promise<void> {
+  const session = sessions.value.find((item) => item.id === sessionId)
   if (!session) return
 
   const title =
@@ -123,7 +189,7 @@ async function loadSessions(): Promise<void> {
     if (sessions.value.length > 0) {
       activeSessionId.value = sessions.value[0].id
     } else {
-      await createSession()
+      startNewSession()
     }
   } catch (error) {
     sessionError.value = error instanceof Error ? error.message : '加载对话失败'
@@ -220,13 +286,13 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
         <AppSidebar
           v-if="sidebarOpen"
           :is-mac="isMac"
-          :sessions="sessions"
+          :sessions="persistedSessions"
           :active-session-id="activeSessionId"
           :loading="sessionsLoading"
           :error="sessionError"
           @close="closeSidebar"
-          @create="createSession"
-          @select="activeSessionId = $event"
+          @create="startNewSession"
+          @select="selectSession"
           @rename="renameSession"
           @delete="deleteSession"
           @manage-models="modelManagerOpen = true"
@@ -256,9 +322,11 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
           />
           <ChatView
             :session-id="activeSessionId"
-            :model-config-id="activeModelConfig?.id ?? null"
+            :session-persisted="activeSessionPersisted"
+            :model-config="activeModelConfig"
             :disabled="sessionsLoading || modelsLoading || !activeSessionId || !activeModelConfig"
             :disabled-reason="!activeModelConfig ? '请先配置模型' : undefined"
+            :ensure-session="persistSession"
             @message-sent="updateSessionFromMessage"
           />
         </section>

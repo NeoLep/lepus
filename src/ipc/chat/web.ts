@@ -1,5 +1,14 @@
 import { ipcRenderer } from 'electron'
-import { CHAT_CHANNELS, ChatMessage, Message, ModelConfig, Session } from './constants'
+import {
+  CHAT_CHANNELS,
+  ChatMessage,
+  ChatResponse,
+  CompressionStatus,
+  CompressionStatusEvent,
+  CompressionStatusQuery,
+  ModelConfig,
+  Session
+} from './constants'
 
 export default {
   querySession: (): Promise<Session[]> => ipcRenderer.invoke(CHAT_CHANNELS.SESSION_QUERY),
@@ -21,7 +30,15 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_DELETE, id),
   selectModelConfig: (id: string): Promise<void> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_SELECT, id),
+  queryCompressionStatus: (request: CompressionStatusQuery): Promise<CompressionStatus> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.COMPRESSION_STATUS_QUERY, request),
+  onCompressionStatusChanged: (listener: (event: CompressionStatusEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: CompressionStatusEvent): void =>
+      listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.COMPRESSION_STATUS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.COMPRESSION_STATUS_CHANGED, handler)
+  },
 
-  sendChatMessage: (request: ChatMessage): Promise<Message> =>
+  sendChatMessage: (request: ChatMessage): Promise<ChatResponse> =>
     ipcRenderer.invoke(CHAT_CHANNELS.CHAT_SEND, request)
 }

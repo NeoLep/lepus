@@ -1,24 +1,35 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import ChatComposer from './ChatComposer.vue'
 import ChatMessageList from './ChatMessageList.vue'
 
-import type { Message } from '@ipc/chat/constants'
+import type { CompressionStatus, Message, ModelConfig } from '@ipc/chat/constants'
+import {
+  createCompressionPolicy,
+  estimateMessageTokens,
+  HISTORY_COMPRESSION
+} from '@/shared/agent/history-compression'
 
 const props = defineProps<{
   sessionId: string | null
-  modelConfigId: string | null
+  sessionPersisted: boolean
+  modelConfig: ModelConfig | null
   disabled: boolean
   disabledReason?: string
+  ensureSession: (id: string) => Promise<boolean>
 }>()
 
 const emit = defineEmits<{
-  messageSent: [content: string]
+  messageSent: [sessionId: string, content: string]
 }>()
 
 const messagesBySession = ref<Record<string, Message[]>>({})
 const loadedSessions = ref<Record<string, boolean>>({})
 const loadingSessions = ref<Record<string, boolean>>({})
+const statusModelBySession = ref<Record<string, string>>({})
+const compressionStatusBySession = ref<Record<string, CompressionStatus>>({})
+const compressingBySession = ref<Record<string, boolean>>({})
+const compressionEventVersionBySession = ref<Record<string, number>>({})
 const messages = computed(() =>
   props.sessionId ? (messagesBySession.value[props.sessionId] ?? []) : []
 )
@@ -30,6 +41,51 @@ const sending = computed(() =>
 const loading = computed(() =>
   props.sessionId ? (loadingSessions.value[props.sessionId] ?? false) : false
 )
+const compressionStatus = computed<CompressionStatus>(() =>
+  props.sessionId
+    ? (compressionStatusBySession.value[props.sessionId] ?? emptyCompressionStatus())
+    : emptyCompressionStatus()
+)
+const compressing = computed(() =>
+  props.sessionId ? (compressingBySession.value[props.sessionId] ?? false) : false
+)
+
+let removeCompressionListener: (() => void) | null = null
+
+onMounted(() => {
+  removeCompressionListener = window.api.chat.onCompressionStatusChanged((event) => {
+    compressionEventVersionBySession.value[event.sessionId] =
+      (compressionEventVersionBySession.value[event.sessionId] ?? 0) + 1
+    compressionStatusBySession.value[event.sessionId] = event.status
+    compressingBySession.value[event.sessionId] = event.compressing
+  })
+})
+
+onUnmounted(() => removeCompressionListener?.())
+
+function emptyCompressionStatus(): CompressionStatus {
+  const policy = createCompressionPolicy(
+    props.modelConfig ?? {
+      model: '',
+      contextWindowOverride: null,
+      detectedContextWindow: null,
+      maxOutputTokensOverride: null,
+      tokenEstimateRatio: 1
+    }
+  )
+  return {
+    estimatedTokens: 0,
+    triggerTokens: policy.hardThresholdTokens,
+    softThresholdTokens: policy.softThresholdTokens,
+    emergencyThresholdTokens: policy.emergencyThresholdTokens,
+    contextWindow: policy.contextWindow,
+    contextWindowSource: policy.contextWindowSource,
+    tokenEstimateRatio: policy.tokenEstimateRatio,
+    usageRatio: 0,
+    willCompress: false,
+    uncompressedMessages: 0
+  }
+}
 
 function createLocalMessage(role: Message['role'], content: string): Message {
   return {
@@ -43,18 +99,39 @@ function createLocalMessage(role: Message['role'], content: string): Message {
 async function sendMessage(): Promise<void> {
   const content = draft.value.trim()
   const sessionId = props.sessionId
-  const modelConfigId = props.modelConfigId
+  const modelConfigId = props.modelConfig?.id ?? null
   if (!content || sending.value || loading.value || props.disabled || !sessionId || !modelConfigId)
     return
+
+  sendingBySession.value[sessionId] = true
+  const sessionReady = await props.ensureSession(sessionId)
+  if (!sessionReady) {
+    sendingBySession.value[sessionId] = false
+    return
+  }
 
   if (!messagesBySession.value[sessionId]) messagesBySession.value[sessionId] = []
   const sessionMessages = messagesBySession.value[sessionId]
   const userMessage = createLocalMessage('user', content)
   sessionMessages.push(userMessage)
   draft.value = ''
-  sendingBySession.value[sessionId] = true
 
-  emit('messageSent', content)
+  const projectedTokens =
+    compressionStatus.value.estimatedTokens +
+    Math.ceil(estimateMessageTokens([userMessage]) * compressionStatus.value.tokenEstimateRatio)
+  compressingBySession.value[sessionId] =
+    compressionStatus.value.willCompress ||
+    (projectedTokens >= compressionStatus.value.triggerTokens &&
+      compressionStatus.value.uncompressedMessages + 1 > HISTORY_COMPRESSION.minimumRecentMessages)
+  compressionStatusBySession.value[sessionId] = {
+    ...compressionStatus.value,
+    estimatedTokens: projectedTokens,
+    usageRatio: projectedTokens / compressionStatus.value.triggerTokens,
+    uncompressedMessages: compressionStatus.value.uncompressedMessages + 1
+  }
+
+  emit('messageSent', sessionId, content)
+  const compressionEventVersion = compressionEventVersionBySession.value[sessionId] ?? 0
 
   try {
     const response = await window.api.chat.sendChatMessage({
@@ -63,7 +140,10 @@ async function sendMessage(): Promise<void> {
       messages: sessionMessages.map((message) => ({ ...message }))
     })
 
-    sessionMessages.push(response)
+    sessionMessages.push(response.message)
+    if ((compressionEventVersionBySession.value[sessionId] ?? 0) === compressionEventVersion) {
+      compressionStatusBySession.value[sessionId] = response.compression
+    }
   } catch (error) {
     sessionMessages.push({
       id: crypto.randomUUID(),
@@ -71,20 +151,66 @@ async function sendMessage(): Promise<void> {
       content: error instanceof Error ? `发送失败：${error.message}` : '发送失败，请稍后重试。',
       createdAt: new Date().toISOString()
     })
+    try {
+      compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
+        sessionId,
+        modelConfigId
+      })
+    } catch (statusError) {
+      console.error('Failed to refresh compression status', statusError)
+    }
   } finally {
+    const latestStatus = compressionStatusBySession.value[sessionId]
+    const backgroundCompressionExpected =
+      latestStatus &&
+      latestStatus.estimatedTokens >= latestStatus.softThresholdTokens &&
+      latestStatus.uncompressedMessages > HISTORY_COMPRESSION.minimumRecentMessages
+    if (!backgroundCompressionExpected) compressingBySession.value[sessionId] = false
     sendingBySession.value[sessionId] = false
   }
 }
 
 watch(
-  () => props.sessionId,
-  async (sessionId) => {
+  () =>
+    [
+      props.sessionId,
+      props.sessionPersisted,
+      props.modelConfig?.id,
+      props.modelConfig?.updatedAt
+    ] as const,
+  async ([sessionId, sessionPersisted, modelConfigId, modelConfigUpdatedAt]) => {
     draft.value = ''
-    if (!sessionId || loadedSessions.value[sessionId]) return
+    if (!sessionId) return
+
+    if (!sessionPersisted) {
+      messagesBySession.value[sessionId] = []
+      compressionStatusBySession.value[sessionId] = emptyCompressionStatus()
+      loadedSessions.value[sessionId] = true
+      return
+    }
+
+    if (!modelConfigId) return
+    const modelConfigKey = `${modelConfigId}:${modelConfigUpdatedAt ?? ''}`
+
+    if (loadedSessions.value[sessionId]) {
+      if (statusModelBySession.value[sessionId] !== modelConfigKey) {
+        compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
+          sessionId,
+          modelConfigId
+        })
+        statusModelBySession.value[sessionId] = modelConfigKey
+      }
+      return
+    }
 
     loadingSessions.value[sessionId] = true
     try {
       messagesBySession.value[sessionId] = await window.api.chat.queryMessages(sessionId)
+      compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
+        sessionId,
+        modelConfigId
+      })
+      statusModelBySession.value[sessionId] = modelConfigKey
       loadedSessions.value[sessionId] = true
     } catch (error) {
       console.error('Failed to load messages', error)
@@ -98,12 +224,18 @@ watch(
 
 <template>
   <main class="chat-view">
-    <ChatMessageList :messages="messages" :sending="sending || loading" />
+    <ChatMessageList
+      :messages="messages"
+      :sending="sending || loading"
+      :status-text="loading ? '正在加载对话' : compressing ? '正在压缩历史对话' : '正在思考'"
+    />
     <ChatComposer
       v-model="draft"
       :sending="sending"
       :disabled="disabled || loading"
       :placeholder="disabledReason"
+      :compression-status="compressionStatus"
+      :compressing="compressing"
       @submit="sendMessage"
     />
   </main>

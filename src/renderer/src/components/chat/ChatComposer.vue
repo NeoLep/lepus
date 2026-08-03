@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { ArrowUp, LoaderCircle, Paperclip } from '@lucide/vue'
+import { TooltipContent, TooltipPortal, TooltipRoot, TooltipTrigger } from 'reka-ui'
+import type { CompressionStatus } from '@ipc/chat/constants'
 
 const props = defineProps<{
   sending: boolean
   disabled: boolean
   placeholder?: string
+  compressionStatus: CompressionStatus
+  compressing: boolean
 }>()
 
 const emit = defineEmits<{
@@ -14,6 +18,23 @@ const emit = defineEmits<{
 
 const model = defineModel<string>({ required: true })
 const textarea = ref<HTMLTextAreaElement | null>(null)
+const ringProgress = computed(() => Math.min(Math.max(props.compressionStatus.usageRatio, 0), 1))
+const ringOffset = computed(() => 100 - ringProgress.value * 100)
+const tokenLabel = computed(() => {
+  const current = props.compressionStatus.estimatedTokens.toLocaleString()
+  const trigger = props.compressionStatus.triggerTokens.toLocaleString()
+  return `上下文约 ${current} / ${trigger} Token`
+})
+const remainingTokens = computed(() =>
+  Math.max(
+    0,
+    props.compressionStatus.triggerTokens - props.compressionStatus.estimatedTokens
+  ).toLocaleString()
+)
+const contextSourceLabel = computed(() => {
+  const labels = { manual: '手动设置', detected: '自动识别', fallback: '保守估算' } as const
+  return labels[props.compressionStatus.contextWindowSource]
+})
 
 function resizeTextarea(): void {
   const element = textarea.value
@@ -58,6 +79,54 @@ watch(model, async () => {
           <Paperclip :size="18" />
         </button>
         <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
+        <TooltipRoot>
+          <TooltipTrigger as-child>
+            <div
+              class="token-meter"
+              :class="{
+                warning: compressionStatus.estimatedTokens >= compressionStatus.softThresholdTokens,
+                full: ringProgress >= 1,
+                emergency:
+                  compressionStatus.estimatedTokens >= compressionStatus.emergencyThresholdTokens,
+                compressing
+              }"
+              role="progressbar"
+              tabindex="0"
+              aria-label="历史对话 Token 用量"
+              :aria-valuetext="compressing ? '正在压缩历史对话' : tokenLabel"
+              :aria-valuenow="Math.round(ringProgress * 100)"
+              aria-valuemin="0"
+              aria-valuemax="100"
+            >
+              <svg class="token-ring" viewBox="0 0 36 36" aria-hidden="true">
+                <circle class="token-ring-track" cx="18" cy="18" r="14" pathLength="100" />
+                <circle
+                  class="token-ring-progress"
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  pathLength="100"
+                  stroke-dasharray="100"
+                  :stroke-dashoffset="ringOffset"
+                />
+              </svg>
+              <span v-if="compressing" class="compression-label">正在压缩</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent class="tooltip-content" side="top" :side-offset="7">
+              <template v-if="compressing">正在压缩历史对话</template>
+              <template v-else>
+                <strong>{{ tokenLabel }}</strong>
+                <span>距离强制压缩约 {{ remainingTokens }} Token</span>
+                <span>
+                  模型上下文：{{ contextSourceLabel }}为
+                  {{ compressionStatus.contextWindow.toLocaleString() }} Token
+                </span>
+              </template>
+            </TooltipContent>
+          </TooltipPortal>
+        </TooltipRoot>
         <button
           class="send-button"
           type="submit"
@@ -157,6 +226,99 @@ textarea::placeholder {
   text-align: right;
 }
 
+.token-meter {
+  display: inline-flex;
+  min-width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 3px;
+  border-radius: 8px;
+  color: #667085;
+  cursor: help;
+  outline: none;
+}
+
+.token-meter:hover,
+.token-meter:focus-visible {
+  background: #f2f4f7;
+}
+
+.token-meter:focus-visible {
+  box-shadow: 0 0 0 2px #98a2b3;
+}
+
+.token-ring {
+  width: 25px;
+  height: 25px;
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+
+.token-ring-track,
+.token-ring-progress {
+  fill: none;
+  stroke-width: 3.5;
+}
+
+.token-ring-track {
+  stroke: #eaecf0;
+}
+
+.token-ring-progress {
+  stroke: #667085;
+  stroke-linecap: round;
+  transition:
+    stroke 180ms ease,
+    stroke-dashoffset 240ms ease;
+}
+
+.token-meter.warning .token-ring-progress {
+  stroke: #f79009;
+}
+
+.token-meter.full .token-ring-progress {
+  stroke: #d92d20;
+}
+
+.token-meter.emergency .token-ring-progress {
+  stroke: #b42318;
+}
+
+:global(.tooltip-content) {
+  display: flex;
+  z-index: 100;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: #101828;
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgb(16 24 40 / 20%);
+  font-size: 11px;
+}
+
+:global(.tooltip-content strong) {
+  font-weight: 600;
+}
+
+:global(.tooltip-content span) {
+  color: #d0d5dd;
+}
+
+.token-meter.compressing .token-ring-progress {
+  stroke: #7f56d9;
+  animation: token-pulse 900ms ease-in-out infinite alternate;
+}
+
+.compression-label {
+  color: #6941c6;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .send-button {
   width: 32px;
   height: 32px;
@@ -195,6 +357,16 @@ textarea::placeholder {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes token-pulse {
+  from {
+    opacity: 0.45;
+  }
+
+  to {
+    opacity: 1;
   }
 }
 </style>

@@ -6,6 +6,7 @@ import type { Message } from '@ipc/chat/constants'
 const props = defineProps<{
   messages: Message[]
   sending: boolean
+  statusText?: string
 }>()
 
 const messageEnd = ref<HTMLElement | null>(null)
@@ -43,7 +44,7 @@ watch(
         <div class="message-avatar"><Sparkles :size="16" /></div>
         <div class="message-body">
           <strong>Lepus</strong>
-          <span class="thinking"><LoaderCircle :size="15" /> 正在思考</span>
+          <span class="thinking"><LoaderCircle :size="15" /> {{ statusText ?? '正在思考' }}</span>
         </div>
       </article>
       <div ref="messageEnd" class="message-end"></div>

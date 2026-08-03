@@ -11,6 +11,10 @@ import {
 } from 'reka-ui'
 import { Check, Eye, EyeOff, Plus, Trash2, X } from '@lucide/vue'
 import type { ModelConfig } from '@ipc/chat/constants'
+import {
+  createCompressionPolicy,
+  detectModelContextWindow
+} from '@/shared/agent/history-compression'
 
 const props = defineProps<{
   configs: ModelConfig[]
@@ -29,6 +33,20 @@ const localError = ref('')
 const showApiKey = ref(false)
 
 const isExisting = computed(() => props.configs.some((config) => config.id === draft.value.id))
+const tokenPolicy = computed(() =>
+  createCompressionPolicy({
+    ...draft.value,
+    detectedContextWindow: detectModelContextWindow(draft.value.model)
+  })
+)
+const contextSourceText = computed(() => {
+  const labels = {
+    manual: '手动设置',
+    detected: '根据模型名称自动识别',
+    fallback: '未识别，使用保守默认值'
+  }
+  return labels[tokenPolicy.value.contextWindowSource]
+})
 
 function makeConfig(): ModelConfig {
   const now = new Date().toISOString()
@@ -38,6 +56,10 @@ function makeConfig(): ModelConfig {
     baseURL: '',
     model: '',
     apiKey: '',
+    contextWindowOverride: null,
+    detectedContextWindow: null,
+    maxOutputTokensOverride: null,
+    tokenEstimateRatio: 1,
     isActive: false,
     createdAt: now,
     updatedAt: now
@@ -64,6 +86,12 @@ function validate(): boolean {
   config.baseURL = config.baseURL.trim().replace(/\/+$/, '')
   config.model = config.model.trim()
   config.apiKey = config.apiKey.trim()
+  config.contextWindowOverride = config.contextWindowOverride
+    ? Math.round(Number(config.contextWindowOverride))
+    : null
+  config.maxOutputTokensOverride = config.maxOutputTokensOverride
+    ? Math.round(Number(config.maxOutputTokensOverride))
+    : null
 
   if (!config.name || !config.baseURL || !config.model || !config.apiKey) {
     localError.value = '请填写全部配置项'
@@ -74,6 +102,22 @@ function validate(): boolean {
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error()
   } catch {
     localError.value = 'Base URL 必须是有效的 HTTP(S) 地址'
+    return false
+  }
+  if (config.contextWindowOverride !== null && config.contextWindowOverride < 2_048) {
+    localError.value = '上下文窗口不能小于 2,048 Token'
+    return false
+  }
+  if (config.maxOutputTokensOverride !== null && config.maxOutputTokensOverride < 256) {
+    localError.value = '最大输出不能小于 256 Token'
+    return false
+  }
+  const effectiveContext = config.contextWindowOverride ?? tokenPolicy.value.contextWindow
+  if (
+    config.maxOutputTokensOverride !== null &&
+    config.maxOutputTokensOverride >= effectiveContext
+  ) {
+    localError.value = '最大输出必须小于上下文窗口'
     return false
   }
   return true
@@ -206,6 +250,37 @@ watch(
                 </button>
               </div>
             </label>
+
+            <details class="advanced-settings">
+              <summary>高级 Token 设置</summary>
+              <p class="context-detection">
+                {{ contextSourceText }}：{{ tokenPolicy.contextWindow.toLocaleString() }} Token
+              </p>
+              <div class="advanced-fields">
+                <label>
+                  <span>上下文窗口（可选）</span>
+                  <input
+                    v-model.number="draft.contextWindowOverride"
+                    type="number"
+                    min="2048"
+                    step="1024"
+                    placeholder="自动识别"
+                  />
+                  <small>留空时根据模型名称识别，无法识别则按 16K 估算。</small>
+                </label>
+                <label>
+                  <span>最大输出 Token（可选）</span>
+                  <input
+                    v-model.number="draft.maxOutputTokensOverride"
+                    type="number"
+                    min="256"
+                    step="256"
+                    placeholder="自动预留"
+                  />
+                  <small>用于为模型回复预留空间，不会作为每次请求的强制输出长度。</small>
+                </label>
+              </div>
+            </details>
 
             <p v-if="localError || error" class="form-error">{{ localError || error }}</p>
 
@@ -425,6 +500,40 @@ watch(
 .config-form input:focus {
   border-color: #7f8a9b;
   box-shadow: 0 0 0 3px rgb(152 162 179 / 16%);
+}
+
+.advanced-settings {
+  padding: 11px 12px;
+  border: 1px solid #eaecf0;
+  border-radius: 9px;
+  background: #f9fafb;
+}
+
+.advanced-settings summary {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.context-detection {
+  margin: 10px 0 12px;
+  color: #667085;
+  font-size: 11px;
+}
+
+.advanced-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.advanced-fields label small {
+  display: block;
+  margin-top: 5px;
+  color: #98a2b3;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .secret-input {
