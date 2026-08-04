@@ -18,6 +18,7 @@ errors:
   renameSession: Failed to rename chat
   deleteSession: Failed to delete chat
   updateSession: Failed to update chat
+  exportSession: Failed to export chat
   loadSessions: Failed to load chats
   loadModels: Failed to load model configurations
   saveModel: Failed to save model configuration

@@ -48,7 +48,12 @@ const persistedSessions = computed(() =>
 )
 
 function sortSessions(): void {
-  sessions.value.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  sessions.value.sort(
+    (a, b) =>
+      Number(a.isArchived) - Number(b.isArchived) ||
+      Number(b.isPinned) - Number(a.isPinned) ||
+      b.updatedAt.localeCompare(a.updatedAt)
+  )
 }
 
 function makeSession(): Session {
@@ -57,7 +62,10 @@ function makeSession(): Session {
     id: crypto.randomUUID(),
     title: t('newConversation'),
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    isPinned: false,
+    isArchived: false,
+    taskMode: false
   }
 }
 
@@ -160,8 +168,9 @@ async function deleteSession(session: Session): Promise<void> {
     const deletedIndex = sessions.value.findIndex((item) => item.id === session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
     if (activeSessionId.value === session.id) {
+      const activeSessions = sessions.value.filter((item) => !item.isArchived)
       activeSessionId.value =
-        sessions.value[Math.min(Math.max(deletedIndex, 0), sessions.value.length - 1)]?.id ?? null
+        activeSessions[Math.min(Math.max(deletedIndex, 0), activeSessions.length - 1)]?.id ?? null
     }
     if (!activeSessionId.value) startNewSession()
   } catch (error) {
@@ -198,11 +207,9 @@ async function loadSessions(): Promise<void> {
   try {
     sessions.value = await window.api.chat.querySession()
     sortSessions()
-    if (sessions.value.length > 0) {
-      activeSessionId.value = sessions.value[0].id
-    } else {
-      startNewSession()
-    }
+    const firstActiveSession = sessions.value.find((session) => !session.isArchived)
+    if (firstActiveSession) activeSessionId.value = firstActiveSession.id
+    else startNewSession()
   } catch (error) {
     sessionError.value = error instanceof Error ? error.message : t('errors.loadSessions')
   } finally {
@@ -269,6 +276,73 @@ async function selectModelConfig(id: string): Promise<boolean> {
   }
 }
 
+async function updateSessionManagement(
+  session: Session,
+  changes: Pick<Session, 'isPinned' | 'isArchived'>
+): Promise<void> {
+  if (pendingSessionIds.value.has(session.id)) return
+  sessionError.value = ''
+  try {
+    const updated = await window.api.chat.updateSession({
+      ...session,
+      ...changes,
+      updatedAt: session.updatedAt
+    })
+    const index = sessions.value.findIndex((item) => item.id === updated.id)
+    if (index !== -1) sessions.value[index] = updated
+    sortSessions()
+    if (updated.isArchived && activeSessionId.value === updated.id) {
+      activeSessionId.value = sessions.value.find((item) => !item.isArchived)?.id ?? null
+      if (!activeSessionId.value) startNewSession()
+    }
+  } catch (error) {
+    sessionError.value = error instanceof Error ? error.message : t('errors.updateSession')
+  }
+}
+
+async function togglePin(session: Session): Promise<void> {
+  await updateSessionManagement(session, {
+    isPinned: !session.isPinned,
+    isArchived: session.isArchived
+  })
+}
+
+async function toggleArchive(session: Session): Promise<void> {
+  await updateSessionManagement(session, {
+    isPinned: session.isArchived ? session.isPinned : false,
+    isArchived: !session.isArchived
+  })
+}
+
+async function exportSession(session: Session, format: 'markdown' | 'json'): Promise<void> {
+  sessionError.value = ''
+  try {
+    await window.api.chat.exportSession({ sessionId: session.id, format })
+  } catch (error) {
+    sessionError.value = error instanceof Error ? error.message : t('errors.exportSession')
+  }
+}
+
+async function toggleTaskMode(session: Session): Promise<void> {
+  sessionError.value = ''
+  if (pendingSessionIds.value.has(session.id)) {
+    const index = sessions.value.findIndex((item) => item.id === session.id)
+    if (index !== -1) sessions.value[index] = { ...session, taskMode: !session.taskMode }
+    return
+  }
+  try {
+    const updated = await window.api.chat.updateSession({
+      ...session,
+      taskMode: !session.taskMode,
+      updatedAt: session.updatedAt
+    })
+    const index = sessions.value.findIndex((item) => item.id === updated.id)
+    if (index !== -1) sessions.value[index] = updated
+  } catch (error) {
+    sessionError.value = error instanceof Error ? error.message : t('errors.updateSession')
+  }
+}
+
 function closeSidebar(): void {
   sidebarPanel.value?.collapse()
 }
@@ -307,6 +381,8 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
           @select="selectSession"
           @rename="renameSession"
           @delete="deleteSession"
+          @toggle-pin="togglePin"
+          @toggle-archive="toggleArchive"
           @manage-models="modelManagerOpen = true"
           @manage-prompts="promptSettingsOpen = true"
           @manage-search="searchSettingsOpen = true"
@@ -324,13 +400,16 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
           <AppTopbar
             :is-mac="isMac"
             :sidebar-open="sidebarOpen"
-            :session="activeSession"
+            :session="activeSessionPersisted ? activeSession : null"
             :model-configs="modelConfigs"
             :active-model-config="activeModelConfig"
             :models-loading="modelsLoading"
             @open-sidebar="openSidebar"
             @rename="activeSession && renameSession(activeSession)"
             @delete="activeSession && deleteSession(activeSession)"
+            @toggle-archive="activeSession && toggleArchive(activeSession)"
+            @export-markdown="activeSession && exportSession(activeSession, 'markdown')"
+            @export-json="activeSession && exportSession(activeSession, 'json')"
             @select-model="selectModelConfig"
             @manage-models="modelManagerOpen = true"
           />
@@ -339,10 +418,12 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
             :session-persisted="activeSessionPersisted"
             :model-config="activeModelConfig"
             :prompt-settings-version="promptSettingsVersion"
+            :task-mode="activeSession?.taskMode ?? false"
             :disabled="sessionsLoading || modelsLoading || !activeSessionId || !activeModelConfig"
             :disabled-reason="!activeModelConfig ? t('configureModelFirst') : undefined"
             :ensure-session="persistSession"
             @message-sent="updateSessionFromMessage"
+            @task-mode-change="activeSession && toggleTaskMode(activeSession)"
           />
         </section>
       </SplitterPanel>

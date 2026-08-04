@@ -231,6 +231,55 @@ const baseTools = [
     () => ({ uuid: randomUUID() })
   ),
   createTool(
+    'update_plan',
+    '创建或更新当前任务的执行计划。开始多步骤任务、步骤状态变化或任务完成时使用；每次提交完整计划。',
+    {
+      type: 'object',
+      properties: {
+        explanation: {
+          type: 'string',
+          maxLength: 500,
+          description: '可选的简短计划说明或状态变化原因'
+        },
+        items: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 20,
+          items: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 80,
+                description: '稳定的步骤 ID，后续更新时保持不变'
+              },
+              title: { type: 'string', minLength: 1, maxLength: 200 },
+              status: {
+                type: 'string',
+                enum: ['pending', 'in_progress', 'completed', 'skipped']
+              }
+            },
+            required: ['id', 'title', 'status'],
+            additionalProperties: false
+          }
+        }
+      },
+      required: ['items'],
+      additionalProperties: false
+    },
+    ({ explanation, items }) => {
+      const planItems = items as Array<{ id: string; title: string; status: string }>
+      if (planItems.filter((item) => item.status === 'in_progress').length > 1) {
+        throw new Error('计划中最多只能有一个进行中的步骤')
+      }
+      if (new Set(planItems.map((item) => item.id)).size !== planItems.length) {
+        throw new Error('计划步骤 ID 不能重复')
+      }
+      return { explanation: typeof explanation === 'string' ? explanation.trim() : '', items }
+    }
+  ),
+  createTool(
     'search_files',
     '在工作文件夹或指定目录中按 Glob 查找文件。默认忽略依赖、版本控制和构建目录，不跟随符号链接。',
     {
@@ -735,20 +784,26 @@ const FILE_TOOL_NAMES = new Set([
 
 export function createFunctionToolRuntime(
   searchConfigs: SearchProviderConfig[],
-  permissionSettings: PermissionSettings = DEFAULT_PERMISSION_SETTINGS
+  permissionSettings: PermissionSettings = DEFAULT_PERMISSION_SETTINGS,
+  taskMode = false
 ) {
   const searchTool = createSearchTool(searchConfigs)
   const safeTools = baseTools.filter((tool) => {
     const name = tool.schema.type === 'function' ? tool.schema.function.name : ''
-    return !FILE_TOOL_NAMES.has(name)
+    return !FILE_TOOL_NAMES.has(name) && name !== 'update_plan'
   })
+  const taskTools = taskMode
+    ? baseTools.filter(
+        (tool) => tool.schema.type === 'function' && tool.schema.function.name === 'update_plan'
+      )
+    : []
   const fileTools = permissionSettings.workspacePath
     ? baseTools.filter((tool) => {
         const name = tool.schema.type === 'function' ? tool.schema.function.name : ''
         return FILE_TOOL_NAMES.has(name)
       })
     : []
-  const tools = [...safeTools, ...fileTools, ...(searchTool ? [searchTool] : [])]
+  const tools = [...safeTools, ...taskTools, ...fileTools, ...(searchTool ? [searchTool] : [])]
   const toolMap = new Map(
     tools.map((tool) => {
       if (tool.schema.type !== 'function') throw new Error('仅支持 function 类型工具')

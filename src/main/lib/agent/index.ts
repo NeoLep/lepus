@@ -9,6 +9,7 @@ import {
   ToolApprovalRequest,
   ToolCallRecord
 } from '@/ipc/chat/constants'
+import type { TaskPlanUpdate } from '@/ipc/chat/constants'
 import type { AgentInputMessage } from './types'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { createFunctionToolRuntime } from './tools'
@@ -24,14 +25,15 @@ export class Agent {
   constructor(
     config: ModelConfig,
     searchConfigs: SearchProviderConfig[] = [],
-    permissionSettings?: PermissionSettings
+    permissionSettings?: PermissionSettings,
+    taskMode = false
   ) {
     this.client = new OpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseURL
     })
     this.model = config.model
-    this.toolRuntime = createFunctionToolRuntime(searchConfigs, permissionSettings)
+    this.toolRuntime = createFunctionToolRuntime(searchConfigs, permissionSettings, taskMode)
   }
   async chat(
     message: AgentInputMessage[],
@@ -40,6 +42,7 @@ export class Agent {
       signal?: AbortSignal
       onToolActivity?: (call: ToolCallRecord) => void
       onToolCancellable?: (toolCallId: string, cancel: (() => void) | null) => void
+      onPlanUpdate?: (plan: TaskPlanUpdate) => void
       onToolApproval?: (
         request: Omit<ToolApprovalRequest, 'sessionId'>
       ) => Promise<'allow_once' | 'allow_session' | 'reject'>
@@ -215,6 +218,14 @@ export class Agent {
             succeeded = JSON.parse(result)?.ok === true
           } catch {
             succeeded = false
+          }
+          if (succeeded && toolCall.function.name === 'update_plan') {
+            try {
+              const payload = JSON.parse(result) as { data?: TaskPlanUpdate }
+              if (payload.data) options?.onPlanUpdate?.(payload.data)
+            } catch {
+              // The tool result is still reported normally if plan rendering fails.
+            }
           }
           const completedCall: ToolCallRecord = {
             ...runningCall,

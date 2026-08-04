@@ -18,6 +18,7 @@ errors:
   renameSession: 重命名对话失败
   deleteSession: 删除对话失败
   updateSession: 更新对话失败
+  exportSession: 导出对话失败
   loadSessions: 加载对话失败
   loadModels: 加载模型配置失败
   saveModel: 保存模型配置失败

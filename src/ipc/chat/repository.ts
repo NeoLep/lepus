@@ -9,7 +9,10 @@ import type {
   PermissionSettings,
   SearchProviderConfig,
   SearchProviderId,
-  Session
+  Session,
+  SessionSearchResult,
+  TaskPlan,
+  TaskPlanItem
 } from './constants'
 import { detectModelContextWindow } from '@/shared/agent/history-compression'
 import {
@@ -22,6 +25,16 @@ type SessionRow = {
   id: string
   title: string
   created_at: string
+  updated_at: string
+  is_pinned: number
+  is_archived: number
+  task_mode: number
+}
+
+type TaskPlanRow = {
+  session_id: string
+  explanation: string
+  items_json: string
   updated_at: string
 }
 
@@ -117,6 +130,18 @@ function toSession(row: SessionRow): Session {
     id: row.id,
     title: row.title,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    isPinned: row.is_pinned === 1,
+    isArchived: row.is_archived === 1,
+    taskMode: row.task_mode === 1
+  }
+}
+
+function toTaskPlan(row: TaskPlanRow): TaskPlan {
+  return {
+    sessionId: row.session_id,
+    explanation: row.explanation,
+    items: JSON.parse(row.items_json || '[]') as TaskPlanItem[],
     updatedAt: row.updated_at
   }
 }
@@ -173,6 +198,24 @@ function isSession(value: unknown): value is Session {
   )
 }
 
+function summarizeSearchJson(value: string, keys: string[]): string {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!Array.isArray(parsed)) return value
+    return parsed
+      .flatMap((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+        const record = item as Record<string, unknown>
+        return keys
+          .map((key) => record[key])
+          .filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()))
+      })
+      .join(' · ')
+  } catch {
+    return value
+  }
+}
+
 export class ChatRepository {
   private readonly database: Database.Database
 
@@ -187,9 +230,9 @@ export class ChatRepository {
   querySessions(): Session[] {
     const rows = this.database
       .prepare(
-        `SELECT id, title, created_at, updated_at
+        `SELECT id, title, created_at, updated_at, is_pinned, is_archived, task_mode
          FROM sessions
-         ORDER BY updated_at DESC`
+         ORDER BY is_archived ASC, is_pinned DESC, updated_at DESC`
       )
       .all() as SessionRow[]
     return rows.map(toSession)
@@ -198,10 +241,17 @@ export class ChatRepository {
   createSession(session: Session): Session {
     this.database
       .prepare(
-        `INSERT INTO sessions (id, title, created_at, updated_at)
-         VALUES (@id, @title, @createdAt, @updatedAt)`
+        `INSERT INTO sessions
+           (id, title, created_at, updated_at, is_pinned, is_archived, task_mode)
+         VALUES
+           (@id, @title, @createdAt, @updatedAt, @isPinned, @isArchived, @taskMode)`
       )
-      .run(session)
+      .run({
+        ...session,
+        isPinned: session.isPinned ? 1 : 0,
+        isArchived: session.isArchived ? 1 : 0,
+        taskMode: session.taskMode ? 1 : 0
+      })
     return { ...session }
   }
 
@@ -209,20 +259,165 @@ export class ChatRepository {
     const result = this.database
       .prepare(
         `UPDATE sessions
-         SET title = @title, updated_at = @updatedAt
+         SET title = @title,
+             updated_at = @updatedAt,
+             is_pinned = @isPinned,
+             is_archived = @isArchived,
+             task_mode = @taskMode
          WHERE id = @id`
       )
-      .run(session)
+      .run({
+        ...session,
+        isPinned: session.isPinned ? 1 : 0,
+        isArchived: session.isArchived ? 1 : 0,
+        taskMode: session.taskMode ? 1 : 0
+      })
     if (result.changes === 0) throw new Error(`Session not found: ${session.id}`)
 
     const updated = this.database
       .prepare(
-        `SELECT id, title, created_at, updated_at
+        `SELECT id, title, created_at, updated_at, is_pinned, is_archived, task_mode
          FROM sessions
          WHERE id = ?`
       )
       .get(session.id) as SessionRow
     return toSession(updated)
+  }
+
+  getSession(id: string): Session | null {
+    const row = this.database
+      .prepare(
+        `SELECT id, title, created_at, updated_at, is_pinned, is_archived, task_mode
+         FROM sessions
+         WHERE id = ?`
+      )
+      .get(id) as SessionRow | undefined
+    return row ? toSession(row) : null
+  }
+
+  getTaskPlan(sessionId: string): TaskPlan | null {
+    const row = this.database
+      .prepare(
+        `SELECT session_id, explanation, items_json, updated_at
+         FROM task_plans
+         WHERE session_id = ?`
+      )
+      .get(sessionId) as TaskPlanRow | undefined
+    return row ? toTaskPlan(row) : null
+  }
+
+  saveTaskPlan(sessionId: string, update: Pick<TaskPlan, 'explanation' | 'items'>): TaskPlan {
+    const updatedAt = new Date().toISOString()
+    this.database
+      .prepare(
+        `INSERT INTO task_plans (session_id, explanation, items_json, updated_at)
+         VALUES (@sessionId, @explanation, @itemsJson, @updatedAt)
+         ON CONFLICT(session_id) DO UPDATE SET
+           explanation = excluded.explanation,
+           items_json = excluded.items_json,
+           updated_at = excluded.updated_at`
+      )
+      .run({
+        sessionId,
+        explanation: update.explanation.trim(),
+        itemsJson: JSON.stringify(update.items),
+        updatedAt
+      })
+    return this.getTaskPlan(sessionId)!
+  }
+
+  searchSessions(query: string): SessionSearchResult[] {
+    const normalizedQuery = query.trim().slice(0, 200)
+    if (!normalizedQuery) return []
+    const rows = this.database
+      .prepare(
+        `SELECT DISTINCT s.id, s.title, s.created_at, s.updated_at,
+                         s.is_pinned, s.is_archived, s.task_mode
+         FROM sessions s
+         WHERE instr(lower(s.title), lower(?)) > 0
+            OR EXISTS (
+              SELECT 1 FROM messages m
+              WHERE m.session_id = s.id
+                AND (
+                  instr(lower(m.content), lower(?)) > 0
+                  OR instr(lower(m.attachments_json), lower(?)) > 0
+                  OR instr(lower(m.sources_json), lower(?)) > 0
+                  OR instr(lower(m.tool_calls_json), lower(?)) > 0
+                )
+            )
+         ORDER BY s.is_pinned DESC, s.updated_at DESC
+         LIMIT 50`
+      )
+      .all(
+        normalizedQuery,
+        normalizedQuery,
+        normalizedQuery,
+        normalizedQuery,
+        normalizedQuery
+      ) as SessionRow[]
+
+    const findMessage = this.database.prepare(
+      `SELECT content, attachments_json, sources_json, tool_calls_json
+       FROM messages
+       WHERE session_id = ?
+         AND (
+           instr(lower(content), lower(?)) > 0
+           OR instr(lower(attachments_json), lower(?)) > 0
+           OR instr(lower(sources_json), lower(?)) > 0
+           OR instr(lower(tool_calls_json), lower(?)) > 0
+         )
+       ORDER BY created_at ASC, rowid ASC
+       LIMIT 1`
+    )
+    const lowerQuery = normalizedQuery.toLocaleLowerCase()
+    return rows.map((row) => {
+      const session = toSession(row)
+      if (session.title.toLocaleLowerCase().includes(lowerQuery)) {
+        return { session, snippet: session.title, matchedIn: 'title' as const }
+      }
+      const message = findMessage.get(
+        row.id,
+        normalizedQuery,
+        normalizedQuery,
+        normalizedQuery,
+        normalizedQuery
+      ) as
+        | {
+            content: string
+            attachments_json: string
+            sources_json: string
+            tool_calls_json: string
+          }
+        | undefined
+      if (!message) return { session, snippet: '', matchedIn: 'message' as const }
+      const candidates = [
+        ['message', message.content],
+        ['attachment', message.attachments_json],
+        ['source', message.sources_json],
+        ['tool', message.tool_calls_json]
+      ] as const
+      const match = candidates.find(([, value]) => value.toLocaleLowerCase().includes(lowerQuery))
+      const rawValue = match?.[1] ?? message.content
+      const value =
+        match?.[0] === 'attachment'
+          ? summarizeSearchJson(rawValue, ['name', 'mimeType'])
+          : match?.[0] === 'source'
+            ? summarizeSearchJson(rawValue, ['title', 'url', 'snippet'])
+            : match?.[0] === 'tool'
+              ? summarizeSearchJson(rawValue, ['name', 'arguments', 'result'])
+              : rawValue
+      const index = value.toLocaleLowerCase().indexOf(lowerQuery)
+      const start = Math.max(0, index - 45)
+      const snippet = value
+        .slice(start, start + 120)
+        .replace(/\s+/g, ' ')
+        .trim()
+      return {
+        session,
+        snippet: `${start > 0 ? '…' : ''}${snippet}${start + 120 < value.length ? '…' : ''}`,
+        matchedIn: match?.[0] ?? ('message' as const)
+      }
+    })
   }
 
   deleteSession(id: string): void {
@@ -301,6 +496,7 @@ export class ChatRepository {
       this.database
         .prepare('DELETE FROM conversation_summaries WHERE session_id = ?')
         .run(sessionId)
+      this.database.prepare('DELETE FROM task_plans WHERE session_id = ?').run(sessionId)
     })()
   }
 
@@ -326,6 +522,7 @@ export class ChatRepository {
       this.database
         .prepare('DELETE FROM conversation_summaries WHERE session_id = ?')
         .run(sessionId)
+      this.database.prepare('DELETE FROM task_plans WHERE session_id = ?').run(sessionId)
     })()
   }
 
@@ -885,6 +1082,37 @@ export class ChatRepository {
         `)
       })()
     }
+
+    if (version < 12) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE sessions ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0
+            CHECK (is_pinned IN (0, 1));
+          ALTER TABLE sessions ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0
+            CHECK (is_archived IN (0, 1));
+          CREATE INDEX idx_sessions_management
+            ON sessions(is_archived ASC, is_pinned DESC, updated_at DESC);
+          PRAGMA user_version = 12;
+        `)
+      })()
+    }
+
+    if (version < 13) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE sessions ADD COLUMN task_mode INTEGER NOT NULL DEFAULT 0
+            CHECK (task_mode IN (0, 1));
+          CREATE TABLE task_plans (
+            session_id TEXT PRIMARY KEY,
+            explanation TEXT NOT NULL DEFAULT '',
+            items_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+          );
+          PRAGMA user_version = 13;
+        `)
+      })()
+    }
   }
 
   private importLegacySessions(jsonPath: string): void {
@@ -899,11 +1127,20 @@ export class ChatRepository {
     if (!Array.isArray(parsed)) return
     const sessions = parsed.filter(isSession)
     const insert = this.database.prepare(
-      `INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at)
-       VALUES (@id, @title, @createdAt, @updatedAt)`
+      `INSERT OR IGNORE INTO sessions
+         (id, title, created_at, updated_at, is_pinned, is_archived, task_mode)
+       VALUES
+         (@id, @title, @createdAt, @updatedAt, @isPinned, @isArchived, @taskMode)`
     )
     this.database.transaction((items: Session[]) => {
-      for (const session of items) insert.run(session)
+      for (const session of items) {
+        insert.run({
+          ...session,
+          isPinned: session.isPinned ? 1 : 0,
+          isArchived: session.isArchived ? 1 : 0,
+          taskMode: session.taskMode ? 1 : 0
+        })
+      }
     })(sessions)
 
     renameSync(jsonPath, `${jsonPath}.migrated-${Date.now()}.bak`)

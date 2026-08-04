@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   DropdownMenuContent,
   DropdownMenuItem,
@@ -14,9 +14,14 @@ import {
 } from 'reka-ui'
 import {
   Ellipsis,
+  Archive,
+  ArchiveRestore,
+  LoaderCircle,
   MessageSquare,
   PanelLeft,
   Pencil,
+  Pin,
+  PinOff,
   Search,
   Globe2,
   SlidersHorizontal,
@@ -24,7 +29,7 @@ import {
   SquarePen,
   Trash2
 } from '@lucide/vue'
-import type { Session } from '@ipc/chat/constants'
+import type { Session, SessionSearchResult } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -41,6 +46,8 @@ const emit = defineEmits<{
   select: [id: string]
   rename: [session: Session]
   delete: [session: Session]
+  togglePin: [session: Session]
+  toggleArchive: [session: Session]
   manageModels: []
   managePrompts: []
   manageSearch: []
@@ -49,13 +56,57 @@ const emit = defineEmits<{
 const searchOpen = ref(false)
 const searchQuery = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
+const showArchived = ref(false)
+const searchResults = ref<SessionSearchResult[]>([])
+const searchLoading = ref(false)
+const searchError = ref('')
 const { t } = useI18n({ useScope: 'local' })
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+let searchVersion = 0
 
-const filteredSessions = computed(() => {
-  const query = searchQuery.value.trim().toLocaleLowerCase()
-  if (!query) return props.sessions
-  return props.sessions.filter((session) => session.title.toLocaleLowerCase().includes(query))
+const visibleEntries = computed(() => {
+  if (searchQuery.value.trim()) {
+    return searchResults.value.map((result) => ({
+      ...result,
+      session: props.sessions.find((session) => session.id === result.session.id) ?? result.session
+    }))
+  }
+  return props.sessions
+    .filter((session) => session.isArchived === showArchived.value)
+    .map((session) => ({ session, snippet: '', matchedIn: 'title' as const }))
 })
+
+watch(searchQuery, (value) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  const query = value.trim()
+  const version = ++searchVersion
+  searchError.value = ''
+  if (!query) {
+    searchResults.value = []
+    searchLoading.value = false
+    return
+  }
+  searchLoading.value = true
+  searchTimer = setTimeout(async () => {
+    try {
+      const results = await window.api.chat.searchSessions(query)
+      if (version === searchVersion) searchResults.value = results
+    } catch (error) {
+      if (version === searchVersion) {
+        searchError.value = error instanceof Error ? error.message : t('searchFailed')
+      }
+    } finally {
+      if (version === searchVersion) searchLoading.value = false
+    }
+  }, 220)
+})
+
+watch(
+  () => props.sessions.find((session) => session.id === props.activeSessionId)?.isArchived,
+  (isArchived) => {
+    if (isArchived === false) showArchived.value = false
+  }
+)
 
 async function openSearch(): Promise<void> {
   searchOpen.value = true
@@ -66,6 +117,13 @@ async function openSearch(): Promise<void> {
 function closeSearch(): void {
   searchOpen.value = false
   searchQuery.value = ''
+  searchResults.value = []
+}
+
+function createChat(): void {
+  showArchived.value = false
+  closeSearch()
+  emit('create')
 }
 
 function handleShortcut(event: KeyboardEvent): void {
@@ -73,7 +131,7 @@ function handleShortcut(event: KeyboardEvent): void {
   const key = event.key.toLowerCase()
   if (key === 'n') {
     event.preventDefault()
-    emit('create')
+    createChat()
   } else if (key === 'k') {
     event.preventDefault()
     void openSearch()
@@ -81,7 +139,10 @@ function handleShortcut(event: KeyboardEvent): void {
 }
 
 onMounted(() => window.addEventListener('keydown', handleShortcut))
-onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleShortcut)
+  if (searchTimer) clearTimeout(searchTimer)
+})
 </script>
 
 <template>
@@ -109,7 +170,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
     </div>
 
     <nav class="sidebar-body" :aria-label="t('chatNavigation')">
-      <button class="sidebar-action" type="button" @click="emit('create')">
+      <button class="sidebar-action" type="button" @click="createChat">
         <SquarePen :size="17" />
         <span>{{ t('newChat') }}</span>
         <kbd>{{ isMac ? '⌘ N' : 'Ctrl N' }}</kbd>
@@ -133,33 +194,61 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
       </div>
 
       <div class="conversation-section">
-        <p class="section-label">{{ t('recent') }}</p>
-        <p v-if="loading" class="conversation-status">{{ t('common.loading') }}</p>
-        <p v-else-if="error" class="conversation-status error" :title="error">
+        <div v-if="!searchQuery.trim()" class="conversation-tabs">
+          <button type="button" :class="{ active: !showArchived }" @click="showArchived = false">
+            {{ t('recent') }}
+          </button>
+          <button type="button" :class="{ active: showArchived }" @click="showArchived = true">
+            {{ t('archived') }}
+          </button>
+        </div>
+        <p v-else class="section-label">{{ t('searchResults') }}</p>
+        <p v-if="loading || searchLoading" class="conversation-status loading-status">
+          <LoaderCircle :size="13" /> {{ t('common.loading') }}
+        </p>
+        <p
+          v-else-if="error || searchError"
+          class="conversation-status error"
+          :title="error || searchError"
+        >
           {{ t('operationFailed') }}
         </p>
-        <p v-else-if="filteredSessions.length === 0" class="conversation-status">
-          {{ searchQuery ? t('noMatchingChats') : t('noChats') }}
+        <p v-else-if="visibleEntries.length === 0" class="conversation-status">
+          {{
+            searchQuery ? t('noMatchingChats') : showArchived ? t('noArchivedChats') : t('noChats')
+          }}
         </p>
         <div
-          v-for="session in filteredSessions"
-          :key="session.id"
+          v-for="entry in visibleEntries"
+          :key="entry.session.id"
           class="conversation-item"
-          :class="{ active: session.id === activeSessionId }"
+          :class="{
+            active: entry.session.id === activeSessionId,
+            'has-snippet': !!entry.snippet && entry.matchedIn !== 'title'
+          }"
           role="button"
           tabindex="0"
-          @click="emit('select', session.id)"
-          @keydown.enter="emit('select', session.id)"
-          @keydown.space.prevent="emit('select', session.id)"
+          @click="emit('select', entry.session.id)"
+          @keydown.enter="emit('select', entry.session.id)"
+          @keydown.space.prevent="emit('select', entry.session.id)"
         >
           <MessageSquare :size="15" />
-          <span>{{ session.title }}</span>
+          <div class="conversation-copy">
+            <span>{{ entry.session.title }}</span>
+            <small v-if="entry.snippet && entry.matchedIn !== 'title'">{{ entry.snippet }}</small>
+          </div>
+          <Pin v-if="entry.session.isPinned" class="pin-indicator" :size="12" />
+          <Archive
+            v-if="searchQuery && entry.session.isArchived"
+            class="pin-indicator"
+            :size="12"
+          />
           <DropdownMenuRoot>
             <DropdownMenuTrigger as-child>
               <button
                 class="conversation-more"
                 type="button"
-                :aria-label="t('moreActions', { title: session.title })"
+                :aria-label="t('moreActions', { title: entry.session.title })"
                 @click.stop
               >
                 <Ellipsis :size="16" />
@@ -167,12 +256,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleShortcut))
             </DropdownMenuTrigger>
             <DropdownMenuPortal>
               <DropdownMenuContent class="menu-content" align="start" :side-offset="4">
-                <DropdownMenuItem class="menu-item" @select="emit('rename', session)">
+                <DropdownMenuItem class="menu-item" @select="emit('togglePin', entry.session)">
+                  <PinOff v-if="entry.session.isPinned" :size="15" />
+                  <Pin v-else :size="15" />
+                  {{ entry.session.isPinned ? t('unpin') : t('pin') }}
+                </DropdownMenuItem>
+                <DropdownMenuItem class="menu-item" @select="emit('rename', entry.session)">
                   <Pencil :size="15" />
                   {{ t('common.rename') }}
                 </DropdownMenuItem>
+                <DropdownMenuItem class="menu-item" @select="emit('toggleArchive', entry.session)">
+                  <ArchiveRestore v-if="entry.session.isArchived" :size="15" />
+                  <Archive v-else :size="15" />
+                  {{ entry.session.isArchived ? t('restore') : t('archive') }}
+                </DropdownMenuItem>
                 <DropdownMenuSeparator class="menu-separator" />
-                <DropdownMenuItem class="menu-item danger-item" @select="emit('delete', session)">
+                <DropdownMenuItem
+                  class="menu-item danger-item"
+                  @select="emit('delete', entry.session)"
+                >
                   <Trash2 :size="15" />
                   {{ t('common.delete') }}
                 </DropdownMenuItem>
@@ -300,6 +402,33 @@ kbd {
   letter-spacing: 0.04em;
 }
 
+.conversation-tabs {
+  display: flex;
+  gap: 3px;
+  margin: 0 5px 7px;
+  padding: 3px;
+  border-radius: 9px;
+  background: #eceef1;
+}
+
+.conversation-tabs button {
+  height: 27px;
+  flex: 1;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #667085;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.conversation-tabs button.active {
+  background: #ffffff;
+  color: #344054;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 8%);
+  font-weight: 600;
+}
+
 .conversation-item {
   height: 38px;
   gap: 9px;
@@ -311,17 +440,37 @@ kbd {
   outline: none;
 }
 
+.conversation-item.has-snippet {
+  height: 54px;
+}
+
 .conversation-item.active {
   background: #e9ebef;
   color: #101828;
 }
 
-.conversation-item > span {
+.conversation-copy {
   min-width: 0;
   flex: 1;
+}
+
+.conversation-copy span,
+.conversation-copy small {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.conversation-copy small {
+  margin-top: 3px;
+  color: #98a2b3;
+  font-size: 10px;
+}
+
+.pin-indicator {
+  flex: 0 0 auto;
+  color: #667085;
 }
 
 .conversation-more {
@@ -363,6 +512,22 @@ kbd {
 
 .conversation-status.error {
   color: #d92d20;
+}
+
+.loading-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.loading-status svg {
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .search-box {
@@ -430,6 +595,14 @@ zh-CN:
   newChat: 新建对话
   searchChats: 搜索对话
   recent: 最近
+  archived: 已归档
+  searchResults: 搜索结果
+  noArchivedChats: 还没有归档对话
+  pin: 置顶
+  unpin: 取消置顶
+  archive: 归档
+  restore: 恢复
+  searchFailed: 搜索失败
   operationFailed: 会话操作失败
   noMatchingChats: 没有匹配的对话
   noChats: 还没有对话
@@ -443,6 +616,14 @@ en:
   newChat: New chat
   searchChats: Search chats
   recent: Recent
+  archived: Archived
+  searchResults: Search results
+  noArchivedChats: No archived chats
+  pin: Pin
+  unpin: Unpin
+  archive: Archive
+  restore: Restore
+  searchFailed: Search failed
   operationFailed: Chat operation failed
   noMatchingChats: No matching chats
   noChats: No chats yet

@@ -12,7 +12,16 @@ import {
   TooltipRoot,
   TooltipTrigger
 } from 'reka-ui'
-import { Check, ChevronDown, Ellipsis, Languages, PanelLeft, Settings2, Share2 } from '@lucide/vue'
+import {
+  Check,
+  ChevronDown,
+  Ellipsis,
+  FileJson,
+  Languages,
+  PanelLeft,
+  Settings2,
+  Share2
+} from '@lucide/vue'
 import type { ModelConfig, Session } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import { setAppLocale, type AppLocale } from '../../i18n'
@@ -30,6 +39,9 @@ const emit = defineEmits<{
   openSidebar: []
   rename: []
   delete: []
+  toggleArchive: []
+  exportMarkdown: []
+  exportJson: []
   selectModel: [id: string]
   manageModels: []
 }>()
@@ -133,7 +145,12 @@ function changeLocale(nextLocale: AppLocale): void {
         </DropdownMenuPortal>
       </DropdownMenuRoot>
 
-      <button class="text-button" type="button">
+      <button
+        class="text-button"
+        type="button"
+        :disabled="!session"
+        @click="emit('exportMarkdown')"
+      >
         <Share2 :size="16" />
         <span>{{ t('common.share') }}</span>
       </button>
@@ -149,7 +166,17 @@ function changeLocale(nextLocale: AppLocale): void {
             <DropdownMenuItem class="menu-item" :disabled="!session" @select="emit('rename')">
               {{ t('common.rename') }}
             </DropdownMenuItem>
-            <DropdownMenuItem class="menu-item">{{ t('archiveChat') }}</DropdownMenuItem>
+            <DropdownMenuItem
+              class="menu-item"
+              :disabled="!session"
+              @select="emit('toggleArchive')"
+            >
+              {{ session?.isArchived ? t('restoreChat') : t('archiveChat') }}
+            </DropdownMenuItem>
+            <DropdownMenuItem class="menu-item" :disabled="!session" @select="emit('exportJson')">
+              <FileJson :size="15" />
+              {{ t('exportJson') }}
+            </DropdownMenuItem>
             <DropdownMenuSeparator class="menu-separator" />
             <DropdownMenuItem
               class="menu-item danger-item"
@@ -232,6 +259,11 @@ function changeLocale(nextLocale: AppLocale): void {
   cursor: pointer;
 }
 
+.text-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .model-trigger:hover,
 .text-button:hover {
   background: #eef0f3;
@@ -278,6 +310,8 @@ zh-CN:
   noModelConfigs: 还没有模型配置
   manageModels: 管理模型
   archiveChat: 归档对话
+  restoreChat: 恢复对话
+  exportJson: 导出 JSON
   deleteChat: 删除对话
 en:
   expandSidebar: Expand sidebar
@@ -286,5 +320,7 @@ en:
   noModelConfigs: No model configurations yet
   manageModels: Manage models
   archiveChat: Archive chat
+  restoreChat: Restore chat
+  exportJson: Export JSON
   deleteChat: Delete chat
 </i18n>

@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import ChatComposer from './ChatComposer.vue'
 import ChatMessageList from './ChatMessageList.vue'
 import PermissionSettingsDialog from '../settings/PermissionSettingsDialog.vue'
+import TaskPlanPanel from './TaskPlanPanel.vue'
 
 import type {
   ChatLocale,
@@ -10,6 +11,7 @@ import type {
   Message,
   MessageAttachment,
   ModelConfig,
+  TaskPlan,
   ToolApprovalRequest,
   ToolCallRecord
 } from '@ipc/chat/constants'
@@ -25,6 +27,7 @@ const props = defineProps<{
   sessionPersisted: boolean
   modelConfig: ModelConfig | null
   promptSettingsVersion: number
+  taskMode: boolean
   disabled: boolean
   disabledReason?: string
   ensureSession: (id: string) => Promise<boolean>
@@ -32,6 +35,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   messageSent: [sessionId: string, content: string]
+  taskModeChange: []
 }>()
 
 const { t, locale } = useI18n({ useScope: 'local' })
@@ -45,6 +49,8 @@ const compressingBySession = ref<Record<string, boolean>>({})
 const streamedContentBySession = ref<Record<string, string>>({})
 const toolActivitiesBySession = ref<Record<string, ToolCallRecord[]>>({})
 const toolApprovalsBySession = ref<Record<string, ToolApprovalRequest[]>>({})
+const taskPlansBySession = ref<Record<string, TaskPlan | null>>({})
+const taskPlanLoadingBySession = ref<Record<string, boolean>>({})
 const resolvingApprovalIds = ref<string[]>([])
 const permissionSettingsOpen = ref(false)
 const openingPermissionSettings = ref(false)
@@ -90,11 +96,18 @@ const activeToolCalls = computed(() =>
 const activeToolApprovals = computed(() =>
   props.sessionId ? (toolApprovalsBySession.value[props.sessionId] ?? []) : []
 )
+const taskPlan = computed(() =>
+  props.sessionId ? (taskPlansBySession.value[props.sessionId] ?? null) : null
+)
+const taskPlanLoading = computed(() =>
+  props.sessionId ? (taskPlanLoadingBySession.value[props.sessionId] ?? false) : false
+)
 
 let removeCompressionListener: (() => void) | null = null
 let removeStreamListener: (() => void) | null = null
 let removeToolActivityListener: (() => void) | null = null
 let removeToolApprovalListener: (() => void) | null = null
+let removeTaskPlanListener: (() => void) | null = null
 
 onMounted(() => {
   void refreshToolCallDetailSetting()
@@ -121,6 +134,10 @@ onMounted(() => {
     else approvals[index] = event
     toolApprovalsBySession.value[event.sessionId] = approvals
   })
+  removeTaskPlanListener = window.api.chat.onTaskPlanChanged((event) => {
+    taskPlansBySession.value[event.sessionId] = event.plan
+    taskPlanLoadingBySession.value[event.sessionId] = false
+  })
 })
 
 async function refreshToolCallDetailSetting(): Promise<void> {
@@ -137,6 +154,7 @@ onUnmounted(() => {
   removeStreamListener?.()
   removeToolActivityListener?.()
   removeToolApprovalListener?.()
+  removeTaskPlanListener?.()
 })
 
 function emptyCompressionStatus(): CompressionStatus {
@@ -274,6 +292,7 @@ async function reviseAndResend(message: Message, revisedContent: string): Promis
       messageId: message.id,
       content: revisedContent
     })
+    if (props.taskMode) taskPlansBySession.value[sessionId] = null
     sessionMessages[messageIndex] = { ...message, content: revisedContent.trim() }
     sessionMessages.splice(messageIndex + 1)
     compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
@@ -311,6 +330,7 @@ async function regenerate(message: Message): Promise<void> {
   streamedContentBySession.value[sessionId] = ''
   try {
     await window.api.chat.regenerateMessage({ sessionId, messageId: message.id })
+    if (props.taskMode) taskPlansBySession.value[sessionId] = null
     sessionMessages.pop()
     compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
       sessionId,
@@ -508,6 +528,27 @@ watch(
 )
 
 watch(
+  () => [props.sessionId, props.sessionPersisted, props.taskMode] as const,
+  async ([sessionId, sessionPersisted, taskMode]) => {
+    if (!sessionId || !taskMode) return
+    if (!sessionPersisted) {
+      taskPlansBySession.value[sessionId] = null
+      taskPlanLoadingBySession.value[sessionId] = false
+      return
+    }
+    taskPlanLoadingBySession.value[sessionId] = true
+    try {
+      taskPlansBySession.value[sessionId] = await window.api.chat.queryTaskPlan(sessionId)
+    } catch (error) {
+      console.error('Failed to load task plan', error)
+    } finally {
+      taskPlanLoadingBySession.value[sessionId] = false
+    }
+  },
+  { immediate: true }
+)
+
+watch(
   () =>
     [
       props.sessionId,
@@ -515,7 +556,8 @@ watch(
       props.modelConfig?.id,
       props.modelConfig?.updatedAt,
       locale.value,
-      props.promptSettingsVersion
+      props.promptSettingsVersion,
+      props.taskMode
     ] as const,
   async ([
     sessionId,
@@ -523,7 +565,8 @@ watch(
     modelConfigId,
     modelConfigUpdatedAt,
     activeLocale,
-    promptSettingsVersion
+    promptSettingsVersion,
+    taskMode
   ]) => {
     if (!sessionId) return
 
@@ -538,14 +581,14 @@ watch(
         : emptyCompressionStatus()
       if (modelConfigId) {
         statusModelBySession.value[sessionId] =
-          `${modelConfigId}:${modelConfigUpdatedAt ?? ''}:${activeLocale}:${promptSettingsVersion}`
+          `${modelConfigId}:${modelConfigUpdatedAt ?? ''}:${activeLocale}:${promptSettingsVersion}:${taskMode}`
       }
       loadedSessions.value[sessionId] = true
       return
     }
 
     if (!modelConfigId) return
-    const modelConfigKey = `${modelConfigId}:${modelConfigUpdatedAt ?? ''}:${activeLocale}:${promptSettingsVersion}`
+    const modelConfigKey = `${modelConfigId}:${modelConfigUpdatedAt ?? ''}:${activeLocale}:${promptSettingsVersion}:${taskMode}`
 
     if (loadedSessions.value[sessionId]) {
       if (statusModelBySession.value[sessionId] !== modelConfigKey) {
@@ -605,6 +648,7 @@ watch(
       @resolve-approval="resolveToolApproval"
       @cancel-download="cancelDownload"
     />
+    <TaskPlanPanel v-if="taskMode" :plan="taskPlan" :sending="sending" :loading="taskPlanLoading" />
     <ChatComposer
       v-if="sessionId"
       v-model="draft"
@@ -617,12 +661,14 @@ watch(
       :attachments="draftAttachments"
       :adding-attachments="addingAttachments"
       :attachment-error="attachmentError"
+      :task-mode="taskMode"
       @submit="sendMessage"
       @stop="stopGeneration"
       @permissions="openPermissionSettings"
       @add-attachments="addAttachments"
       @drop-attachments="dropAttachments"
       @remove-attachment="removeAttachment"
+      @toggle-task-mode="emit('taskModeChange')"
     />
   </main>
   <PermissionSettingsDialog v-model:open="permissionSettingsOpen" :session-id="sessionId" />

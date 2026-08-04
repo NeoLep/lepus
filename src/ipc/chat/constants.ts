@@ -3,6 +3,10 @@ export const CHAT_CHANNELS = {
   SESSION_CREATE: 'session:create',
   SESSION_UPDATE: 'session:update',
   SESSION_DELETE: 'session:delete',
+  SESSION_SEARCH: 'session:search',
+  SESSION_EXPORT: 'session:export',
+  TASK_PLAN_QUERY: 'task-plan:query',
+  TASK_PLAN_CHANGED: 'task-plan:changed',
   MESSAGE_QUERY: 'message:query',
   MESSAGE_REVISE: 'message:revise',
   MESSAGE_REGENERATE: 'message:regenerate',
@@ -43,6 +47,48 @@ export type Session = {
   title: string
   createdAt: string
   updatedAt: string
+  isPinned: boolean
+  isArchived: boolean
+  taskMode: boolean
+}
+
+export type TaskPlanItemStatus = 'pending' | 'in_progress' | 'completed' | 'skipped'
+
+export type TaskPlanItem = {
+  id: string
+  title: string
+  status: TaskPlanItemStatus
+}
+
+export type TaskPlanUpdate = {
+  explanation: string
+  items: TaskPlanItem[]
+}
+
+export type TaskPlan = TaskPlanUpdate & {
+  sessionId: string
+  updatedAt: string
+}
+
+export type TaskPlanChangedEvent = {
+  sessionId: string
+  plan: TaskPlan
+}
+
+export type SessionSearchResult = {
+  session: Session
+  snippet: string
+  matchedIn: 'title' | 'message' | 'attachment' | 'source' | 'tool'
+}
+
+export type SessionExportRequest = {
+  sessionId: string
+  format: 'markdown' | 'json'
+}
+
+export type SessionExportResult = {
+  canceled: boolean
+  filePath?: string
 }
 
 export type Message = {

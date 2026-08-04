@@ -20,6 +20,11 @@ import {
   PromptSettings,
   SearchProviderConfig,
   Session,
+  SessionExportRequest,
+  SessionExportResult,
+  SessionSearchResult,
+  TaskPlan,
+  TaskPlanChangedEvent,
   ToolActivityEvent,
   ToolCancelRequest,
   ToolApprovalDecision,
@@ -34,6 +39,18 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.SESSION_UPDATE, request),
   deleteSession: (id: string): Promise<void> =>
     ipcRenderer.invoke(CHAT_CHANNELS.SESSION_DELETE, id),
+  searchSessions: (query: string): Promise<SessionSearchResult[]> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SESSION_SEARCH, query),
+  exportSession: (request: SessionExportRequest): Promise<SessionExportResult> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SESSION_EXPORT, request),
+  queryTaskPlan: (sessionId: string): Promise<TaskPlan | null> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.TASK_PLAN_QUERY, sessionId),
+  onTaskPlanChanged: (listener: (event: TaskPlanChangedEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: TaskPlanChangedEvent): void =>
+      listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.TASK_PLAN_CHANGED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.TASK_PLAN_CHANGED, handler)
+  },
   queryMessages: (sessionId: string): Promise<ChatMessage['messages']> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MESSAGE_QUERY, sessionId),
   reviseMessage: (request: MessageReviseRequest): Promise<void> =>
