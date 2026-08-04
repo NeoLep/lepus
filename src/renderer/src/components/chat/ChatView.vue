@@ -7,6 +7,7 @@ import TaskPlanPanel from './TaskPlanPanel.vue'
 
 import type {
   ChatLocale,
+  CompressionRecord,
   CompressionStatus,
   Message,
   MessageAttachment,
@@ -47,6 +48,7 @@ const loadedSessions = ref<Record<string, boolean>>({})
 const loadingSessions = ref<Record<string, boolean>>({})
 const statusModelBySession = ref<Record<string, string>>({})
 const compressionStatusBySession = ref<Record<string, CompressionStatus>>({})
+const compressionRecordsBySession = ref<Record<string, CompressionRecord[]>>({})
 const compressingBySession = ref<Record<string, boolean>>({})
 const streamedContentBySession = ref<Record<string, string>>({})
 const toolActivitiesBySession = ref<Record<string, ToolCallRecord[]>>({})
@@ -89,6 +91,9 @@ const compressionStatus = computed<CompressionStatus>(() =>
     ? (compressionStatusBySession.value[props.sessionId] ?? emptyCompressionStatus())
     : emptyCompressionStatus()
 )
+const compressionRecords = computed(() =>
+  props.sessionId ? (compressionRecordsBySession.value[props.sessionId] ?? []) : []
+)
 const compressing = computed(() =>
   props.sessionId ? (compressingBySession.value[props.sessionId] ?? false) : false
 )
@@ -117,6 +122,7 @@ const activeUserInputRequests = computed(() =>
 )
 
 let removeCompressionListener: (() => void) | null = null
+let removeCompressionRecordListener: (() => void) | null = null
 let removeStreamListener: (() => void) | null = null
 let removeToolActivityListener: (() => void) | null = null
 let removeToolApprovalListener: (() => void) | null = null
@@ -131,6 +137,15 @@ onMounted(() => {
       (compressionEventVersionBySession.value[event.sessionId] ?? 0) + 1
     compressionStatusBySession.value[event.sessionId] = event.status
     compressingBySession.value[event.sessionId] = event.compressing
+  })
+  removeCompressionRecordListener = window.api.chat.onCompressionRecordChanged((event) => {
+    const records = [...(compressionRecordsBySession.value[event.sessionId] ?? [])]
+    const index = records.findIndex((record) => record.id === event.record.id)
+    if (index === -1) records.push(event.record)
+    else records[index] = event.record
+    compressionRecordsBySession.value[event.sessionId] = records
+      .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+      .slice(-50)
   })
   removeStreamListener = window.api.chat.onChatStreamDelta((event) => {
     streamedContentBySession.value[event.sessionId] = event.content
@@ -176,6 +191,7 @@ async function refreshToolCallDetailSetting(): Promise<void> {
 
 onUnmounted(() => {
   removeCompressionListener?.()
+  removeCompressionRecordListener?.()
   removeStreamListener?.()
   removeToolActivityListener?.()
   removeToolApprovalListener?.()
@@ -625,6 +641,7 @@ watch(
 
     if (!sessionPersisted) {
       messagesBySession.value[sessionId] = []
+      compressionRecordsBySession.value[sessionId] = []
       compressionStatusBySession.value[sessionId] = modelConfigId
         ? await window.api.chat.queryCompressionStatus({
             sessionId,
@@ -644,6 +661,10 @@ watch(
     const modelConfigKey = `${modelConfigId}:${modelConfigUpdatedAt ?? ''}:${activeLocale}:${promptSettingsVersion}:${taskMode}`
 
     if (loadedSessions.value[sessionId]) {
+      if (!compressionRecordsBySession.value[sessionId]) {
+        compressionRecordsBySession.value[sessionId] =
+          await window.api.chat.queryCompressionRecords(sessionId)
+      }
       if (statusModelBySession.value[sessionId] !== modelConfigKey) {
         compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
           sessionId,
@@ -658,6 +679,8 @@ watch(
     loadingSessions.value[sessionId] = true
     try {
       messagesBySession.value[sessionId] = await window.api.chat.queryMessages(sessionId)
+      compressionRecordsBySession.value[sessionId] =
+        await window.api.chat.queryCompressionRecords(sessionId)
       compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
         sessionId,
         modelConfigId,
@@ -682,6 +705,9 @@ watch(
       :session-id="sessionId"
       :messages="messages"
       :sending="sending || loading"
+      :compressing="compressing"
+      :compression-text="t('compressingContext')"
+      :compression-records="compressionRecords"
       :stream-content="streamedContent"
       :active-tool-calls="activeToolCalls"
       :approvals="activeToolApprovals"
@@ -689,15 +715,7 @@ watch(
       :user-input-requests="activeUserInputRequests"
       :resolving-user-input-ids="resolvingUserInputIds"
       :show-tool-call-details="showToolCallDetails"
-      :status-text="
-        loading
-          ? t('loadingChat')
-          : streamedContent
-            ? undefined
-            : compressing
-              ? t('compressingHistory')
-              : t('thinking')
-      "
+      :status-text="loading ? t('loadingChat') : streamedContent ? undefined : t('thinking')"
       @resend="reviseAndResend"
       @regenerate="regenerate"
       @resolve-approval="resolveToolApproval"
@@ -751,6 +769,7 @@ zh-CN:
   sendFailed: 发送失败，请稍后重试。
   loadingChat: 正在加载对话
   compressingHistory: 正在压缩历史对话
+  compressingContext: 正在压缩上下文
   thinking: 正在思考
   attachmentOnlyTitle: 附件：{name}
   addAttachment: 附件
@@ -761,6 +780,7 @@ en:
   sendFailed: Failed to send. Please try again later.
   loadingChat: Loading chat
   compressingHistory: Compressing chat history
+  compressingContext: Compressing context
   thinking: Thinking
   attachmentOnlyTitle: 'Attachment: {name}'
   addAttachment: attachment

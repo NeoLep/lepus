@@ -10,6 +10,8 @@ import {
   ChatStreamDeltaEvent,
   CompressionStatus,
   CompressionStatusEvent,
+  CompressionRecord,
+  CompressionRecordChangedEvent,
   CompressionStatusQuery,
   MessageReviseRequest,
   MessageRegenerateRequest,
@@ -115,6 +117,18 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.GENERATED_FILE_OPEN, filePath),
   queryCompressionStatus: (request: CompressionStatusQuery): Promise<CompressionStatus> =>
     ipcRenderer.invoke(CHAT_CHANNELS.COMPRESSION_STATUS_QUERY, request),
+  queryCompressionRecords: (sessionId: string): Promise<CompressionRecord[]> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.COMPRESSION_RECORD_QUERY, sessionId),
+  onCompressionRecordChanged: (
+    listener: (event: CompressionRecordChangedEvent) => void
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      payload: CompressionRecordChangedEvent
+    ): void => listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.COMPRESSION_RECORD_CHANGED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.COMPRESSION_RECORD_CHANGED, handler)
+  },
   onCompressionStatusChanged: (listener: (event: CompressionStatusEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: CompressionStatusEvent): void =>
       listener(payload)

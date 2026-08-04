@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import type {
   Message,
   ModelConfig,
+  CompressionRecord,
   PromptSettings,
   PermissionSettings,
   SearchProviderConfig,
@@ -71,6 +72,21 @@ type ConversationSummaryRow = {
   source_message_count: number
   estimated_tokens: number
   updated_at: string
+}
+
+type CompressionRecordRow = {
+  id: string
+  session_id: string
+  phase: CompressionRecord['phase']
+  status: CompressionRecord['status']
+  method: CompressionRecord['method']
+  started_at: string
+  finished_at: string | null
+  duration_ms: number | null
+  input_tokens: number
+  source_messages: number
+  error_name: string
+  error_message: string
 }
 
 const ENCRYPTED_API_KEY_PREFIX = 'safe-storage:v1:'
@@ -185,6 +201,23 @@ function toConversationSummary(row: ConversationSummaryRow): ConversationSummary
     sourceMessageCount: row.source_message_count,
     estimatedTokens: row.estimated_tokens,
     updatedAt: row.updated_at
+  }
+}
+
+function toCompressionRecord(row: CompressionRecordRow): CompressionRecord {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    phase: row.phase,
+    status: row.status,
+    method: row.method,
+    startedAt: row.started_at,
+    ...(row.finished_at ? { finishedAt: row.finished_at } : {}),
+    ...(row.duration_ms !== null ? { durationMs: row.duration_ms } : {}),
+    inputTokens: row.input_tokens,
+    sourceMessages: row.source_messages,
+    ...(row.error_name ? { errorName: row.error_name } : {}),
+    ...(row.error_message ? { errorMessage: row.error_message } : {})
   }
 }
 
@@ -557,6 +590,50 @@ export class ChatRepository {
            updated_at = excluded.updated_at`
       )
       .run(summary)
+  }
+
+  queryCompressionRecords(sessionId: string): CompressionRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT id, session_id, phase, status, method, started_at, finished_at,
+                duration_ms, input_tokens, source_messages, error_name, error_message
+         FROM (
+           SELECT * FROM compression_records
+           WHERE session_id = ?
+           ORDER BY started_at DESC
+           LIMIT 50
+         )
+         ORDER BY started_at ASC`
+      )
+      .all(sessionId) as CompressionRecordRow[]
+    return rows.map(toCompressionRecord)
+  }
+
+  saveCompressionRecord(record: CompressionRecord): CompressionRecord {
+    this.database
+      .prepare(
+        `INSERT INTO compression_records
+           (id, session_id, phase, status, method, started_at, finished_at,
+            duration_ms, input_tokens, source_messages, error_name, error_message)
+         VALUES
+           (@id, @sessionId, @phase, @status, @method, @startedAt, @finishedAt,
+            @durationMs, @inputTokens, @sourceMessages, @errorName, @errorMessage)
+         ON CONFLICT(id) DO UPDATE SET
+           status = excluded.status,
+           method = excluded.method,
+           finished_at = excluded.finished_at,
+           duration_ms = excluded.duration_ms,
+           error_name = excluded.error_name,
+           error_message = excluded.error_message`
+      )
+      .run({
+        ...record,
+        finishedAt: record.finishedAt ?? null,
+        durationMs: record.durationMs ?? null,
+        errorName: record.errorName ?? '',
+        errorMessage: record.errorMessage ?? ''
+      })
+    return record
   }
 
   queryModelConfigs(): ModelConfig[] {
@@ -1126,6 +1203,42 @@ export class ChatRepository {
         `)
       })()
     }
+
+    if (version < 15) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE compression_records (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            phase TEXT NOT NULL CHECK (phase IN ('foreground', 'background')),
+            status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed', 'fallback')),
+            method TEXT NOT NULL CHECK (method IN ('remote', 'local')),
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            duration_ms INTEGER,
+            input_tokens INTEGER NOT NULL,
+            source_messages INTEGER NOT NULL,
+            error_name TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+          );
+          CREATE INDEX idx_compression_records_session_started
+            ON compression_records(session_id, started_at DESC);
+          PRAGMA user_version = 15;
+        `)
+      })()
+    }
+
+    const interruptedAt = new Date().toISOString()
+    this.database
+      .prepare(
+        `UPDATE compression_records
+         SET status = 'failed', finished_at = ?,
+             duration_ms = MAX(0, CAST((julianday(?) - julianday(started_at)) * 86400000 AS INTEGER)),
+             error_name = 'Interrupted', error_message = '应用在压缩完成前退出'
+         WHERE status = 'running'`
+      )
+      .run(interruptedAt, interruptedAt)
   }
 
   private importLegacySessions(jsonPath: string): void {

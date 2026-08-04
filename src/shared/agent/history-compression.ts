@@ -24,6 +24,7 @@ export type CompressionPolicy = {
   emergencyThresholdTokens: number
   recentTokenBudget: number
   summaryTokenTarget: number
+  compressionInputTokenLimit: number
   tokenEstimateRatio: number
 }
 
@@ -61,17 +62,29 @@ export function createCompressionPolicy(settings: ModelTokenSettings): Compressi
       systemPromptReserve -
       toolCallReserve
   )
-  const hardThresholdTokens = Math.floor(historyBudget * HISTORY_COMPRESSION.hardRatio)
+  const hardThresholdTokens = Math.min(
+    64_000,
+    Math.floor(historyBudget * HISTORY_COMPRESSION.hardRatio)
+  )
+  const softThresholdTokens = Math.min(
+    48_000,
+    Math.floor(historyBudget * HISTORY_COMPRESSION.softRatio)
+  )
+  const emergencyThresholdTokens = Math.max(
+    hardThresholdTokens + 1_024,
+    Math.min(96_000, Math.floor(historyBudget * HISTORY_COMPRESSION.emergencyRatio))
+  )
 
   return {
     contextWindow,
     contextWindowSource,
     historyBudget,
-    softThresholdTokens: Math.floor(historyBudget * HISTORY_COMPRESSION.softRatio),
+    softThresholdTokens,
     hardThresholdTokens,
-    emergencyThresholdTokens: Math.floor(historyBudget * HISTORY_COMPRESSION.emergencyRatio),
+    emergencyThresholdTokens,
     recentTokenBudget: Math.max(800, Math.min(8_000, Math.floor(hardThresholdTokens * 0.28))),
     summaryTokenTarget: Math.max(300, Math.min(1_200, Math.floor(hardThresholdTokens * 0.08))),
+    compressionInputTokenLimit: 32_000,
     tokenEstimateRatio: Math.min(2, Math.max(0.5, settings.tokenEstimateRatio || 1))
   }
 }

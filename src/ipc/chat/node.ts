@@ -7,6 +7,7 @@ import {
   AttachmentPreviewRequest,
   CHAT_CHANNELS,
   ChatMessage,
+  CompressionRecord,
   CompressionStatusQuery,
   MessageReviseRequest,
   MessageRegenerateRequest,
@@ -41,6 +42,7 @@ import {
 } from '@/main/lib/attachments'
 
 const backgroundCompressionBySession = new Map<string, Promise<void>>()
+const backgroundCompressionControllers = new Map<string, AbortController>()
 const activeChatControllers = new Map<string, AbortController>()
 const activeToolCancellations = new Map<string, () => void>()
 const pendingToolApprovals = new Map<
@@ -62,6 +64,60 @@ const pendingUserInputs = new Map<
     resolve: (answer: Pick<UserInputAnswer, 'answer' | 'selectedOptionId' | 'canceled'>) => void
   }
 >()
+
+const BACKGROUND_COMPRESSION_TIMEOUT_MS = 60_000
+const BACKGROUND_COMPRESSION_WAIT_MS = 2_000
+const FOREGROUND_COMPRESSION_TIMEOUT_MS = 8_000
+
+async function waitForBackgroundCompression(sessionId: string): Promise<boolean> {
+  const compression = backgroundCompressionBySession.get(sessionId)
+  if (!compression) return true
+  return Promise.race([
+    compression.then(() => true),
+    new Promise<false>((resolve) =>
+      setTimeout(() => resolve(false), BACKGROUND_COMPRESSION_WAIT_MS)
+    )
+  ])
+}
+
+async function cancelBackgroundCompression(sessionId: string): Promise<void> {
+  backgroundCompressionControllers.get(sessionId)?.abort()
+  await backgroundCompressionBySession.get(sessionId)
+}
+
+function compressionErrorDetails(
+  error: unknown,
+  timedOut: boolean
+): Pick<CompressionRecord, 'errorName' | 'errorMessage'> {
+  if (timedOut) {
+    return {
+      errorName: 'TimeoutError',
+      errorMessage: '远程摘要请求超过等待时间，已切换到本地压缩。'
+    }
+  }
+  if (error instanceof Error) {
+    const apiError = error as Error & {
+      status?: number
+      code?: string
+      type?: string
+      requestID?: string
+    }
+    const metadata = [
+      apiError.status ? `HTTP ${apiError.status}` : '',
+      apiError.code ? `code=${apiError.code}` : '',
+      apiError.type ? `type=${apiError.type}` : '',
+      apiError.requestID ? `request=${apiError.requestID}` : ''
+    ].filter(Boolean)
+    return {
+      errorName: error.name || 'Error',
+      errorMessage: [error.message || String(error), metadata.join(' · ')]
+        .filter(Boolean)
+        .join('\n')
+        .slice(0, 2_000)
+    }
+  }
+  return { errorName: 'UnknownError', errorMessage: String(error) }
+}
 
 function isContextLengthError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
@@ -221,6 +277,7 @@ export default () => {
   )
   ipcMain.handle(CHAT_CHANNELS.SESSION_DELETE, async (_event, id: string) => {
     activeChatControllers.get(id)?.abort()
+    await cancelBackgroundCompression(id)
     sessionToolAllowances.delete(id)
     getChatRepository().deleteSession(id)
     try {
@@ -338,13 +395,13 @@ export default () => {
     removeSessionAttachments(sessionId)
   )
   ipcMain.handle(CHAT_CHANNELS.MESSAGE_REVISE, async (_event, request: MessageReviseRequest) => {
-    await backgroundCompressionBySession.get(request.sessionId)
+    await cancelBackgroundCompression(request.sessionId)
     getChatRepository().reviseUserMessage(request.sessionId, request.messageId, request.content)
   })
   ipcMain.handle(
     CHAT_CHANNELS.MESSAGE_REGENERATE,
     async (_event, request: MessageRegenerateRequest) => {
-      await backgroundCompressionBySession.get(request.sessionId)
+      await cancelBackgroundCompression(request.sessionId)
       getChatRepository().deleteAssistantMessage(request.sessionId, request.messageId)
     }
   )
@@ -439,6 +496,9 @@ export default () => {
       return compressor.getStatus(request.sessionId, repository.queryMessages(request.sessionId))
     }
   )
+  ipcMain.handle(CHAT_CHANNELS.COMPRESSION_RECORD_QUERY, (_event, sessionId: string) =>
+    getChatRepository().queryCompressionRecords(sessionId)
+  )
 
   ipcMain.handle(CHAT_CHANNELS.CHAT_SEND, async (event, request: ChatMessage) => {
     activeChatControllers.get(request.conversationId)?.abort()
@@ -449,7 +509,48 @@ export default () => {
       const repository = getChatRepository()
       const modelConfig = repository.getModelConfig(request.modelConfigId)
       if (!modelConfig) throw new Error('所选模型配置不存在')
-      await backgroundCompressionBySession.get(request.conversationId)
+      const publishCompressionRecord = (record: CompressionRecord): CompressionRecord => {
+        repository.saveCompressionRecord(record)
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(CHAT_CHANNELS.COMPRESSION_RECORD_CHANGED, {
+            sessionId: request.conversationId,
+            record
+          })
+        }
+        return record
+      }
+      const beginCompressionRecord = (
+        phase: CompressionRecord['phase'],
+        inputTokens: number,
+        sourceMessages: number
+      ): CompressionRecord =>
+        publishCompressionRecord({
+          id: crypto.randomUUID(),
+          sessionId: request.conversationId,
+          phase,
+          status: 'running',
+          method: 'remote',
+          startedAt: new Date().toISOString(),
+          inputTokens,
+          sourceMessages
+        })
+      const finishCompressionRecord = (
+        record: CompressionRecord,
+        status: CompressionRecord['status'],
+        method: CompressionRecord['method'],
+        error?: Pick<CompressionRecord, 'errorName' | 'errorMessage'>
+      ): CompressionRecord => {
+        const finishedAt = new Date().toISOString()
+        return publishCompressionRecord({
+          ...record,
+          status,
+          method,
+          finishedAt,
+          durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(record.startedAt)),
+          ...error
+        })
+      }
+      const backgroundCompressionReady = await waitForBackgroundCompression(request.conversationId)
       const requestMessages = await sanitizeMessageAttachments(
         request.conversationId,
         request.messages
@@ -607,23 +708,86 @@ export default () => {
         request.conversationId,
         requestMessages
       )
+      const foregroundStatus = compressor.getStatus(request.conversationId, requestMessages)
+      const foregroundRecord =
+        backgroundCompressionReady && foregroundStatus.willCompress
+          ? beginCompressionRecord(
+              'foreground',
+              foregroundStatus.estimatedTokens,
+              requestMessages.length
+            )
+          : null
+      const foregroundTimeout = new AbortController()
+      let foregroundTimedOut = false
+      const foregroundTimer = setTimeout(() => {
+        foregroundTimedOut = true
+        foregroundTimeout.abort()
+      }, FOREGROUND_COMPRESSION_TIMEOUT_MS)
       try {
-        const compression = await compressor.buildContext(request.conversationId, requestMessages)
+        const compression = backgroundCompressionReady
+          ? await compressor.buildContext(
+              request.conversationId,
+              requestMessages,
+              'hard',
+              AbortSignal.any([controller.signal, foregroundTimeout.signal])
+            )
+          : {
+              messages: compressor.buildUncompressedContext(
+                request.conversationId,
+                requestMessages
+              ),
+              compressed: false,
+              estimatedTokens: estimateMessageTokens(requestMessages)
+            }
         context = compression.messages
         if (compression.compressed) {
+          if (foregroundRecord) {
+            finishCompressionRecord(foregroundRecord, 'completed', 'remote')
+          }
           console.info(
             `[history] compressed session=${request.conversationId} tokens=${compression.estimatedTokens}`
           )
+        } else if (foregroundRecord) {
+          const emptySummaryError = {
+            errorName: 'EmptySummaryError',
+            errorMessage: '远程模型没有返回可用的摘要内容。'
+          }
+          context = compressor.buildFallbackContext(
+            request.conversationId,
+            requestMessages
+          ).messages
+          finishCompressionRecord(foregroundRecord, 'fallback', 'local', emptySummaryError)
         }
       } catch (error) {
-        const status = compressor.getStatus(request.conversationId, requestMessages)
-        if (status.estimatedTokens >= status.emergencyThresholdTokens) {
-          context = compressor.buildEmergencyContext(request.conversationId, requestMessages)
-          console.warn('[history] compression failed, using emergency context', error)
+        const details = compressionErrorDetails(error, foregroundTimedOut)
+        if (controller.signal.aborted) {
+          if (foregroundRecord)
+            finishCompressionRecord(foregroundRecord, 'failed', 'remote', details)
+          return buildStoppedResponse()
+        }
+        if (foregroundRecord) {
+          try {
+            context = compressor.buildFallbackContext(
+              request.conversationId,
+              requestMessages
+            ).messages
+            finishCompressionRecord(foregroundRecord, 'fallback', 'local', details)
+          } catch (fallbackError) {
+            const fallbackDetails = compressionErrorDetails(fallbackError, false)
+            finishCompressionRecord(foregroundRecord, 'failed', 'local', fallbackDetails)
+            context = compressor.buildEmergencyContext(request.conversationId, requestMessages)
+          }
+          console.info(
+            `[history] remote compression unavailable, using local fallback reason=${details.errorName}`
+          )
         } else {
           context = compressor.buildUncompressedContext(request.conversationId, requestMessages)
-          console.warn('[history] compression failed, using full history', error)
+          console.info(
+            `[history] remote compression unavailable, using full context reason=${details.errorName}`
+          )
         }
+      } finally {
+        clearTimeout(foregroundTimer)
       }
       context = await prepareAgentAttachments(request.conversationId, context)
       let estimatedPromptTokens = estimateMessageTokens(context)
@@ -694,22 +858,51 @@ export default () => {
 
       if (
         status.estimatedTokens >= status.softThresholdTokens &&
-        status.uncompressedMessages > HISTORY_COMPRESSION.minimumRecentMessages
+        status.uncompressedMessages > HISTORY_COMPRESSION.minimumRecentMessages &&
+        !backgroundCompressionBySession.has(request.conversationId)
       ) {
         event.sender.send(CHAT_CHANNELS.COMPRESSION_STATUS_CHANGED, {
           sessionId: request.conversationId,
           status,
           compressing: true
         })
+        const compressionController = new AbortController()
+        const backgroundTimeout = new AbortController()
+        let backgroundTimedOut = false
+        const backgroundTimer = setTimeout(() => {
+          backgroundTimedOut = true
+          backgroundTimeout.abort()
+        }, BACKGROUND_COMPRESSION_TIMEOUT_MS)
+        const backgroundRecord = beginCompressionRecord(
+          'background',
+          status.estimatedTokens,
+          completedHistory.length
+        )
+        backgroundCompressionControllers.set(request.conversationId, compressionController)
         const backgroundCompression = (async () => {
+          const compressor = new HistoryCompressor(
+            repository,
+            latestModelConfig,
+            agent,
+            systemPrompt
+          )
           try {
-            const compressor = new HistoryCompressor(
-              repository,
-              latestModelConfig,
-              agent,
-              systemPrompt
+            const compression = await compressor.buildContext(
+              request.conversationId,
+              completedHistory,
+              'soft',
+              AbortSignal.any([compressionController.signal, backgroundTimeout.signal])
             )
-            await compressor.buildContext(request.conversationId, completedHistory, 'soft')
+            if (compression.compressed) {
+              finishCompressionRecord(backgroundRecord, 'completed', 'remote')
+            } else {
+              const emptySummaryError = {
+                errorName: 'EmptySummaryError',
+                errorMessage: '远程模型没有返回可用的摘要内容。'
+              }
+              compressor.buildFallbackContext(request.conversationId, completedHistory, true)
+              finishCompressionRecord(backgroundRecord, 'fallback', 'local', emptySummaryError)
+            }
             const compressedStatus = compressor.getStatus(request.conversationId, completedHistory)
             if (!event.sender.isDestroyed()) {
               event.sender.send(CHAT_CHANNELS.COMPRESSION_STATUS_CHANGED, {
@@ -719,16 +912,41 @@ export default () => {
               })
             }
           } catch (error) {
-            console.warn('[history] background compression failed', error)
+            const details = compressionErrorDetails(error, backgroundTimedOut)
+            let fallbackStatus = status
+            if (compressionController.signal.aborted) {
+              finishCompressionRecord(backgroundRecord, 'failed', 'remote', {
+                errorName: 'CanceledError',
+                errorMessage: '压缩因消息被编辑、重新生成或会话关闭而取消。'
+              })
+            } else {
+              try {
+                compressor.buildFallbackContext(request.conversationId, completedHistory, true)
+                finishCompressionRecord(backgroundRecord, 'fallback', 'local', details)
+                console.info(
+                  `[history] remote background compression unavailable; persisted local fallback reason=${details.errorName}`
+                )
+                fallbackStatus = compressor.getStatus(request.conversationId, completedHistory)
+              } catch (fallbackError) {
+                finishCompressionRecord(
+                  backgroundRecord,
+                  'failed',
+                  'local',
+                  compressionErrorDetails(fallbackError, false)
+                )
+              }
+            }
             if (!event.sender.isDestroyed()) {
               event.sender.send(CHAT_CHANNELS.COMPRESSION_STATUS_CHANGED, {
                 sessionId: request.conversationId,
-                status,
+                status: fallbackStatus,
                 compressing: false
               })
             }
           } finally {
+            clearTimeout(backgroundTimer)
             backgroundCompressionBySession.delete(request.conversationId)
+            backgroundCompressionControllers.delete(request.conversationId)
           }
         })()
         backgroundCompressionBySession.set(request.conversationId, backgroundCompression)

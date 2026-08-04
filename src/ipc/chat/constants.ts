@@ -35,6 +35,8 @@ export const CHAT_CHANNELS = {
   GENERATED_FILE_OPEN: 'generated-file:open',
   COMPRESSION_STATUS_QUERY: 'compression-status:query',
   COMPRESSION_STATUS_CHANGED: 'compression-status:changed',
+  COMPRESSION_RECORD_QUERY: 'compression-record:query',
+  COMPRESSION_RECORD_CHANGED: 'compression-record:changed',
   CHAT_STREAM_DELTA: 'chat:stream-delta',
   CHAT_CANCEL: 'chat:cancel',
   TOOL_ACTIVITY_CHANGED: 'tool-activity:changed',
@@ -299,6 +301,28 @@ export type CompressionStatusEvent = {
   sessionId: string
   status: CompressionStatus
   compressing: boolean
+}
+
+export type CompressionRecordStatus = 'running' | 'completed' | 'failed' | 'fallback'
+
+export type CompressionRecord = {
+  id: string
+  sessionId: string
+  phase: 'foreground' | 'background'
+  status: CompressionRecordStatus
+  method: 'remote' | 'local'
+  startedAt: string
+  finishedAt?: string
+  durationMs?: number
+  inputTokens: number
+  sourceMessages: number
+  errorName?: string
+  errorMessage?: string
+}
+
+export type CompressionRecordChangedEvent = {
+  sessionId: string
+  record: CompressionRecord
 }
 
 export type CompressionStatus = {

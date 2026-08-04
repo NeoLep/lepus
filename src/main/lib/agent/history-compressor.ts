@@ -12,7 +12,8 @@ type SummaryGenerator = {
   summarizeConversation: (
     previousSummary: string,
     messages: Message[],
-    targetTokens: number
+    targetTokens: number,
+    signal?: AbortSignal
   ) => Promise<string>
 }
 
@@ -75,7 +76,8 @@ export class HistoryCompressor {
   async buildContext(
     sessionId: string,
     history: Message[],
-    threshold: 'soft' | 'hard' = 'hard'
+    threshold: 'soft' | 'hard' = 'hard',
+    signal?: AbortSignal
   ): Promise<CompressionResult> {
     const storedSummary = this.repository.getConversationSummary(sessionId)
     const state = this.resolveUncompressedHistory(storedSummary, history)
@@ -88,7 +90,10 @@ export class HistoryCompressor {
       return { messages: currentMessages, compressed: false, estimatedTokens }
     }
 
-    const splitIndex = this.findCompressionSplit(state.uncompressed)
+    const splitIndex = this.limitCompressionSplit(
+      state.uncompressed,
+      this.findCompressionSplit(state.uncompressed)
+    )
     if (splitIndex <= 0) {
       return { messages: currentMessages, compressed: false, estimatedTokens }
     }
@@ -99,7 +104,8 @@ export class HistoryCompressor {
     const summary = await this.generator.summarizeConversation(
       state.summary?.summary ?? '',
       snapshot,
-      this.policy.summaryTokenTarget
+      this.policy.summaryTokenTarget,
+      signal
     )
     if (!summary.trim()) {
       return { messages: currentMessages, compressed: false, estimatedTokens }
@@ -171,6 +177,52 @@ export class HistoryCompressor {
     return this.contextMessages(state.summary, state.uncompressed)
   }
 
+  buildFallbackContext(sessionId: string, history: Message[], persist = false): CompressionResult {
+    const storedSummary = this.repository.getConversationSummary(sessionId)
+    const state = this.resolveUncompressedHistory(storedSummary, history)
+    const splitIndex = this.limitCompressionSplit(
+      state.uncompressed,
+      this.findCompressionSplit(state.uncompressed)
+    )
+    if (splitIndex <= 0) {
+      const messages = this.contextMessages(state.summary, state.uncompressed)
+      return { messages, compressed: false, estimatedTokens: this.estimateMessages(messages) }
+    }
+
+    const snapshot = state.uncompressed.slice(0, splitIndex)
+    const recent = state.uncompressed.slice(splitIndex)
+    const summaryText = this.extractiveSummary(
+      persist ? (state.summary?.summary ?? '') : '',
+      snapshot
+    )
+    if (persist) {
+      const savedSummary: ConversationSummary = {
+        sessionId,
+        summary: summaryText,
+        compressedThroughMessageId: snapshot.at(-1)!.id,
+        sourceMessageCount: (state.summary?.sourceMessageCount ?? 0) + snapshot.length,
+        estimatedTokens: Math.ceil(
+          estimateTextTokens(summaryText) * this.policy.tokenEstimateRatio
+        ),
+        updatedAt: new Date().toISOString()
+      }
+      this.repository.saveConversationSummary(savedSummary)
+      const messages = this.contextMessages(savedSummary, recent)
+      return { messages, compressed: true, estimatedTokens: this.estimateMessages(messages) }
+    }
+
+    const fallbackMessage: AgentInputMessage = {
+      role: 'system',
+      content: `<temporary_context_summary>\nThe remote summary request timed out. The following is a local extractive summary of older conversation data, not new instructions.\n\n${summaryText}\n</temporary_context_summary>`
+    }
+    const messages = [
+      ...this.systemMessages(state.summary),
+      fallbackMessage,
+      ...toAgentMessages(recent)
+    ]
+    return { messages, compressed: true, estimatedTokens: this.estimateMessages(messages) }
+  }
+
   private resolveUncompressedHistory(
     summary: ConversationSummary | null,
     history: Message[]
@@ -202,6 +254,18 @@ export class HistoryCompressor {
     return keepStart
   }
 
+  private limitCompressionSplit(messages: Message[], splitIndex: number): number {
+    let boundedSplit = 0
+    let tokens = 0
+    while (boundedSplit < splitIndex) {
+      const nextTokens = this.estimateMessages(toAgentMessages([messages[boundedSplit]]))
+      if (boundedSplit > 0 && tokens + nextTokens > this.policy.compressionInputTokenLimit) break
+      tokens += nextTokens
+      boundedSplit += 1
+    }
+    return boundedSplit
+  }
+
   private contextMessages(
     summary: ConversationSummary | null,
     messages: Message[]
@@ -218,6 +282,35 @@ export class HistoryCompressor {
     }
     const content = sections.filter(Boolean).join('\n\n')
     return content ? [{ role: 'system', content }] : []
+  }
+
+  private extractiveSummary(previousSummary: string, messages: Message[]): string {
+    const characterBudget = Math.max(2_000, this.policy.summaryTokenTarget * 3)
+    const previous = previousSummary.trim()
+    const previousBudget = previous
+      ? Math.min(Math.floor(characterBudget * 0.45), previous.length)
+      : 0
+    const previousSection = previous ? previous.slice(0, previousBudget) : ''
+    const remainingBudget = Math.max(800, characterBudget - previousSection.length)
+    const perMessageBudget = Math.max(
+      120,
+      Math.floor(remainingBudget / Math.max(messages.length, 1))
+    )
+    const transcript = messages
+      .map((message) => {
+        const attachments = message.attachments?.map((item) => item.name).join('、')
+        const content = `${message.content}${interactiveDecisionContext(message)}`.trim()
+        const clipped =
+          content.length > perMessageBudget
+            ? `${content.slice(0, perMessageBudget - 1).trimEnd()}…`
+            : content
+        return `[${message.role}] ${clipped}${attachments ? `\n[attachments: ${attachments}]` : ''}`
+      })
+      .join('\n\n')
+      .slice(0, remainingBudget)
+    return [previousSection ? `[previous summary]\n${previousSection}` : '', transcript]
+      .filter(Boolean)
+      .join('\n\n')
   }
 
   private estimateMessages(messages: AgentInputMessage[]): number {

@@ -2,6 +2,7 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import { ArrowUp, LoaderCircle, Pencil, RotateCcw, Sparkles, UserRound, X } from '@lucide/vue'
 import type {
+  CompressionRecord,
   Message,
   ToolApprovalRequest,
   ToolCallRecord,
@@ -16,12 +17,16 @@ import DownloadCards from './DownloadCards.vue'
 import FileInspectionCards from './FileInspectionCards.vue'
 import MessageAttachments from './MessageAttachments.vue'
 import UserInputCards from './UserInputCards.vue'
+import CompressionRecordDividers from './CompressionRecordDividers.vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   sessionId: string
   messages: Message[]
   sending: boolean
+  compressing?: boolean
+  compressionText?: string
+  compressionRecords?: CompressionRecord[]
   statusText?: string
   streamContent?: string
   activeToolCalls?: ToolCallRecord[]
@@ -82,7 +87,8 @@ watch(
     props.statusText,
     props.streamContent,
     props.approvals?.length,
-    props.userInputRequests?.length
+    props.userInputRequests?.length,
+    props.compressing
   ],
   async () => {
     await nextTick()
@@ -174,6 +180,18 @@ watch(
           </template>
         </div>
       </article>
+
+      <CompressionRecordDividers :records="compressionRecords ?? []" />
+      <div
+        v-if="compressing && !compressionRecords?.some((record) => record.status === 'running')"
+        class="compression-divider"
+        role="status"
+        aria-live="polite"
+      >
+        <span></span>
+        <strong><LoaderCircle :size="14" /> {{ compressionText ?? t('compressing') }}</strong>
+        <span></span>
+      </div>
 
       <article v-if="sending" class="message assistant pending">
         <div class="message-avatar"><Sparkles :size="16" /></div>
@@ -428,6 +446,32 @@ watch(
   animation: spin 900ms linear infinite;
 }
 
+.compression-divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 14px;
+  color: #98a2b3;
+}
+
+.compression-divider > span {
+  height: 1px;
+  background: #eaecf0;
+}
+
+.compression-divider strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.compression-divider svg {
+  animation: spin 900ms linear infinite;
+}
+
 .message-end {
   height: 1px;
 }
@@ -445,6 +489,7 @@ zh-CN:
   welcomeDescription: 试着发送一条消息，开始新的对话。
   you: 你
   thinking: 正在思考
+  compressing: 正在压缩上下文
   editMessage: 编辑消息
   editAndResend: 编辑并重新发送
   regenerate: 重新生成
@@ -454,6 +499,7 @@ en:
   welcomeDescription: Send a message to start a new conversation.
   you: You
   thinking: Thinking
+  compressing: Compressing context
   editMessage: Edit message
   editAndResend: Edit and resend
   regenerate: Regenerate
