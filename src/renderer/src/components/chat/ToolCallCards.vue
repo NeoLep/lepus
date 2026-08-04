@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckCircle2, CircleAlert, LoaderCircle, Wrench } from '@lucide/vue'
+import { Ban, CheckCircle2, CircleAlert, LoaderCircle, ShieldAlert, Wrench } from '@lucide/vue'
 import type { ToolCallRecord } from '@ipc/chat/constants'
 
 defineProps<{ calls: ToolCallRecord[] }>()
@@ -21,11 +21,21 @@ function pretty(value?: string): string {
         <span class="tool-icon"><Wrench :size="14" /></span>
         <strong>{{ call.name }}</strong>
         <span class="tool-status" :class="call.status">
-          <LoaderCircle v-if="call.status === 'running'" :size="14" />
+          <ShieldAlert v-if="call.status === 'awaiting_approval'" :size="14" />
+          <LoaderCircle v-else-if="call.status === 'running'" :size="14" />
           <CheckCircle2 v-else-if="call.status === 'completed'" :size="14" />
+          <Ban v-else-if="call.status === 'rejected'" :size="14" />
           <CircleAlert v-else :size="14" />
           {{
-            call.status === 'running' ? '运行中' : call.status === 'completed' ? '已完成' : '失败'
+            call.status === 'awaiting_approval'
+              ? '等待确认'
+              : call.status === 'running'
+                ? '运行中'
+                : call.status === 'completed'
+                  ? '已完成'
+                  : call.status === 'rejected'
+                    ? '已拒绝'
+                    : '失败'
           }}
         </span>
       </summary>
@@ -91,11 +101,17 @@ function pretty(value?: string): string {
 .tool-status.running svg {
   animation: spin 900ms linear infinite;
 }
+.tool-status.awaiting_approval {
+  color: #b54708;
+}
 .tool-status.completed {
   color: #067647;
 }
 .tool-status.error {
   color: #b42318;
+}
+.tool-status.rejected {
+  color: #667085;
 }
 .tool-details {
   padding: 9px 10px 10px;

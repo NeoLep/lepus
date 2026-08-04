@@ -215,7 +215,7 @@ watch(open, (isOpen) => {
   left: 50%;
   display: flex;
   width: min(900px, calc(100vw - 40px));
-  max-height: min(720px, calc(100vh - 48px));
+  max-height: min(740px, calc(100vh - 48px));
   flex-direction: column;
   overflow: hidden;
   border: 1px solid #dfe3e8;

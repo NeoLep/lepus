@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import { ArrowUp, LoaderCircle, Pencil, RotateCcw, Sparkles, UserRound, X } from '@lucide/vue'
-import type { Message, ToolCallRecord } from '@ipc/chat/constants'
+import type { Message, ToolApprovalRequest, ToolCallRecord } from '@ipc/chat/constants'
 import MarkdownContent from './MarkdownContent.vue'
+import ToolApprovalCards from './ToolApprovalCards.vue'
 import ToolCallCards from './ToolCallCards.vue'
 import { useI18n } from 'vue-i18n'
 
@@ -12,12 +13,18 @@ const props = defineProps<{
   statusText?: string
   streamContent?: string
   activeToolCalls?: ToolCallRecord[]
+  approvals?: ToolApprovalRequest[]
+  resolvingApprovalIds?: string[]
   showToolCallDetails: boolean
 }>()
 
 const emit = defineEmits<{
   resend: [message: Message, content: string]
   regenerate: [message: Message]
+  resolveApproval: [
+    approval: ToolApprovalRequest,
+    decision: 'allow_once' | 'allow_session' | 'reject'
+  ]
 }>()
 
 const messageEnd = ref<HTMLElement | null>(null)
@@ -53,7 +60,13 @@ function submitEditing(message: Message): void {
 }
 
 watch(
-  () => [props.messages.length, props.sending, props.statusText, props.streamContent],
+  () => [
+    props.messages.length,
+    props.sending,
+    props.statusText,
+    props.streamContent,
+    props.approvals?.length
+  ],
   async () => {
     await nextTick()
     messageEnd.value?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -141,8 +154,13 @@ watch(
         <div class="message-body">
           <strong>Lepus</strong>
           <ToolCallCards v-if="showToolCallDetails" :calls="activeToolCalls ?? []" />
+          <ToolApprovalCards
+            :approvals="approvals ?? []"
+            :resolving-ids="resolvingApprovalIds"
+            @resolve="(approval, decision) => emit('resolveApproval', approval, decision)"
+          />
           <MarkdownContent v-if="streamContent" :content="streamContent" />
-          <span v-if="statusText" class="thinking"
+          <span v-if="statusText && !approvals?.length" class="thinking"
             ><LoaderCircle :size="15" /> {{ statusText ?? t('thinking') }}</span
           >
         </div>

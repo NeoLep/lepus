@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { ChatCompletionTool } from 'openai/resources/chat/completions'
-import type { SearchProviderConfig, SearchProviderId } from '@/ipc/chat/constants'
+import type { SearchProviderConfig, SearchProviderId, ToolApprovalRisk } from '@/ipc/chat/constants'
 import { calculateExpression } from './calculator'
 import { searchWeb } from './web-search'
 
@@ -9,6 +9,7 @@ type JsonObject = Record<string, unknown>
 export type FunctionTool = {
   schema: ChatCompletionTool
   execute: (argumentsValue: JsonObject, signal?: AbortSignal) => unknown | Promise<unknown>
+  approval?: { risk: ToolApprovalRisk; reason: string }
 }
 
 function requireString(value: unknown, name: string): string {
@@ -26,11 +27,13 @@ function createTool(
   name: string,
   description: string,
   parameters: JsonObject,
-  execute: FunctionTool['execute']
+  execute: FunctionTool['execute'],
+  approval?: FunctionTool['approval']
 ): FunctionTool {
   return {
     schema: { type: 'function', function: { name, description, parameters } },
-    execute
+    execute,
+    ...(approval ? { approval } : {})
   }
 }
 
@@ -128,6 +131,10 @@ function createSearchTool(configs: SearchProviderConfig[]): FunctionTool | null 
       const limit = optionalInteger(maxResults, 'max_results', 5)
       if (limit < 1 || limit > 10) throw new Error('max_results 必须在 1 到 10 之间')
       return searchWeb(normalizedQuery, limit, config, signal)
+    },
+    {
+      risk: 'medium',
+      reason: '将把搜索关键词发送给已配置的第三方互联网搜索服务。'
     }
   )
 }
@@ -143,6 +150,9 @@ export function createFunctionToolRuntime(searchConfigs: SearchProviderConfig[])
   )
   return {
     schemas: tools.map((tool) => tool.schema),
+    getApproval(name: string): FunctionTool['approval'] {
+      return toolMap.get(name)?.approval
+    },
     async execute(name: string, rawArguments: string, signal?: AbortSignal): Promise<string> {
       const tool = toolMap.get(name)
       if (!tool) return JSON.stringify({ ok: false, error: `未知工具：${name}` })

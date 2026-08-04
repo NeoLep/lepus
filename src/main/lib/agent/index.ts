@@ -5,6 +5,7 @@ import {
   SearchCitation,
   SearchProviderConfig,
   SearchProviderId,
+  ToolApprovalRequest,
   ToolCallRecord
 } from '@/ipc/chat/constants'
 import type { AgentInputMessage } from './types'
@@ -33,6 +34,9 @@ export class Agent {
       onContentUpdate?: (content: string) => void
       signal?: AbortSignal
       onToolActivity?: (call: ToolCallRecord) => void
+      onToolApproval?: (
+        request: Omit<ToolApprovalRequest, 'sessionId'>
+      ) => Promise<'allow_once' | 'allow_session' | 'reject'>
     }
   ) {
     const messages: ChatCompletionMessageParam[] = [...message]
@@ -107,12 +111,37 @@ export class Agent {
       messages.push(responseMessage)
       const toolMessages = await Promise.all(
         toolCalls.map(async (toolCall): Promise<ChatCompletionMessageParam> => {
-          const runningCall: ToolCallRecord = {
+          const baseCall = {
             id: toolCall.id,
             name: toolCall.function.name,
-            arguments: toolCall.function.arguments,
-            status: 'running'
+            arguments: toolCall.function.arguments
           }
+          const approval = this.toolRuntime.getApproval(toolCall.function.name)
+          if (approval) {
+            options?.onToolActivity?.({ ...baseCall, status: 'awaiting_approval' })
+            const decision = options?.onToolApproval
+              ? await options.onToolApproval({
+                  id: `approval-${toolCall.id}`,
+                  toolCallId: toolCall.id,
+                  name: toolCall.function.name,
+                  arguments: toolCall.function.arguments,
+                  risk: approval.risk,
+                  reason: approval.reason
+                })
+              : 'reject'
+            if (decision === 'reject') {
+              const result = JSON.stringify({ ok: false, error: '用户拒绝了工具调用' })
+              const rejectedCall: ToolCallRecord = {
+                ...baseCall,
+                status: 'rejected',
+                result
+              }
+              toolExecutions.push(rejectedCall)
+              options?.onToolActivity?.(rejectedCall)
+              return { role: 'tool', tool_call_id: toolCall.id, content: result }
+            }
+          }
+          const runningCall: ToolCallRecord = { ...baseCall, status: 'running' }
           options?.onToolActivity?.(runningCall)
           let result = await this.toolRuntime.execute(
             toolCall.function.name,

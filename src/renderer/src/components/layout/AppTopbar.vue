@@ -53,7 +53,7 @@ function changeLocale(nextLocale: AppLocale): void {
       <TooltipRoot v-if="!sidebarOpen">
         <TooltipTrigger as-child>
           <button
-            class="icon-button"
+            class="icon-button ml-1.25"
             type="button"
             :aria-label="t('expandSidebar')"
             @click="emit('openSidebar')"

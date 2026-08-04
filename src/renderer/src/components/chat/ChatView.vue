@@ -8,6 +8,7 @@ import type {
   CompressionStatus,
   Message,
   ModelConfig,
+  ToolApprovalRequest,
   ToolCallRecord
 } from '@ipc/chat/constants'
 import {
@@ -41,6 +42,8 @@ const compressionStatusBySession = ref<Record<string, CompressionStatus>>({})
 const compressingBySession = ref<Record<string, boolean>>({})
 const streamedContentBySession = ref<Record<string, string>>({})
 const toolActivitiesBySession = ref<Record<string, ToolCallRecord[]>>({})
+const toolApprovalsBySession = ref<Record<string, ToolApprovalRequest[]>>({})
+const resolvingApprovalIds = ref<string[]>([])
 const showToolCallDetails = ref(true)
 const compressionEventVersionBySession = ref<Record<string, number>>({})
 const messages = computed(() =>
@@ -68,10 +71,14 @@ const streamedContent = computed(() =>
 const activeToolCalls = computed(() =>
   props.sessionId ? (toolActivitiesBySession.value[props.sessionId] ?? []) : []
 )
+const activeToolApprovals = computed(() =>
+  props.sessionId ? (toolApprovalsBySession.value[props.sessionId] ?? []) : []
+)
 
 let removeCompressionListener: (() => void) | null = null
 let removeStreamListener: (() => void) | null = null
 let removeToolActivityListener: (() => void) | null = null
+let removeToolApprovalListener: (() => void) | null = null
 
 onMounted(() => {
   void refreshToolCallDetailSetting()
@@ -91,6 +98,13 @@ onMounted(() => {
     else calls[index] = event.call
     toolActivitiesBySession.value[event.sessionId] = calls
   })
+  removeToolApprovalListener = window.api.chat.onToolApprovalRequested((event) => {
+    const approvals = [...(toolApprovalsBySession.value[event.sessionId] ?? [])]
+    const index = approvals.findIndex((approval) => approval.id === event.id)
+    if (index === -1) approvals.push(event)
+    else approvals[index] = event
+    toolApprovalsBySession.value[event.sessionId] = approvals
+  })
 })
 
 async function refreshToolCallDetailSetting(): Promise<void> {
@@ -106,6 +120,7 @@ onUnmounted(() => {
   removeCompressionListener?.()
   removeStreamListener?.()
   removeToolActivityListener?.()
+  removeToolApprovalListener?.()
 })
 
 function emptyCompressionStatus(): CompressionStatus {
@@ -161,6 +176,7 @@ async function sendMessage(): Promise<void> {
   sendingBySession.value[sessionId] = true
   streamedContentBySession.value[sessionId] = ''
   toolActivitiesBySession.value[sessionId] = []
+  toolApprovalsBySession.value[sessionId] = []
   const sessionReady = await props.ensureSession(sessionId)
   if (!sessionReady) {
     sendingBySession.value[sessionId] = false
@@ -324,6 +340,7 @@ async function requestAssistant(
     sendingBySession.value[sessionId] = false
     streamedContentBySession.value[sessionId] = ''
     toolActivitiesBySession.value[sessionId] = []
+    toolApprovalsBySession.value[sessionId] = []
   }
 }
 
@@ -331,6 +348,28 @@ async function stopGeneration(): Promise<void> {
   const sessionId = props.sessionId
   if (!sessionId || !sendingBySession.value[sessionId]) return
   await window.api.chat.cancelChat(sessionId)
+}
+
+async function resolveToolApproval(
+  approval: ToolApprovalRequest,
+  decision: 'allow_once' | 'allow_session' | 'reject'
+): Promise<void> {
+  if (resolvingApprovalIds.value.includes(approval.id)) return
+  resolvingApprovalIds.value = [...resolvingApprovalIds.value, approval.id]
+  try {
+    await window.api.chat.resolveToolApproval({
+      approvalId: approval.id,
+      sessionId: approval.sessionId,
+      decision
+    })
+    toolApprovalsBySession.value[approval.sessionId] = (
+      toolApprovalsBySession.value[approval.sessionId] ?? []
+    ).filter((item) => item.id !== approval.id)
+  } catch (error) {
+    console.error('Failed to resolve tool approval', error)
+  } finally {
+    resolvingApprovalIds.value = resolvingApprovalIds.value.filter((id) => id !== approval.id)
+  }
 }
 
 watch(
@@ -424,6 +463,8 @@ watch(
       :sending="sending || loading"
       :stream-content="streamedContent"
       :active-tool-calls="activeToolCalls"
+      :approvals="activeToolApprovals"
+      :resolving-approval-ids="resolvingApprovalIds"
       :show-tool-call-details="showToolCallDetails"
       :status-text="
         loading
@@ -436,6 +477,7 @@ watch(
       "
       @resend="reviseAndResend"
       @regenerate="regenerate"
+      @resolve-approval="resolveToolApproval"
     />
     <ChatComposer
       v-model="draft"

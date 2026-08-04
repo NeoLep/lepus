@@ -9,7 +9,9 @@ import {
   PromptPreviewRequest,
   PromptSettings,
   SearchProviderConfig,
-  Session
+  Session,
+  ToolApprovalDecision,
+  ToolApprovalRequest
 } from './constants'
 import { Agent } from '@/main/lib/agent'
 import { HistoryCompressor } from '@/main/lib/agent/history-compressor'
@@ -21,6 +23,16 @@ import { PromptBuilder } from '@/main/lib/agent/prompt-builder'
 
 const backgroundCompressionBySession = new Map<string, Promise<void>>()
 const activeChatControllers = new Map<string, AbortController>()
+const pendingToolApprovals = new Map<
+  string,
+  {
+    sessionId: string
+    toolName: string
+    risk: ToolApprovalRequest['risk']
+    resolve: (decision: ToolApprovalDecision['decision']) => void
+  }
+>()
+const sessionToolAllowances = new Map<string, Set<string>>()
 
 function isContextLengthError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
@@ -38,6 +50,21 @@ export default () => {
   ipcMain.handle(CHAT_CHANNELS.CHAT_CANCEL, (_event, sessionId: string) => {
     activeChatControllers.get(sessionId)?.abort()
   })
+  ipcMain.handle(CHAT_CHANNELS.TOOL_APPROVAL_RESOLVE, (_event, request: ToolApprovalDecision) => {
+    if (!['allow_once', 'allow_session', 'reject'].includes(request.decision)) return
+    const pending = pendingToolApprovals.get(request.approvalId)
+    if (!pending || pending.sessionId !== request.sessionId) return
+    const decision =
+      request.decision === 'allow_session' && pending.risk === 'high'
+        ? 'allow_once'
+        : request.decision
+    if (decision === 'allow_session') {
+      const allowedTools = sessionToolAllowances.get(request.sessionId) ?? new Set<string>()
+      allowedTools.add(pending.toolName)
+      sessionToolAllowances.set(request.sessionId, allowedTools)
+    }
+    pending.resolve(decision)
+  })
   ipcMain.handle(CHAT_CHANNELS.SESSION_QUERY, () => getChatRepository().querySessions())
   ipcMain.handle(CHAT_CHANNELS.SESSION_CREATE, (_event, request: Session) =>
     getChatRepository().createSession(request)
@@ -45,9 +72,10 @@ export default () => {
   ipcMain.handle(CHAT_CHANNELS.SESSION_UPDATE, (_event, request: Session) =>
     getChatRepository().updateSession(request)
   )
-  ipcMain.handle(CHAT_CHANNELS.SESSION_DELETE, (_event, id: string) =>
-    getChatRepository().deleteSession(id)
-  )
+  ipcMain.handle(CHAT_CHANNELS.SESSION_DELETE, (_event, id: string) => {
+    sessionToolAllowances.delete(id)
+    return getChatRepository().deleteSession(id)
+  })
   ipcMain.handle(CHAT_CHANNELS.MESSAGE_QUERY, (_event, sessionId: string) =>
     getChatRepository().queryMessages(sessionId)
   )
@@ -133,6 +161,39 @@ export default () => {
           call
         })
       }
+      const onToolApproval = (
+        approvalRequest: Omit<ToolApprovalRequest, 'sessionId'>
+      ): Promise<ToolApprovalDecision['decision']> => {
+        if (sessionToolAllowances.get(request.conversationId)?.has(approvalRequest.name)) {
+          return Promise.resolve('allow_session')
+        }
+        return new Promise((resolve) => {
+          const approvalId = crypto.randomUUID()
+          const payload: ToolApprovalRequest = {
+            ...approvalRequest,
+            id: approvalId,
+            sessionId: request.conversationId
+          }
+          const finish = (decision: ToolApprovalDecision['decision']): void => {
+            pendingToolApprovals.delete(approvalId)
+            controller.signal.removeEventListener('abort', rejectOnAbort)
+            event.sender.removeListener('destroyed', rejectOnDestroyed)
+            resolve(decision)
+          }
+          const rejectOnAbort = (): void => finish('reject')
+          const rejectOnDestroyed = (): void => finish('reject')
+          pendingToolApprovals.set(approvalId, {
+            sessionId: request.conversationId,
+            toolName: approvalRequest.name,
+            risk: approvalRequest.risk,
+            resolve: finish
+          })
+          controller.signal.addEventListener('abort', rejectOnAbort, { once: true })
+          event.sender.once('destroyed', rejectOnDestroyed)
+          if (controller.signal.aborted || event.sender.isDestroyed()) finish('reject')
+          else event.sender.send(CHAT_CHANNELS.TOOL_APPROVAL_REQUESTED, payload)
+        })
+      }
       const compressor = new HistoryCompressor(repository, modelConfig, agent, systemPrompt)
       const buildStoppedResponse = () => {
         const partialContent = streamedContent.trim()
@@ -182,6 +243,7 @@ export default () => {
         response = await agent.chat(context, {
           onContentUpdate,
           onToolActivity,
+          onToolApproval,
           signal: controller.signal
         })
       } catch (error) {
@@ -193,6 +255,7 @@ export default () => {
           response = await agent.chat(context, {
             onContentUpdate,
             onToolActivity,
+            onToolApproval,
             signal: controller.signal
           })
         } catch (retryError) {

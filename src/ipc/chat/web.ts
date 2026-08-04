@@ -14,7 +14,9 @@ import {
   PromptSettings,
   SearchProviderConfig,
   Session,
-  ToolActivityEvent
+  ToolActivityEvent,
+  ToolApprovalDecision,
+  ToolApprovalRequest
 } from './constants'
 
 export default {
@@ -65,6 +67,14 @@ export default {
     ipcRenderer.on(CHAT_CHANNELS.TOOL_ACTIVITY_CHANGED, handler)
     return () => ipcRenderer.removeListener(CHAT_CHANNELS.TOOL_ACTIVITY_CHANGED, handler)
   },
+  onToolApprovalRequested: (listener: (event: ToolApprovalRequest) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: ToolApprovalRequest): void =>
+      listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.TOOL_APPROVAL_REQUESTED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.TOOL_APPROVAL_REQUESTED, handler)
+  },
+  resolveToolApproval: (request: ToolApprovalDecision): Promise<void> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.TOOL_APPROVAL_RESOLVE, request),
   onChatStreamDelta: (listener: (event: ChatStreamDeltaEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: ChatStreamDeltaEvent): void =>
       listener(payload)

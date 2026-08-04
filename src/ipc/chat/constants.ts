@@ -22,6 +22,8 @@ export const CHAT_CHANNELS = {
   CHAT_STREAM_DELTA: 'chat:stream-delta',
   CHAT_CANCEL: 'chat:cancel',
   TOOL_ACTIVITY_CHANGED: 'tool-activity:changed',
+  TOOL_APPROVAL_REQUESTED: 'tool-approval:requested',
+  TOOL_APPROVAL_RESOLVE: 'tool-approval:resolve',
 
   CHAT_SEND: 'chat:send-message'
 }
@@ -56,13 +58,31 @@ export type ToolCallRecord = {
   id: string
   name: string
   arguments: string
-  status: 'running' | 'completed' | 'error'
+  status: 'awaiting_approval' | 'running' | 'completed' | 'error' | 'rejected'
   result?: string
 }
 
 export type ToolActivityEvent = {
   sessionId: string
   call: ToolCallRecord
+}
+
+export type ToolApprovalRisk = 'medium' | 'high'
+
+export type ToolApprovalRequest = {
+  id: string
+  sessionId: string
+  toolCallId: string
+  name: string
+  arguments: string
+  risk: ToolApprovalRisk
+  reason: string
+}
+
+export type ToolApprovalDecision = {
+  approvalId: string
+  sessionId: string
+  decision: 'allow_once' | 'allow_session' | 'reject'
 }
 
 export type ChatMessage = {
