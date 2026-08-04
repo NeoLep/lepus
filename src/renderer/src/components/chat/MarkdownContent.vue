@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import type { SearchCitation } from '@ipc/chat/constants'
 
@@ -25,20 +25,118 @@ markdown.renderer.rules.link_open = (tokens, index, options, environment, render
   return defaultLinkOpen(tokens, index, options, environment, renderer)
 }
 
+function linkSearchCitations(content: string, sources: SearchCitation[]): string {
+  const sourceByIndex = new Map(sources.map((source) => [source.index, source]))
+
+  return content
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/g)
+    .map((part, index) => {
+      if (index % 2 === 1) return part
+
+      return part.replace(
+        /\[(\d+)\](?:\((?:https?:\/\/[^)\s]+)(?:\s+["'][^"']*["'])?\))?/g,
+        (match, value) => {
+          const source = sourceByIndex.get(Number(value))
+          return source ? `LEPUSCITATION${value}TOKEN` : match
+        }
+      )
+    })
+    .join('')
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function getSourceLabel(source: SearchCitation): string {
+  try {
+    return new URL(source.url).hostname.replace(/^www\./, '')
+  } catch {
+    return source.provider
+  }
+}
+
+function getSafeSourceUrl(source: SearchCitation): string | null {
+  try {
+    const url = new URL(source.url)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
 const renderedContent = computed(() => {
   const sourceByIndex = new Map((props.sources ?? []).map((source) => [source.index, source]))
-  const contentWithCitations = props.content.replace(/\[(\d+)\](?!\()/g, (match, value) => {
+  const rendered = markdown.render(linkSearchCitations(props.content, props.sources ?? []))
+
+  return rendered.replace(/LEPUSCITATION(\d+)TOKEN/g, (match, value) => {
     const source = sourceByIndex.get(Number(value))
-    return source ? `[${value}](${source.url})` : match
+    if (!source) return match
+    const url = getSafeSourceUrl(source)
+    if (!url) return `#${value}`
+
+    return `<a class="search-citation" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" data-citation-title="${escapeHtml(source.title)}" data-citation-source="${escapeHtml(getSourceLabel(source))}" aria-label="来源 ${value}：${escapeHtml(source.title)}">#${value}</a>`
   })
-  return markdown.render(contentWithCitations)
 })
+
+const tooltip = ref<{ title: string; source: string; left: number; top: number } | null>(null)
+
+function citationFromEvent(event: Event): HTMLAnchorElement | null {
+  if (!(event.target instanceof Element)) return null
+  return event.target.closest<HTMLAnchorElement>('a.search-citation')
+}
+
+function showCitationTooltip(event: Event): void {
+  const citation = citationFromEvent(event)
+  if (!citation) return
+
+  const bounds = citation.getBoundingClientRect()
+  tooltip.value = {
+    title: citation.dataset.citationTitle ?? '',
+    source: citation.dataset.citationSource ?? '',
+    left: Math.max(140, Math.min(window.innerWidth - 140, bounds.left + bounds.width / 2)),
+    top: bounds.top - 8
+  }
+}
+
+function hideCitationTooltip(event: Event): void {
+  const citation = citationFromEvent(event)
+  if (!citation) return
+  if (event instanceof MouseEvent && event.relatedTarget instanceof Node) {
+    if (citation.contains(event.relatedTarget)) return
+  }
+  tooltip.value = null
+}
 </script>
 
 <template>
   <!-- markdown-it escapes raw HTML and rejects unsafe link protocols. -->
-  <!-- eslint-disable-next-line vue/no-v-html -->
-  <div class="markdown-body" v-html="renderedContent"></div>
+  <!-- eslint-disable vue/no-v-html -->
+  <div
+    class="markdown-body"
+    @mouseover="showCitationTooltip"
+    @mouseout="hideCitationTooltip"
+    @focusin="showCitationTooltip"
+    @focusout="hideCitationTooltip"
+    v-html="renderedContent"
+  ></div>
+  <Teleport to="body">
+    <div
+      v-if="tooltip"
+      class="citation-tooltip"
+      role="tooltip"
+      :style="{ left: `${tooltip.left}px`, top: `${tooltip.top}px` }"
+    >
+      <strong>{{ tooltip.title }}</strong>
+      <span>{{ tooltip.source }}</span>
+    </div>
+  </Teleport>
+  <!-- eslint-enable vue/no-v-html -->
 </template>
 
 <style scoped>
@@ -125,6 +223,27 @@ const renderedContent = computed(() => {
   text-decoration-color: currentcolor;
 }
 
+.markdown-body :deep(.search-citation) {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 1px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #eff4ff;
+  color: #175cd3;
+  font-size: 0.78em;
+  font-weight: 700;
+  line-height: 1.55;
+  text-decoration: none;
+  vertical-align: 0.08em;
+}
+
+.markdown-body :deep(.search-citation:hover),
+.markdown-body :deep(.search-citation:focus-visible) {
+  background: #dbe7ff;
+  outline: none;
+}
+
 .markdown-body :deep(code) {
   padding: 2px 5px;
   border: 1px solid #e4e7ec;
@@ -193,5 +312,36 @@ const renderedContent = computed(() => {
 .markdown-body :deep(strong) {
   color: #182230;
   font-weight: 650;
+}
+
+.citation-tooltip {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  width: max-content;
+  max-width: 280px;
+  padding: 8px 10px;
+  transform: translate(-50%, -100%);
+  flex-direction: column;
+  gap: 3px;
+  border-radius: 7px;
+  background: #101828;
+  color: #fff;
+  box-shadow: 0 6px 18px rgb(16 24 40 / 20%);
+  pointer-events: none;
+}
+
+.citation-tooltip strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.citation-tooltip span {
+  color: #98a2b3;
+  font-size: 10px;
 }
 </style>

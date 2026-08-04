@@ -4,7 +4,6 @@ import { ArrowUp, LoaderCircle, Pencil, RotateCcw, Sparkles, UserRound, X } from
 import type { Message, ToolCallRecord } from '@ipc/chat/constants'
 import MarkdownContent from './MarkdownContent.vue'
 import ToolCallCards from './ToolCallCards.vue'
-import SearchSources from './SearchSources.vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -122,7 +121,6 @@ watch(
           <template v-else>
             <ToolCallCards v-if="showToolCallDetails" :calls="message.toolCalls ?? []" />
             <MarkdownContent :content="message.content" :sources="message.sources" />
-            <SearchSources :sources="message.sources ?? []" />
             <div v-if="message.id === latestAssistantMessageId" class="message-actions">
               <button
                 type="button"
