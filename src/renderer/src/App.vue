@@ -64,6 +64,9 @@ function makeSession(): Session {
 function discardPendingSessions(exceptId?: string): void {
   for (const id of pendingSessionIds.value) {
     if (id === exceptId || persistingSessionIds.value.has(id)) continue
+    void window.api.chat
+      .discardAttachmentSession(id)
+      .catch((error) => console.warn('Failed to discard pending attachments', error))
     pendingSessionIds.value.delete(id)
     sessions.value = sessions.value.filter((session) => session.id !== id)
     if (activeSessionId.value === id) activeSessionId.value = null

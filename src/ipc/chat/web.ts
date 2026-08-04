@@ -1,5 +1,9 @@
-import { ipcRenderer } from 'electron'
+import { ipcRenderer, webUtils } from 'electron'
 import {
+  AttachmentImportRequest,
+  AttachmentImportResult,
+  AttachmentDiscardRequest,
+  AttachmentPreviewRequest,
   CHAT_CHANNELS,
   ChatMessage,
   ChatResponse,
@@ -10,11 +14,14 @@ import {
   MessageReviseRequest,
   MessageRegenerateRequest,
   ModelConfig,
+  PermissionSettings,
+  SessionPermissionSettings,
   PromptPreviewRequest,
   PromptSettings,
   SearchProviderConfig,
   Session,
   ToolActivityEvent,
+  ToolCancelRequest,
   ToolApprovalDecision,
   ToolApprovalRequest
 } from './constants'
@@ -33,6 +40,17 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.MESSAGE_REVISE, request),
   regenerateMessage: (request: MessageRegenerateRequest): Promise<void> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MESSAGE_REGENERATE, request),
+  selectAttachments: (sessionId: string): Promise<AttachmentImportResult> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.ATTACHMENT_SELECT, sessionId),
+  importAttachments: (request: AttachmentImportRequest): Promise<AttachmentImportResult> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.ATTACHMENT_IMPORT, request),
+  getAttachmentPreview: (request: AttachmentPreviewRequest): Promise<string> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.ATTACHMENT_PREVIEW, request),
+  discardAttachment: (request: AttachmentDiscardRequest): Promise<void> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.ATTACHMENT_DISCARD, request),
+  discardAttachmentSession: (sessionId: string): Promise<void> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.ATTACHMENT_SESSION_DISCARD, sessionId),
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   queryModelConfigs: (): Promise<ModelConfig[]> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_QUERY),
   createModelConfig: (request: ModelConfig): Promise<ModelConfig> =>
@@ -53,6 +71,14 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.SEARCH_CONFIG_QUERY),
   updateSearchProviderConfigs: (request: SearchProviderConfig[]): Promise<SearchProviderConfig[]> =>
     ipcRenderer.invoke(CHAT_CHANNELS.SEARCH_CONFIG_UPDATE, request),
+  queryPermissionSettings: (sessionId: string): Promise<PermissionSettings> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.PERMISSION_SETTINGS_QUERY, sessionId),
+  updatePermissionSettings: (request: SessionPermissionSettings): Promise<PermissionSettings> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.PERMISSION_SETTINGS_UPDATE, request),
+  selectWorkspaceFolder: (): Promise<string | null> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.WORKSPACE_FOLDER_SELECT),
+  openGeneratedFile: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.GENERATED_FILE_OPEN, filePath),
   queryCompressionStatus: (request: CompressionStatusQuery): Promise<CompressionStatus> =>
     ipcRenderer.invoke(CHAT_CHANNELS.COMPRESSION_STATUS_QUERY, request),
   onCompressionStatusChanged: (listener: (event: CompressionStatusEvent) => void): (() => void) => {
@@ -83,6 +109,8 @@ export default {
   },
   cancelChat: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke(CHAT_CHANNELS.CHAT_CANCEL, sessionId),
+  cancelTool: (request: ToolCancelRequest): Promise<void> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.TOOL_CANCEL, request),
 
   sendChatMessage: (request: ChatMessage): Promise<ChatResponse> =>
     ipcRenderer.invoke(CHAT_CHANNELS.CHAT_SEND, request)

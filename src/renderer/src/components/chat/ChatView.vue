@@ -2,11 +2,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import ChatComposer from './ChatComposer.vue'
 import ChatMessageList from './ChatMessageList.vue'
+import PermissionSettingsDialog from '../settings/PermissionSettingsDialog.vue'
 
 import type {
   ChatLocale,
   CompressionStatus,
   Message,
+  MessageAttachment,
   ModelConfig,
   ToolApprovalRequest,
   ToolCallRecord
@@ -44,12 +46,26 @@ const streamedContentBySession = ref<Record<string, string>>({})
 const toolActivitiesBySession = ref<Record<string, ToolCallRecord[]>>({})
 const toolApprovalsBySession = ref<Record<string, ToolApprovalRequest[]>>({})
 const resolvingApprovalIds = ref<string[]>([])
+const permissionSettingsOpen = ref(false)
+const openingPermissionSettings = ref(false)
 const showToolCallDetails = ref(true)
 const compressionEventVersionBySession = ref<Record<string, number>>({})
 const messages = computed(() =>
   props.sessionId ? (messagesBySession.value[props.sessionId] ?? []) : []
 )
 const draft = ref('')
+const draftAttachmentsBySession = ref<Record<string, MessageAttachment[]>>({})
+const addingAttachmentsBySession = ref<Record<string, boolean>>({})
+const attachmentErrorBySession = ref<Record<string, string>>({})
+const draftAttachments = computed(() =>
+  props.sessionId ? (draftAttachmentsBySession.value[props.sessionId] ?? []) : []
+)
+const addingAttachments = computed(() =>
+  props.sessionId ? (addingAttachmentsBySession.value[props.sessionId] ?? false) : false
+)
+const attachmentError = computed(() =>
+  props.sessionId ? (attachmentErrorBySession.value[props.sessionId] ?? '') : ''
+)
 const sendingBySession = ref<Record<string, boolean>>({})
 const sending = computed(() =>
   props.sessionId ? (sendingBySession.value[props.sessionId] ?? false) : false
@@ -147,12 +163,17 @@ function emptyCompressionStatus(): CompressionStatus {
   }
 }
 
-function createLocalMessage(role: Message['role'], content: string): Message {
+function createLocalMessage(
+  role: Message['role'],
+  content: string,
+  attachments: MessageAttachment[] = []
+): Message {
   return {
     id: crypto.randomUUID(),
     role,
     content,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    ...(attachments.length ? { attachments } : {})
   }
 }
 
@@ -162,15 +183,26 @@ function toIpcMessage(message: Message): Message {
     ...(message.toolCalls
       ? { toolCalls: message.toolCalls.map((toolCall) => ({ ...toolCall })) }
       : {}),
-    ...(message.sources ? { sources: message.sources.map((source) => ({ ...source })) } : {})
+    ...(message.sources ? { sources: message.sources.map((source) => ({ ...source })) } : {}),
+    ...(message.attachments
+      ? { attachments: message.attachments.map((attachment) => ({ ...attachment })) }
+      : {})
   }
 }
 
 async function sendMessage(): Promise<void> {
   const content = draft.value.trim()
+  const attachments = draftAttachments.value.map((attachment) => ({ ...attachment }))
   const sessionId = props.sessionId
   const modelConfigId = props.modelConfig?.id ?? null
-  if (!content || sending.value || loading.value || props.disabled || !sessionId || !modelConfigId)
+  if (
+    (!content && !attachments.length) ||
+    sending.value ||
+    loading.value ||
+    props.disabled ||
+    !sessionId ||
+    !modelConfigId
+  )
     return
 
   sendingBySession.value[sessionId] = true
@@ -185,9 +217,10 @@ async function sendMessage(): Promise<void> {
 
   if (!messagesBySession.value[sessionId]) messagesBySession.value[sessionId] = []
   const sessionMessages = messagesBySession.value[sessionId]
-  const userMessage = createLocalMessage('user', content)
+  const userMessage = createLocalMessage('user', content, attachments)
   sessionMessages.push(userMessage)
   draft.value = ''
+  draftAttachmentsBySession.value[sessionId] = []
 
   const projectedTokens =
     compressionStatus.value.estimatedTokens +
@@ -203,7 +236,11 @@ async function sendMessage(): Promise<void> {
     uncompressedMessages: compressionStatus.value.uncompressedMessages + 1
   }
 
-  emit('messageSent', sessionId, content)
+  emit(
+    'messageSent',
+    sessionId,
+    content || t('attachmentOnlyTitle', { name: attachments[0]?.name ?? t('addAttachment') })
+  )
   await requestAssistant(sessionId, modelConfigId, sessionMessages)
 }
 
@@ -350,6 +387,92 @@ async function stopGeneration(): Promise<void> {
   await window.api.chat.cancelChat(sessionId)
 }
 
+async function cancelDownload(toolCallId: string): Promise<void> {
+  if (!props.sessionId) return
+  await window.api.chat.cancelTool({ sessionId: props.sessionId, toolCallId })
+}
+
+function appendAttachments(
+  sessionId: string,
+  attachments: MessageAttachment[],
+  errors: Array<{ path: string; message: string }>
+): void {
+  const current = draftAttachmentsBySession.value[sessionId] ?? []
+  const available = Math.max(0, 10 - current.length)
+  draftAttachmentsBySession.value[sessionId] = [...current, ...attachments.slice(0, available)]
+  const messages = errors.map((error) => `${error.path.split(/[\\/]/).pop()}: ${error.message}`)
+  if (attachments.length > available) {
+    messages.push(t('tooManyAttachments'))
+    for (const attachment of attachments.slice(available)) {
+      void window.api.chat
+        .discardAttachment({ sessionId, attachment })
+        .catch((error) => console.warn('Failed to discard excess attachment', error))
+    }
+  }
+  attachmentErrorBySession.value[sessionId] = messages.join('；')
+}
+
+async function addAttachments(): Promise<void> {
+  const sessionId = props.sessionId
+  if (!sessionId || addingAttachments.value) return
+  addingAttachmentsBySession.value[sessionId] = true
+  attachmentErrorBySession.value[sessionId] = ''
+  try {
+    const result = await window.api.chat.selectAttachments(sessionId)
+    if (props.sessionId === sessionId)
+      appendAttachments(sessionId, result.attachments, result.errors)
+  } catch (error) {
+    attachmentErrorBySession.value[sessionId] =
+      error instanceof Error ? error.message : t('attachmentAddFailed')
+  } finally {
+    addingAttachmentsBySession.value[sessionId] = false
+  }
+}
+
+async function dropAttachments(files: File[]): Promise<void> {
+  const sessionId = props.sessionId
+  if (!sessionId || addingAttachments.value || !files.length) return
+  addingAttachmentsBySession.value[sessionId] = true
+  attachmentErrorBySession.value[sessionId] = ''
+  try {
+    const paths = files.map((file) => window.api.chat.getPathForFile(file)).filter(Boolean)
+    const result = await window.api.chat.importAttachments({ sessionId, paths })
+    if (props.sessionId === sessionId)
+      appendAttachments(sessionId, result.attachments, result.errors)
+  } catch (error) {
+    attachmentErrorBySession.value[sessionId] =
+      error instanceof Error ? error.message : t('attachmentAddFailed')
+  } finally {
+    addingAttachmentsBySession.value[sessionId] = false
+  }
+}
+
+function removeAttachment(attachmentId: string): void {
+  if (!props.sessionId) return
+  const attachment = draftAttachments.value.find((item) => item.id === attachmentId)
+  draftAttachmentsBySession.value[props.sessionId] = draftAttachments.value.filter(
+    (attachment) => attachment.id !== attachmentId
+  )
+  attachmentErrorBySession.value[props.sessionId] = ''
+  if (attachment) {
+    void window.api.chat
+      .discardAttachment({ sessionId: props.sessionId, attachment })
+      .catch((error) => console.warn('Failed to discard attachment', error))
+  }
+}
+
+async function openPermissionSettings(): Promise<void> {
+  const sessionId = props.sessionId
+  if (!sessionId || openingPermissionSettings.value) return
+  openingPermissionSettings.value = true
+  try {
+    if (!(await props.ensureSession(sessionId))) return
+    if (props.sessionId === sessionId) permissionSettingsOpen.value = true
+  } finally {
+    openingPermissionSettings.value = false
+  }
+}
+
 async function resolveToolApproval(
   approval: ToolApprovalRequest,
   decision: 'allow_once' | 'allow_session' | 'reject'
@@ -459,6 +582,8 @@ watch(
 <template>
   <main class="chat-view">
     <ChatMessageList
+      v-if="sessionId"
+      :session-id="sessionId"
       :messages="messages"
       :sending="sending || loading"
       :stream-content="streamedContent"
@@ -478,18 +603,29 @@ watch(
       @resend="reviseAndResend"
       @regenerate="regenerate"
       @resolve-approval="resolveToolApproval"
+      @cancel-download="cancelDownload"
     />
     <ChatComposer
+      v-if="sessionId"
       v-model="draft"
+      :session-id="sessionId"
       :sending="sending"
       :disabled="disabled || loading"
       :placeholder="disabledReason"
       :compression-status="compressionStatus"
       :compressing="compressing"
+      :attachments="draftAttachments"
+      :adding-attachments="addingAttachments"
+      :attachment-error="attachmentError"
       @submit="sendMessage"
       @stop="stopGeneration"
+      @permissions="openPermissionSettings"
+      @add-attachments="addAttachments"
+      @drop-attachments="dropAttachments"
+      @remove-attachment="removeAttachment"
     />
   </main>
+  <PermissionSettingsDialog v-model:open="permissionSettingsOpen" :session-id="sessionId" />
 </template>
 
 <style scoped>
@@ -509,10 +645,18 @@ zh-CN:
   loadingChat: 正在加载对话
   compressingHistory: 正在压缩历史对话
   thinking: 正在思考
+  attachmentOnlyTitle: 附件：{name}
+  addAttachment: 附件
+  attachmentAddFailed: 添加附件失败
+  tooManyAttachments: 每条消息最多添加 10 个附件
 en:
   sendFailedWithReason: 'Failed to send: {reason}'
   sendFailed: Failed to send. Please try again later.
   loadingChat: Loading chat
   compressingHistory: Compressing chat history
   thinking: Thinking
+  attachmentOnlyTitle: 'Attachment: {name}'
+  addAttachment: attachment
+  attachmentAddFailed: Failed to add attachment
+  tooManyAttachments: A message can contain at most 10 attachments
 </i18n>

@@ -49,7 +49,7 @@ function pretty(value: string): string {
           <X :size="14" /> {{ t('reject') }}
         </button>
         <button
-          v-if="approval.risk !== 'high'"
+          v-if="approval.allowSession"
           type="button"
           class="session-button"
           :disabled="resolvingIds?.includes(approval.id)"

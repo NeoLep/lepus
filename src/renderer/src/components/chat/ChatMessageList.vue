@@ -3,11 +3,17 @@ import { computed, ref, watch, nextTick } from 'vue'
 import { ArrowUp, LoaderCircle, Pencil, RotateCcw, Sparkles, UserRound, X } from '@lucide/vue'
 import type { Message, ToolApprovalRequest, ToolCallRecord } from '@ipc/chat/constants'
 import MarkdownContent from './MarkdownContent.vue'
+import GeneratedFileLinks from './GeneratedFileLinks.vue'
+import FileDiffCards from './FileDiffCards.vue'
 import ToolApprovalCards from './ToolApprovalCards.vue'
 import ToolCallCards from './ToolCallCards.vue'
+import DownloadCards from './DownloadCards.vue'
+import FileInspectionCards from './FileInspectionCards.vue'
+import MessageAttachments from './MessageAttachments.vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
+  sessionId: string
   messages: Message[]
   sending: boolean
   statusText?: string
@@ -21,6 +27,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   resend: [message: Message, content: string]
   regenerate: [message: Message]
+  cancelDownload: [toolCallId: string]
   resolveApproval: [
     approval: ToolApprovalRequest,
     decision: 'allow_once' | 'allow_session' | 'reject'
@@ -91,6 +98,11 @@ watch(
         <div class="message-body">
           <strong>{{ message.role === 'user' ? t('you') : 'Lepus' }}</strong>
           <template v-if="message.role === 'user'">
+            <MessageAttachments
+              v-if="message.attachments?.length"
+              :session-id="sessionId"
+              :attachments="message.attachments"
+            />
             <div v-if="editingMessageId === message.id" class="message-editor">
               <textarea
                 v-model="editDraft"
@@ -117,7 +129,7 @@ watch(
               </div>
             </div>
             <template v-else>
-              <p class="plain-content">{{ message.content }}</p>
+              <p v-if="message.content" class="plain-content">{{ message.content }}</p>
               <div v-if="message.id === latestUserMessageId" class="message-actions">
                 <button
                   type="button"
@@ -133,6 +145,10 @@ watch(
           </template>
           <template v-else>
             <ToolCallCards v-if="showToolCallDetails" :calls="message.toolCalls ?? []" />
+            <GeneratedFileLinks :calls="message.toolCalls ?? []" />
+            <DownloadCards :calls="message.toolCalls ?? []" />
+            <FileInspectionCards :calls="message.toolCalls ?? []" />
+            <FileDiffCards :calls="message.toolCalls ?? []" />
             <MarkdownContent :content="message.content" :sources="message.sources" />
             <div v-if="message.id === latestAssistantMessageId" class="message-actions">
               <button
@@ -154,6 +170,14 @@ watch(
         <div class="message-body">
           <strong>Lepus</strong>
           <ToolCallCards v-if="showToolCallDetails" :calls="activeToolCalls ?? []" />
+          <GeneratedFileLinks :calls="activeToolCalls ?? []" />
+          <DownloadCards
+            :calls="activeToolCalls ?? []"
+            active
+            @cancel="(toolCallId) => emit('cancelDownload', toolCallId)"
+          />
+          <FileInspectionCards :calls="activeToolCalls ?? []" />
+          <FileDiffCards :calls="activeToolCalls ?? []" />
           <ToolApprovalCards
             :approvals="approvals ?? []"
             :resolving-ids="resolvingApprovalIds"

@@ -6,6 +6,7 @@ import type {
   Message,
   ModelConfig,
   PromptSettings,
+  PermissionSettings,
   SearchProviderConfig,
   SearchProviderId,
   Session
@@ -15,6 +16,7 @@ import {
   DEFAULT_PROMPT_SETTINGS,
   PROMPT_CUSTOM_INSTRUCTIONS_MAX_LENGTH
 } from '@/shared/agent/prompt-settings'
+import { DEFAULT_PERMISSION_SETTINGS, isPermissionMode } from '@/shared/agent/permissions'
 
 type SessionRow = {
   id: string
@@ -30,6 +32,7 @@ type MessageRow = {
   created_at: string
   tool_calls_json: string
   sources_json: string
+  attachments_json: string
 }
 
 type ModelConfigRow = {
@@ -125,7 +128,8 @@ function toMessage(row: MessageRow): Message {
     content: row.content,
     createdAt: row.created_at,
     toolCalls: JSON.parse(row.tool_calls_json || '[]') as Message['toolCalls'],
-    sources: JSON.parse(row.sources_json || '[]') as Message['sources']
+    sources: JSON.parse(row.sources_json || '[]') as Message['sources'],
+    attachments: JSON.parse(row.attachments_json || '[]') as Message['attachments']
   }
 }
 
@@ -228,7 +232,7 @@ export class ChatRepository {
   queryMessages(sessionId: string): Message[] {
     const rows = this.database
       .prepare(
-        `SELECT id, role, content, created_at, tool_calls_json, sources_json
+        `SELECT id, role, content, created_at, tool_calls_json, sources_json, attachments_json
          FROM messages
          WHERE session_id = ?
          ORDER BY created_at ASC, rowid ASC`
@@ -240,9 +244,9 @@ export class ChatRepository {
   saveMessages(sessionId: string, messages: Message[]): void {
     const insert = this.database.prepare(
       `INSERT OR IGNORE INTO messages
-         (id, session_id, role, content, created_at, tool_calls_json, sources_json)
+         (id, session_id, role, content, created_at, tool_calls_json, sources_json, attachments_json)
        VALUES
-         (@id, @sessionId, @role, @content, @createdAt, @toolCallsJson, @sourcesJson)`
+         (@id, @sessionId, @role, @content, @createdAt, @toolCallsJson, @sourcesJson, @attachmentsJson)`
     )
     const save = this.database.transaction((items: Message[]) => {
       for (const message of items) {
@@ -250,7 +254,8 @@ export class ChatRepository {
           ...message,
           sessionId,
           toolCallsJson: JSON.stringify(message.toolCalls ?? []),
-          sourcesJson: JSON.stringify(message.sources ?? [])
+          sourcesJson: JSON.stringify(message.sources ?? []),
+          attachmentsJson: JSON.stringify(message.attachments ?? [])
         })
       }
     })
@@ -261,15 +266,16 @@ export class ChatRepository {
     this.database
       .prepare(
         `INSERT INTO messages
-           (id, session_id, role, content, created_at, tool_calls_json, sources_json)
+           (id, session_id, role, content, created_at, tool_calls_json, sources_json, attachments_json)
          VALUES
-           (@id, @sessionId, @role, @content, @createdAt, @toolCallsJson, @sourcesJson)`
+           (@id, @sessionId, @role, @content, @createdAt, @toolCallsJson, @sourcesJson, @attachmentsJson)`
       )
       .run({
         ...message,
         sessionId,
         toolCallsJson: JSON.stringify(message.toolCalls ?? []),
-        sourcesJson: JSON.stringify(message.sources ?? [])
+        sourcesJson: JSON.stringify(message.sources ?? []),
+        attachmentsJson: JSON.stringify(message.attachments ?? [])
       })
   }
 
@@ -517,6 +523,38 @@ export class ChatRepository {
       save.run('prompt.showToolCallDetails', settings.showToolCallDetails ? '1' : '0', now)
     })()
     return this.getPromptSettings()
+  }
+
+  getPermissionSettings(sessionId: string): PermissionSettings {
+    const row = this.database
+      .prepare(
+        `SELECT workspace_path, mode
+         FROM session_permission_settings
+         WHERE session_id = ?`
+      )
+      .get(sessionId) as { workspace_path: string; mode: string } | undefined
+    if (!row) return { ...DEFAULT_PERMISSION_SETTINGS }
+    return {
+      workspacePath: row.workspace_path,
+      mode: isPermissionMode(row.mode) ? row.mode : DEFAULT_PERMISSION_SETTINGS.mode
+    }
+  }
+
+  savePermissionSettings(sessionId: string, settings: PermissionSettings): PermissionSettings {
+    if (!isPermissionMode(settings.mode)) throw new Error('无效的权限模式')
+    const now = new Date().toISOString()
+    this.database
+      .prepare(
+        `INSERT INTO session_permission_settings
+         (session_id, workspace_path, mode, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           workspace_path = excluded.workspace_path,
+           mode = excluded.mode,
+           updated_at = excluded.updated_at`
+      )
+      .run(sessionId, settings.workspacePath.trim(), settings.mode, now)
+    return this.getPermissionSettings(sessionId)
   }
 
   querySearchProviderConfigs(): SearchProviderConfig[] {
@@ -819,6 +857,31 @@ export class ChatRepository {
         this.database.exec(`
           ALTER TABLE messages ADD COLUMN sources_json TEXT NOT NULL DEFAULT '[]';
           PRAGMA user_version = 9;
+        `)
+      })()
+    }
+
+    if (version < 10) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE session_permission_settings (
+            session_id TEXT PRIMARY KEY,
+            workspace_path TEXT NOT NULL DEFAULT '',
+            mode TEXT NOT NULL DEFAULT 'request_approval'
+              CHECK (mode IN ('request_approval', 'auto_approve', 'full_access')),
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+          );
+          PRAGMA user_version = 10;
+        `)
+      })()
+    }
+
+    if (version < 11) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]';
+          PRAGMA user_version = 11;
         `)
       })()
     }

@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import {
   Message,
   ModelConfig,
+  PermissionSettings,
   SearchCitation,
   SearchProviderConfig,
   SearchProviderId,
@@ -12,7 +13,7 @@ import type { AgentInputMessage } from './types'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { createFunctionToolRuntime } from './tools'
 
-const MAX_TOOL_ROUNDS = 8
+const MAX_TOOL_ROUNDS = 12
 
 export class Agent {
   public client: OpenAI
@@ -20,13 +21,17 @@ export class Agent {
 
   private readonly toolRuntime
 
-  constructor(config: ModelConfig, searchConfigs: SearchProviderConfig[] = []) {
+  constructor(
+    config: ModelConfig,
+    searchConfigs: SearchProviderConfig[] = [],
+    permissionSettings?: PermissionSettings
+  ) {
     this.client = new OpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseURL
     })
     this.model = config.model
-    this.toolRuntime = createFunctionToolRuntime(searchConfigs)
+    this.toolRuntime = createFunctionToolRuntime(searchConfigs, permissionSettings)
   }
   async chat(
     message: AgentInputMessage[],
@@ -34,12 +39,15 @@ export class Agent {
       onContentUpdate?: (content: string) => void
       signal?: AbortSignal
       onToolActivity?: (call: ToolCallRecord) => void
+      onToolCancellable?: (toolCallId: string, cancel: (() => void) | null) => void
       onToolApproval?: (
         request: Omit<ToolApprovalRequest, 'sessionId'>
       ) => Promise<'allow_once' | 'allow_session' | 'reject'>
     }
   ) {
-    const messages: ChatCompletionMessageParam[] = [...message]
+    const messages: ChatCompletionMessageParam[] = message.map(
+      (item) => ({ role: item.role, content: item.content }) as ChatCompletionMessageParam
+    )
     let visibleContent = ''
     let initialPromptTokens: number | null = null
     const toolExecutions: ToolCallRecord[] = []
@@ -116,7 +124,10 @@ export class Agent {
             name: toolCall.function.name,
             arguments: toolCall.function.arguments
           }
-          const approval = this.toolRuntime.getApproval(toolCall.function.name)
+          const approval = this.toolRuntime.getApproval(
+            toolCall.function.name,
+            toolCall.function.arguments
+          )
           if (approval) {
             options?.onToolActivity?.({ ...baseCall, status: 'awaiting_approval' })
             const decision = options?.onToolApproval
@@ -126,7 +137,8 @@ export class Agent {
                   name: toolCall.function.name,
                   arguments: toolCall.function.arguments,
                   risk: approval.risk,
-                  reason: approval.reason
+                  reason: approval.reason,
+                  allowSession: approval.allowSession ?? approval.risk !== 'high'
                 })
               : 'reject'
             if (decision === 'reject') {
@@ -143,11 +155,24 @@ export class Agent {
           }
           const runningCall: ToolCallRecord = { ...baseCall, status: 'running' }
           options?.onToolActivity?.(runningCall)
-          let result = await this.toolRuntime.execute(
-            toolCall.function.name,
-            toolCall.function.arguments,
-            options?.signal
-          )
+          const toolController = new AbortController()
+          const toolSignal = options?.signal
+            ? AbortSignal.any([options.signal, toolController.signal])
+            : toolController.signal
+          if (toolCall.function.name === 'download_file') {
+            options?.onToolCancellable?.(toolCall.id, () => toolController.abort())
+          }
+          let result: string
+          try {
+            result = await this.toolRuntime.execute(
+              toolCall.function.name,
+              toolCall.function.arguments,
+              toolSignal,
+              (progress) => options?.onToolActivity?.({ ...runningCall, progress })
+            )
+          } finally {
+            options?.onToolCancellable?.(toolCall.id, null)
+          }
           if (toolCall.function.name === 'search_web') {
             try {
               const payload = JSON.parse(result) as {
@@ -217,7 +242,10 @@ export class Agent {
     targetTokens: number
   ): Promise<string> {
     const transcript = messages
-      .map((message) => `[${message.role === 'user' ? '用户' : '助手'}]\n${message.content}`)
+      .map((message) => {
+        const attachmentNames = message.attachments?.map((item) => item.name).join('、')
+        return `[${message.role === 'user' ? '用户' : '助手'}]\n${message.content}${attachmentNames ? `\n[附件：${attachmentNames}]` : ''}`
+      })
       .join('\n\n')
     const response = await this.client.chat.completions.create({
       model: this.model,

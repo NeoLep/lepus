@@ -1,21 +1,30 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ArrowUp, Paperclip, Square } from '@lucide/vue'
+import { ArrowUp, FolderCog, LoaderCircle, Paperclip, Square } from '@lucide/vue'
 import { TooltipContent, TooltipPortal, TooltipRoot, TooltipTrigger } from 'reka-ui'
-import type { CompressionStatus } from '@ipc/chat/constants'
+import type { CompressionStatus, MessageAttachment } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
+import MessageAttachments from './MessageAttachments.vue'
 
 const props = defineProps<{
+  sessionId: string
   sending: boolean
   disabled: boolean
   placeholder?: string
   compressionStatus: CompressionStatus
   compressing: boolean
+  attachments: MessageAttachment[]
+  addingAttachments: boolean
+  attachmentError?: string
 }>()
 
 const emit = defineEmits<{
   submit: []
   stop: []
+  permissions: []
+  addAttachments: []
+  dropAttachments: [files: File[]]
+  removeAttachment: [attachmentId: string]
 }>()
 
 const { t, locale } = useI18n({ useScope: 'local' })
@@ -23,6 +32,7 @@ const formatNumber = (value: number): string => new Intl.NumberFormat(locale.val
 
 const model = defineModel<string>({ required: true })
 const textarea = ref<HTMLTextAreaElement | null>(null)
+const draggingFiles = ref(false)
 const ringProgress = computed(() => Math.min(Math.max(props.compressionStatus.usageRatio, 0), 1))
 const ringOffset = computed(() => 100 - ringProgress.value * 100)
 const tokenLabel = computed(() => {
@@ -48,8 +58,14 @@ function resizeTextarea(): void {
 }
 
 function submit(): void {
-  if (!model.value.trim() || props.sending || props.disabled) return
+  if ((!model.value.trim() && !props.attachments.length) || props.sending || props.disabled) return
   emit('submit')
+}
+
+function handleDrop(event: DragEvent): void {
+  draggingFiles.value = false
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (files.length) emit('dropAttachments', files)
 }
 
 function handlePrimaryAction(): void {
@@ -71,7 +87,24 @@ watch(model, async () => {
 
 <template>
   <div class="composer-wrap">
-    <form class="composer" @submit.prevent="submit">
+    <form
+      class="composer"
+      :class="{ 'dragging-files': draggingFiles }"
+      @submit.prevent="submit"
+      @dragenter.prevent="draggingFiles = true"
+      @dragover.prevent="draggingFiles = true"
+      @dragleave.prevent="draggingFiles = false"
+      @drop.prevent="handleDrop"
+    >
+      <div v-if="draggingFiles" class="drop-overlay">{{ t('dropAttachments') }}</div>
+      <MessageAttachments
+        v-if="attachments.length"
+        :session-id="sessionId"
+        :attachments="attachments"
+        compact
+        removable
+        @remove="(id) => emit('removeAttachment', id)"
+      />
       <textarea
         ref="textarea"
         v-model="model"
@@ -83,9 +116,33 @@ watch(model, async () => {
       ></textarea>
 
       <div class="composer-actions">
-        <button class="composer-icon" type="button" :aria-label="t('addAttachment')">
-          <Paperclip :size="18" />
+        <button
+          class="composer-icon"
+          type="button"
+          :aria-label="t('addAttachment')"
+          :disabled="disabled || sending || addingAttachments"
+          @click="emit('addAttachments')"
+        >
+          <LoaderCircle v-if="addingAttachments" class="spin" :size="18" />
+          <Paperclip v-else :size="18" />
         </button>
+        <TooltipRoot>
+          <TooltipTrigger as-child>
+            <button
+              class="composer-icon"
+              type="button"
+              :aria-label="t('filePermissions')"
+              @click="emit('permissions')"
+            >
+              <FolderCog :size="18" />
+            </button>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent class="tooltip-content" side="top" :side-offset="7">
+              {{ t('filePermissions') }}
+            </TooltipContent>
+          </TooltipPortal>
+        </TooltipRoot>
         <span class="composer-hint">{{ t('keyboardHint') }}</span>
         <TooltipRoot>
           <TooltipTrigger as-child>
@@ -143,7 +200,7 @@ watch(model, async () => {
           class="send-button"
           type="button"
           :class="{ sending }"
-          :disabled="sending ? false : !model.trim() || disabled"
+          :disabled="sending ? false : (!model.trim() && !attachments.length) || disabled"
           :aria-label="sending ? t('stopGenerating') : t('sendMessage')"
           @click="handlePrimaryAction"
         >
@@ -152,6 +209,7 @@ watch(model, async () => {
         </button>
       </div>
     </form>
+    <p v-if="attachmentError" class="attachment-error">{{ attachmentError }}</p>
     <p class="disclaimer">{{ t('disclaimer') }}</p>
   </div>
 </template>
@@ -164,6 +222,7 @@ watch(model, async () => {
 }
 
 .composer {
+  position: relative;
   padding: 13px 14px 10px;
   border: 1px solid #dfe3e8;
   border-radius: 20px;
@@ -174,6 +233,25 @@ watch(model, async () => {
   transition:
     border-color 140ms ease,
     box-shadow 140ms ease;
+}
+
+.composer.dragging-files {
+  border-color: #6172f3;
+}
+
+.drop-overlay {
+  position: absolute;
+  z-index: 3;
+  inset: 5px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed #8098f9;
+  border-radius: 16px;
+  background: rgb(238 244 255 / 96%);
+  color: #3538cd;
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .composer:focus-within {
@@ -230,6 +308,27 @@ textarea::placeholder {
 .composer-icon:hover {
   background: #f2f4f7;
   color: #344054;
+}
+
+.composer-icon:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.spin {
+  animation: spin 900ms linear infinite;
+}
+
+.attachment-error {
+  margin: 6px 8px 0;
+  color: #b42318;
+  font-size: 11px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .composer-hint {
@@ -390,6 +489,8 @@ zh-CN:
   messagePlaceholder: 给 Lepus 发送消息
   chatMessage: 聊天消息
   addAttachment: 添加附件
+  dropAttachments: 松开即可添加附件
+  filePermissions: 当前对话的文件与权限
   keyboardHint: Enter 发送 · Shift + Enter 换行
   historyTokenUsage: 历史对话 Token 用量
   tokenUsage: 上下文约 {current} / {trigger} Token
@@ -410,6 +511,8 @@ en:
   messagePlaceholder: Message Lepus
   chatMessage: Chat message
   addAttachment: Add attachment
+  dropAttachments: Drop files to attach
+  filePermissions: Files and permissions for this chat
   keyboardHint: Enter to send · Shift + Enter for a new line
   historyTokenUsage: Chat history token usage
   tokenUsage: About {current} / {trigger} context tokens

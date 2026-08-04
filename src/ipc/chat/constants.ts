@@ -6,6 +6,11 @@ export const CHAT_CHANNELS = {
   MESSAGE_QUERY: 'message:query',
   MESSAGE_REVISE: 'message:revise',
   MESSAGE_REGENERATE: 'message:regenerate',
+  ATTACHMENT_SELECT: 'attachment:select',
+  ATTACHMENT_IMPORT: 'attachment:import',
+  ATTACHMENT_PREVIEW: 'attachment:preview',
+  ATTACHMENT_DISCARD: 'attachment:discard',
+  ATTACHMENT_SESSION_DISCARD: 'attachment:session-discard',
 
   MODEL_CONFIG_QUERY: 'model-config:query',
   MODEL_CONFIG_CREATE: 'model-config:create',
@@ -17,11 +22,16 @@ export const CHAT_CHANNELS = {
   PROMPT_PREVIEW: 'prompt:preview',
   SEARCH_CONFIG_QUERY: 'search-config:query',
   SEARCH_CONFIG_UPDATE: 'search-config:update',
+  PERMISSION_SETTINGS_QUERY: 'permission-settings:query',
+  PERMISSION_SETTINGS_UPDATE: 'permission-settings:update',
+  WORKSPACE_FOLDER_SELECT: 'workspace-folder:select',
+  GENERATED_FILE_OPEN: 'generated-file:open',
   COMPRESSION_STATUS_QUERY: 'compression-status:query',
   COMPRESSION_STATUS_CHANGED: 'compression-status:changed',
   CHAT_STREAM_DELTA: 'chat:stream-delta',
   CHAT_CANCEL: 'chat:cancel',
   TOOL_ACTIVITY_CHANGED: 'tool-activity:changed',
+  TOOL_CANCEL: 'tool:cancel',
   TOOL_APPROVAL_REQUESTED: 'tool-approval:requested',
   TOOL_APPROVAL_RESOLVE: 'tool-approval:resolve',
 
@@ -42,6 +52,42 @@ export type Message = {
   createdAt: string
   toolCalls?: ToolCallRecord[]
   sources?: SearchCitation[]
+  attachments?: MessageAttachment[]
+}
+
+export type MessageAttachmentKind = 'image' | 'pdf' | 'text'
+
+export type MessageAttachment = {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  kind: MessageAttachmentKind
+  storageName: string
+  extractedCharacters?: number
+  pageCount?: number
+  truncated?: boolean
+  image?: { width: number; height: number }
+}
+
+export type AttachmentImportRequest = {
+  sessionId: string
+  paths: string[]
+}
+
+export type AttachmentImportResult = {
+  attachments: MessageAttachment[]
+  errors: Array<{ path: string; message: string }>
+}
+
+export type AttachmentPreviewRequest = {
+  sessionId: string
+  attachment: MessageAttachment
+}
+
+export type AttachmentDiscardRequest = {
+  sessionId: string
+  attachment: MessageAttachment
 }
 
 export type SearchCitation = {
@@ -60,11 +106,21 @@ export type ToolCallRecord = {
   arguments: string
   status: 'awaiting_approval' | 'running' | 'completed' | 'error' | 'rejected'
   result?: string
+  progress?: {
+    bytesReceived: number
+    totalBytes?: number
+    percent?: number
+  }
 }
 
 export type ToolActivityEvent = {
   sessionId: string
   call: ToolCallRecord
+}
+
+export type ToolCancelRequest = {
+  sessionId: string
+  toolCallId: string
 }
 
 export type ToolApprovalRisk = 'medium' | 'high'
@@ -77,6 +133,7 @@ export type ToolApprovalRequest = {
   arguments: string
   risk: ToolApprovalRisk
   reason: string
+  allowSession: boolean
 }
 
 export type ToolApprovalDecision = {
@@ -112,6 +169,17 @@ export type PromptSettings = {
   includeLocale: boolean
   includePlatform: boolean
   showToolCallDetails: boolean
+}
+
+export type PermissionMode = 'request_approval' | 'auto_approve' | 'full_access'
+
+export type PermissionSettings = {
+  workspacePath: string
+  mode: PermissionMode
+}
+
+export type SessionPermissionSettings = PermissionSettings & {
+  sessionId: string
 }
 
 export type ChatStreamDeltaEvent = {

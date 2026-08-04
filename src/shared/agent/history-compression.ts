@@ -77,7 +77,8 @@ export function createCompressionPolicy(settings: ModelTokenSettings): Compressi
 }
 
 export type TokenEstimatableMessage = {
-  content: string
+  content: string | Array<{ type: string; text?: string }>
+  attachments?: Array<{ kind: 'image' | 'pdf' | 'text'; extractedCharacters?: number }>
 }
 
 export function estimateTextTokens(text: string): number {
@@ -91,7 +92,26 @@ export function estimateTextTokens(text: string): number {
 }
 
 export function estimateMessageTokens(messages: TokenEstimatableMessage[]): number {
-  return messages.reduce((total, message) => total + estimateTextTokens(message.content) + 6, 0)
+  return messages.reduce((total, message) => {
+    const contentTokens =
+      typeof message.content === 'string'
+        ? estimateTextTokens(message.content)
+        : message.content.reduce(
+            (sum, part) =>
+              sum +
+              (part.text ? estimateTextTokens(part.text) : part.type === 'image_url' ? 1_000 : 0),
+            0
+          )
+    const attachmentTokens = (message.attachments ?? []).reduce(
+      (sum, attachment) =>
+        sum +
+        (attachment.kind === 'image'
+          ? 1_000
+          : Math.ceil((attachment.extractedCharacters ?? 0) / 3)),
+      0
+    )
+    return total + contentTokens + attachmentTokens + 6
+  }, 0)
 }
 
 export function calibratedTokenEstimate(

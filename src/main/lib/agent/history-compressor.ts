@@ -23,7 +23,11 @@ export type CompressionResult = {
 }
 
 function toAgentMessages(messages: Message[]): AgentInputMessage[] {
-  return messages.map(({ role, content }) => ({ role, content }))
+  return messages.map(({ role, content, attachments }) => ({
+    role,
+    content,
+    ...(attachments?.length ? { attachments } : {})
+  }))
 }
 
 export class HistoryCompressor {
