@@ -12,8 +12,10 @@ import type {
   MessageAttachment,
   ModelConfig,
   TaskPlan,
+  TaskModePreference,
   ToolApprovalRequest,
-  ToolCallRecord
+  ToolCallRecord,
+  UserInputRequest
 } from '@ipc/chat/constants'
 import {
   createCompressionPolicy,
@@ -27,7 +29,7 @@ const props = defineProps<{
   sessionPersisted: boolean
   modelConfig: ModelConfig | null
   promptSettingsVersion: number
-  taskMode: boolean
+  taskMode: TaskModePreference
   disabled: boolean
   disabledReason?: string
   ensureSession: (id: string) => Promise<boolean>
@@ -51,7 +53,10 @@ const toolActivitiesBySession = ref<Record<string, ToolCallRecord[]>>({})
 const toolApprovalsBySession = ref<Record<string, ToolApprovalRequest[]>>({})
 const taskPlansBySession = ref<Record<string, TaskPlan | null>>({})
 const taskPlanLoadingBySession = ref<Record<string, boolean>>({})
+const routedTaskModeBySession = ref<Record<string, boolean>>({})
 const resolvingApprovalIds = ref<string[]>([])
+const userInputRequestsBySession = ref<Record<string, UserInputRequest[]>>({})
+const resolvingUserInputIds = ref<string[]>([])
 const permissionSettingsOpen = ref(false)
 const openingPermissionSettings = ref(false)
 const showToolCallDetails = ref(true)
@@ -102,12 +107,22 @@ const taskPlan = computed(() =>
 const taskPlanLoading = computed(() =>
   props.sessionId ? (taskPlanLoadingBySession.value[props.sessionId] ?? false) : false
 )
+const taskModeActive = computed(() => {
+  if (props.taskMode === 'on') return true
+  if (props.taskMode === 'off' || !props.sessionId) return false
+  return routedTaskModeBySession.value[props.sessionId] ?? false
+})
+const activeUserInputRequests = computed(() =>
+  props.sessionId ? (userInputRequestsBySession.value[props.sessionId] ?? []) : []
+)
 
 let removeCompressionListener: (() => void) | null = null
 let removeStreamListener: (() => void) | null = null
 let removeToolActivityListener: (() => void) | null = null
 let removeToolApprovalListener: (() => void) | null = null
 let removeTaskPlanListener: (() => void) | null = null
+let removeTaskModeRoutedListener: (() => void) | null = null
+let removeUserInputListener: (() => void) | null = null
 
 onMounted(() => {
   void refreshToolCallDetailSetting()
@@ -138,6 +153,16 @@ onMounted(() => {
     taskPlansBySession.value[event.sessionId] = event.plan
     taskPlanLoadingBySession.value[event.sessionId] = false
   })
+  removeTaskModeRoutedListener = window.api.chat.onTaskModeRouted((event) => {
+    routedTaskModeBySession.value[event.sessionId] = event.active
+  })
+  removeUserInputListener = window.api.chat.onUserInputRequested((request) => {
+    const requests = [...(userInputRequestsBySession.value[request.sessionId] ?? [])]
+    const index = requests.findIndex((item) => item.id === request.id)
+    if (index === -1) requests.push(request)
+    else requests[index] = request
+    userInputRequestsBySession.value[request.sessionId] = requests
+  })
 })
 
 async function refreshToolCallDetailSetting(): Promise<void> {
@@ -155,6 +180,8 @@ onUnmounted(() => {
   removeToolActivityListener?.()
   removeToolApprovalListener?.()
   removeTaskPlanListener?.()
+  removeTaskModeRoutedListener?.()
+  removeUserInputListener?.()
 })
 
 function emptyCompressionStatus(): CompressionStatus {
@@ -227,6 +254,7 @@ async function sendMessage(): Promise<void> {
   streamedContentBySession.value[sessionId] = ''
   toolActivitiesBySession.value[sessionId] = []
   toolApprovalsBySession.value[sessionId] = []
+  userInputRequestsBySession.value[sessionId] = []
   const sessionReady = await props.ensureSession(sessionId)
   if (!sessionReady) {
     sendingBySession.value[sessionId] = false
@@ -292,7 +320,7 @@ async function reviseAndResend(message: Message, revisedContent: string): Promis
       messageId: message.id,
       content: revisedContent
     })
-    if (props.taskMode) taskPlansBySession.value[sessionId] = null
+    if (props.taskMode !== 'off') taskPlansBySession.value[sessionId] = null
     sessionMessages[messageIndex] = { ...message, content: revisedContent.trim() }
     sessionMessages.splice(messageIndex + 1)
     compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
@@ -330,7 +358,7 @@ async function regenerate(message: Message): Promise<void> {
   streamedContentBySession.value[sessionId] = ''
   try {
     await window.api.chat.regenerateMessage({ sessionId, messageId: message.id })
-    if (props.taskMode) taskPlansBySession.value[sessionId] = null
+    if (props.taskMode !== 'off') taskPlansBySession.value[sessionId] = null
     sessionMessages.pop()
     compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
       sessionId,
@@ -398,6 +426,7 @@ async function requestAssistant(
     streamedContentBySession.value[sessionId] = ''
     toolActivitiesBySession.value[sessionId] = []
     toolApprovalsBySession.value[sessionId] = []
+    userInputRequestsBySession.value[sessionId] = []
   }
 }
 
@@ -515,6 +544,30 @@ async function resolveToolApproval(
   }
 }
 
+async function answerUserInput(
+  request: UserInputRequest,
+  answer: string,
+  selectedOptionId?: string
+): Promise<void> {
+  if (resolvingUserInputIds.value.includes(request.id)) return
+  resolvingUserInputIds.value = [...resolvingUserInputIds.value, request.id]
+  try {
+    await window.api.chat.resolveUserInput({
+      requestId: request.id,
+      sessionId: request.sessionId,
+      answer,
+      ...(selectedOptionId ? { selectedOptionId } : {})
+    })
+    userInputRequestsBySession.value[request.sessionId] = (
+      userInputRequestsBySession.value[request.sessionId] ?? []
+    ).filter((item) => item.id !== request.id)
+  } catch (error) {
+    console.error('Failed to resolve user input', error)
+  } finally {
+    resolvingUserInputIds.value = resolvingUserInputIds.value.filter((id) => id !== request.id)
+  }
+}
+
 watch(
   () => props.promptSettingsVersion,
   () => void refreshToolCallDetailSetting()
@@ -530,7 +583,7 @@ watch(
 watch(
   () => [props.sessionId, props.sessionPersisted, props.taskMode] as const,
   async ([sessionId, sessionPersisted, taskMode]) => {
-    if (!sessionId || !taskMode) return
+    if (!sessionId || taskMode === 'off') return
     if (!sessionPersisted) {
       taskPlansBySession.value[sessionId] = null
       taskPlanLoadingBySession.value[sessionId] = false
@@ -633,6 +686,8 @@ watch(
       :active-tool-calls="activeToolCalls"
       :approvals="activeToolApprovals"
       :resolving-approval-ids="resolvingApprovalIds"
+      :user-input-requests="activeUserInputRequests"
+      :resolving-user-input-ids="resolvingUserInputIds"
       :show-tool-call-details="showToolCallDetails"
       :status-text="
         loading
@@ -646,9 +701,15 @@ watch(
       @resend="reviseAndResend"
       @regenerate="regenerate"
       @resolve-approval="resolveToolApproval"
+      @answer-user-input="answerUserInput"
       @cancel-download="cancelDownload"
     />
-    <TaskPlanPanel v-if="taskMode" :plan="taskPlan" :sending="sending" :loading="taskPlanLoading" />
+    <TaskPlanPanel
+      v-if="taskModeActive"
+      :plan="taskPlan"
+      :sending="sending"
+      :loading="taskPlanLoading"
+    />
     <ChatComposer
       v-if="sessionId"
       v-model="draft"

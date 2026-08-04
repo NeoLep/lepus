@@ -7,12 +7,15 @@ import {
   SearchProviderConfig,
   SearchProviderId,
   ToolApprovalRequest,
-  ToolCallRecord
+  ToolCallRecord,
+  UserInputAnswer,
+  UserInputPrompt
 } from '@/ipc/chat/constants'
 import type { TaskPlanUpdate } from '@/ipc/chat/constants'
 import type { AgentInputMessage } from './types'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { createFunctionToolRuntime } from './tools'
+import { interactiveDecisionContext } from './history-compressor'
 
 const MAX_TOOL_ROUNDS = 12
 
@@ -43,6 +46,10 @@ export class Agent {
       onToolActivity?: (call: ToolCallRecord) => void
       onToolCancellable?: (toolCallId: string, cancel: (() => void) | null) => void
       onPlanUpdate?: (plan: TaskPlanUpdate) => void
+      onUserInput?: (
+        prompt: UserInputPrompt,
+        toolCallId: string
+      ) => Promise<Pick<UserInputAnswer, 'answer' | 'selectedOptionId' | 'canceled'>>
       onToolApproval?: (
         request: Omit<ToolApprovalRequest, 'sessionId'>
       ) => Promise<'allow_once' | 'allow_session' | 'reject'>
@@ -213,6 +220,32 @@ export class Agent {
               // Keep the original tool result if a provider returns an unexpected shape.
             }
           }
+          if (toolCall.function.name === 'request_user_input') {
+            try {
+              const payload = JSON.parse(result) as { ok?: boolean; data?: UserInputPrompt }
+              if (payload.ok && payload.data) {
+                if (!options?.onUserInput) throw new Error('当前界面无法接收用户回答')
+                const answer = await options.onUserInput(payload.data, toolCall.id)
+                result = answer.canceled
+                  ? JSON.stringify({ ok: false, error: '用户输入已取消' })
+                  : JSON.stringify({
+                      ok: true,
+                      data: {
+                        question: payload.data.question,
+                        answer: answer.answer,
+                        ...(answer.selectedOptionId
+                          ? { selectedOptionId: answer.selectedOptionId }
+                          : {})
+                      }
+                    })
+              }
+            } catch (error) {
+              result = JSON.stringify({
+                ok: false,
+                error: error instanceof Error ? error.message : '无法获取用户回答'
+              })
+            }
+          }
           let succeeded = false
           try {
             succeeded = JSON.parse(result)?.ok === true
@@ -255,7 +288,7 @@ export class Agent {
     const transcript = messages
       .map((message) => {
         const attachmentNames = message.attachments?.map((item) => item.name).join('、')
-        return `[${message.role === 'user' ? '用户' : '助手'}]\n${message.content}${attachmentNames ? `\n[附件：${attachmentNames}]` : ''}`
+        return `[${message.role === 'user' ? '用户' : '助手'}]\n${message.content}${attachmentNames ? `\n[附件：${attachmentNames}]` : ''}${interactiveDecisionContext(message)}`
       })
       .join('\n\n')
     const response = await this.client.chat.completions.create({

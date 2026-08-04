@@ -280,6 +280,70 @@ const baseTools = [
     }
   ),
   createTool(
+    'request_user_input',
+    '暂停任务并向用户提出一个简短问题。可提供 2 到 5 个互斥选项，也可以允许用户自由填写。仅在答案会实质影响计划或结果时使用。',
+    {
+      type: 'object',
+      properties: {
+        question: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 500,
+          description: '清晰、具体且一次只询问一个决策的问题'
+        },
+        options: {
+          type: 'array',
+          minItems: 2,
+          maxItems: 5,
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', minLength: 1, maxLength: 80 },
+              label: { type: 'string', minLength: 1, maxLength: 120 },
+              description: { type: 'string', maxLength: 300 }
+            },
+            required: ['id', 'label'],
+            additionalProperties: false
+          },
+          description: '可选的互斥选项；不提供时必须允许自由填写'
+        },
+        allow_freeform: {
+          type: 'boolean',
+          description: '是否允许用户自己填写答案，默认 true'
+        },
+        placeholder: {
+          type: 'string',
+          maxLength: 200,
+          description: '自由输入框的可选提示文字'
+        }
+      },
+      required: ['question'],
+      additionalProperties: false
+    },
+    ({ question, options, allow_freeform: allowFreeform, placeholder }) => {
+      const normalizedOptions = (options ?? []) as Array<{
+        id: string
+        label: string
+        description?: string
+      }>
+      const canWrite = allowFreeform !== false
+      if (!normalizedOptions.length && !canWrite) {
+        throw new Error('没有选项时必须允许用户自由填写')
+      }
+      if (new Set(normalizedOptions.map((option) => option.id)).size !== normalizedOptions.length) {
+        throw new Error('选项 ID 不能重复')
+      }
+      return {
+        question: String(question).trim(),
+        options: normalizedOptions,
+        allowFreeform: canWrite,
+        ...(typeof placeholder === 'string' && placeholder.trim()
+          ? { placeholder: placeholder.trim() }
+          : {})
+      }
+    }
+  ),
+  createTool(
     'search_files',
     '在工作文件夹或指定目录中按 Glob 查找文件。默认忽略依赖、版本控制和构建目录，不跟随符号链接。',
     {
@@ -790,11 +854,13 @@ export function createFunctionToolRuntime(
   const searchTool = createSearchTool(searchConfigs)
   const safeTools = baseTools.filter((tool) => {
     const name = tool.schema.type === 'function' ? tool.schema.function.name : ''
-    return !FILE_TOOL_NAMES.has(name) && name !== 'update_plan'
+    return !FILE_TOOL_NAMES.has(name) && !['update_plan', 'request_user_input'].includes(name)
   })
   const taskTools = taskMode
     ? baseTools.filter(
-        (tool) => tool.schema.type === 'function' && tool.schema.function.name === 'update_plan'
+        (tool) =>
+          tool.schema.type === 'function' &&
+          ['update_plan', 'request_user_input'].includes(tool.schema.function.name)
       )
     : []
   const fileTools = permissionSettings.workspacePath

@@ -19,10 +19,13 @@ import {
   SessionPermissionSettings,
   ToolApprovalDecision,
   ToolApprovalRequest,
-  ToolCancelRequest
+  ToolCancelRequest,
+  UserInputAnswer,
+  UserInputPrompt
 } from './constants'
 import { Agent } from '@/main/lib/agent'
 import { HistoryCompressor } from '@/main/lib/agent/history-compressor'
+import { routeTaskMode, type TaskRoute } from '@/main/lib/agent/task-router'
 import type { AgentInputMessage } from '@/main/lib/agent/types'
 import { estimateMessageTokens } from '@/shared/agent/history-compression'
 import { getChatRepository } from './repository'
@@ -51,6 +54,14 @@ const pendingToolApprovals = new Map<
   }
 >()
 const sessionToolAllowances = new Map<string, Set<string>>()
+const pendingUserInputs = new Map<
+  string,
+  {
+    sessionId: string
+    prompt: UserInputPrompt
+    resolve: (answer: Pick<UserInputAnswer, 'answer' | 'selectedOptionId' | 'canceled'>) => void
+  }
+>()
 
 function isContextLengthError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
@@ -60,14 +71,19 @@ function isContextLengthError(error: unknown): boolean {
 function buildSystemPrompt(
   repository: ReturnType<typeof getChatRepository>,
   sessionId: string,
-  locale: ChatMessage['locale']
+  locale: ChatMessage['locale'],
+  taskRoute: TaskRoute
 ): string {
   const prompt = new PromptBuilder().build({ settings: repository.getPromptSettings(), locale })
   const sections = [prompt]
-  if (repository.getSession(sessionId)?.taskMode) {
+  if (taskRoute.active) {
     sections.push(`<task_mode>
 You are operating in task mode.
+- Activation: ${taskRoute.preference === 'on' ? 'the user forced task mode on' : 'the automatic router detected a potentially multi-step request'}.
 - For work with two or more meaningful steps, call update_plan before other action tools.
+- Before committing to a plan, call request_user_input when a missing user choice would materially change the outcome.
+- Ask one focused question at a time. When useful, provide 2-4 concise, mutually exclusive options and allow a free-form answer.
+- Do not ask when a safe, reversible assumption is sufficient, and never repeat a question the user already answered.
 - Keep step IDs stable and submit the complete plan on every update.
 - Use concise, verifiable steps. Keep at most one step in_progress.
 - Update the plan when a step starts, completes, is skipped, or the approach materially changes.
@@ -180,6 +196,22 @@ export default () => {
     }
     pending.resolve(decision)
   })
+  ipcMain.handle(CHAT_CHANNELS.USER_INPUT_RESOLVE, (_event, request: UserInputAnswer) => {
+    const pending = pendingUserInputs.get(request.requestId)
+    if (!pending || pending.sessionId !== request.sessionId) return
+    const selectedOption = request.selectedOptionId
+      ? pending.prompt.options.find((option) => option.id === request.selectedOptionId)
+      : undefined
+    if (request.selectedOptionId && !selectedOption) throw new Error('所选选项不存在')
+    if (!selectedOption && !pending.prompt.allowFreeform) throw new Error('请选择一个选项')
+    const answer = selectedOption?.label ?? request.answer.trim()
+    if (!answer) throw new Error('回答不能为空')
+    if (answer.length > 2_000) throw new Error('回答不能超过 2000 个字符')
+    pending.resolve({
+      answer,
+      ...(selectedOption ? { selectedOptionId: selectedOption.id } : {})
+    })
+  })
   ipcMain.handle(CHAT_CHANNELS.SESSION_QUERY, () => getChatRepository().querySessions())
   ipcMain.handle(CHAT_CHANNELS.SESSION_CREATE, (_event, request: Session) =>
     getChatRepository().createSession(request)
@@ -188,6 +220,7 @@ export default () => {
     getChatRepository().updateSession(request)
   )
   ipcMain.handle(CHAT_CHANNELS.SESSION_DELETE, async (_event, id: string) => {
+    activeChatControllers.get(id)?.abort()
     sessionToolAllowances.delete(id)
     getChatRepository().deleteSession(id)
     try {
@@ -392,7 +425,16 @@ export default () => {
         repository,
         modelConfig,
         undefined,
-        buildSystemPrompt(repository, request.sessionId, request.locale)
+        buildSystemPrompt(
+          repository,
+          request.sessionId,
+          request.locale,
+          routeTaskMode(
+            repository.getSession(request.sessionId)?.taskMode ?? 'auto',
+            repository.queryMessages(request.sessionId),
+            repository.getTaskPlan(request.sessionId)
+          )
+        )
       )
       return compressor.getStatus(request.sessionId, repository.queryMessages(request.sessionId))
     }
@@ -413,13 +455,30 @@ export default () => {
         request.messages
       )
       repository.saveMessages(request.conversationId, requestMessages)
+      const session = repository.getSession(request.conversationId)
+      const taskRoute = routeTaskMode(
+        session?.taskMode ?? 'auto',
+        requestMessages,
+        repository.getTaskPlan(request.conversationId)
+      )
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(CHAT_CHANNELS.TASK_MODE_ROUTED, {
+          sessionId: request.conversationId,
+          ...taskRoute
+        })
+      }
       const agent = new Agent(
         modelConfig,
         repository.getSearchProviderConfigs(),
         repository.getPermissionSettings(request.conversationId),
-        repository.getSession(request.conversationId)?.taskMode ?? false
+        taskRoute.active
       )
-      const systemPrompt = buildSystemPrompt(repository, request.conversationId, request.locale)
+      const systemPrompt = buildSystemPrompt(
+        repository,
+        request.conversationId,
+        request.locale,
+        taskRoute
+      )
       const showToolCallDetails = repository.getPromptSettings().showToolCallDetails
       const onContentUpdate = (content: string): void => {
         if (!content || event.sender.isDestroyed()) return
@@ -430,7 +489,7 @@ export default () => {
         })
       }
       const onToolActivity = (call: import('./constants').ToolCallRecord): void => {
-        if (call.name === 'update_plan') return
+        if (call.name === 'update_plan' || call.name === 'request_user_input') return
         if ((!showToolCallDetails && call.name !== 'download_file') || event.sender.isDestroyed())
           return
         event.sender.send(CHAT_CHANNELS.TOOL_ACTIVITY_CHANGED, {
@@ -489,6 +548,40 @@ export default () => {
           })
         }
       }
+      const onUserInput = (
+        prompt: UserInputPrompt,
+        toolCallId: string
+      ): Promise<Pick<UserInputAnswer, 'answer' | 'selectedOptionId' | 'canceled'>> => {
+        return new Promise((resolve) => {
+          const requestId = crypto.randomUUID()
+          const finish = (
+            answer: Pick<UserInputAnswer, 'answer' | 'selectedOptionId' | 'canceled'>
+          ): void => {
+            pendingUserInputs.delete(requestId)
+            controller.signal.removeEventListener('abort', cancelOnAbort)
+            event.sender.removeListener('destroyed', cancelOnDestroyed)
+            resolve(answer)
+          }
+          const cancelOnAbort = (): void => finish({ answer: '', canceled: true })
+          const cancelOnDestroyed = (): void => finish({ answer: '', canceled: true })
+          pendingUserInputs.set(requestId, {
+            sessionId: request.conversationId,
+            prompt,
+            resolve: finish
+          })
+          controller.signal.addEventListener('abort', cancelOnAbort, { once: true })
+          event.sender.once('destroyed', cancelOnDestroyed)
+          if (controller.signal.aborted || event.sender.isDestroyed()) cancelOnAbort()
+          else {
+            event.sender.send(CHAT_CHANNELS.USER_INPUT_REQUESTED, {
+              ...prompt,
+              id: requestId,
+              sessionId: request.conversationId,
+              toolCallId
+            })
+          }
+        })
+      }
       const compressor = new HistoryCompressor(repository, modelConfig, agent, systemPrompt)
       const buildStoppedResponse = () => {
         const partialContent = streamedContent.trim()
@@ -541,6 +634,7 @@ export default () => {
           onToolActivity,
           onToolCancellable,
           onPlanUpdate,
+          onUserInput,
           onToolApproval,
           signal: controller.signal
         })
@@ -558,6 +652,7 @@ export default () => {
             onToolActivity,
             onToolCancellable,
             onPlanUpdate,
+            onUserInput,
             onToolApproval,
             signal: controller.signal
           })

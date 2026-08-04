@@ -29,6 +29,7 @@ type SessionRow = {
   is_pinned: number
   is_archived: number
   task_mode: number
+  task_mode_preference: Session['taskMode']
 }
 
 type TaskPlanRow = {
@@ -133,7 +134,7 @@ function toSession(row: SessionRow): Session {
     updatedAt: row.updated_at,
     isPinned: row.is_pinned === 1,
     isArchived: row.is_archived === 1,
-    taskMode: row.task_mode === 1
+    taskMode: row.task_mode_preference ?? (row.task_mode === 1 ? 'on' : 'auto')
   }
 }
 
@@ -230,7 +231,7 @@ export class ChatRepository {
   querySessions(): Session[] {
     const rows = this.database
       .prepare(
-        `SELECT id, title, created_at, updated_at, is_pinned, is_archived, task_mode
+        `SELECT id, title, created_at, updated_at, is_pinned, is_archived, task_mode, task_mode_preference
          FROM sessions
          ORDER BY is_archived ASC, is_pinned DESC, updated_at DESC`
       )
@@ -242,15 +243,15 @@ export class ChatRepository {
     this.database
       .prepare(
         `INSERT INTO sessions
-           (id, title, created_at, updated_at, is_pinned, is_archived, task_mode)
+           (id, title, created_at, updated_at, is_pinned, is_archived, task_mode, task_mode_preference)
          VALUES
-           (@id, @title, @createdAt, @updatedAt, @isPinned, @isArchived, @taskMode)`
+           (@id, @title, @createdAt, @updatedAt, @isPinned, @isArchived, @taskModeLegacy, @taskMode)`
       )
       .run({
         ...session,
         isPinned: session.isPinned ? 1 : 0,
         isArchived: session.isArchived ? 1 : 0,
-        taskMode: session.taskMode ? 1 : 0
+        taskModeLegacy: session.taskMode === 'on' ? 1 : 0
       })
     return { ...session }
   }
@@ -263,20 +264,21 @@ export class ChatRepository {
              updated_at = @updatedAt,
              is_pinned = @isPinned,
              is_archived = @isArchived,
-             task_mode = @taskMode
+             task_mode = @taskModeLegacy,
+             task_mode_preference = @taskMode
          WHERE id = @id`
       )
       .run({
         ...session,
         isPinned: session.isPinned ? 1 : 0,
         isArchived: session.isArchived ? 1 : 0,
-        taskMode: session.taskMode ? 1 : 0
+        taskModeLegacy: session.taskMode === 'on' ? 1 : 0
       })
     if (result.changes === 0) throw new Error(`Session not found: ${session.id}`)
 
     const updated = this.database
       .prepare(
-        `SELECT id, title, created_at, updated_at, is_pinned, is_archived, task_mode
+        `SELECT id, title, created_at, updated_at, is_pinned, is_archived, task_mode, task_mode_preference
          FROM sessions
          WHERE id = ?`
       )
@@ -287,7 +289,7 @@ export class ChatRepository {
   getSession(id: string): Session | null {
     const row = this.database
       .prepare(
-        `SELECT id, title, created_at, updated_at, is_pinned, is_archived, task_mode
+        `SELECT id, title, created_at, updated_at, is_pinned, is_archived, task_mode, task_mode_preference
          FROM sessions
          WHERE id = ?`
       )
@@ -332,7 +334,7 @@ export class ChatRepository {
     const rows = this.database
       .prepare(
         `SELECT DISTINCT s.id, s.title, s.created_at, s.updated_at,
-                         s.is_pinned, s.is_archived, s.task_mode
+                         s.is_pinned, s.is_archived, s.task_mode, s.task_mode_preference
          FROM sessions s
          WHERE instr(lower(s.title), lower(?)) > 0
             OR EXISTS (
@@ -1113,6 +1115,17 @@ export class ChatRepository {
         `)
       })()
     }
+
+    if (version < 14) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE sessions ADD COLUMN task_mode_preference TEXT NOT NULL DEFAULT 'auto'
+            CHECK (task_mode_preference IN ('auto', 'on', 'off'));
+          UPDATE sessions SET task_mode_preference = 'on' WHERE task_mode = 1;
+          PRAGMA user_version = 14;
+        `)
+      })()
+    }
   }
 
   private importLegacySessions(jsonPath: string): void {
@@ -1128,17 +1141,20 @@ export class ChatRepository {
     const sessions = parsed.filter(isSession)
     const insert = this.database.prepare(
       `INSERT OR IGNORE INTO sessions
-         (id, title, created_at, updated_at, is_pinned, is_archived, task_mode)
+         (id, title, created_at, updated_at, is_pinned, is_archived, task_mode, task_mode_preference)
        VALUES
-         (@id, @title, @createdAt, @updatedAt, @isPinned, @isArchived, @taskMode)`
+         (@id, @title, @createdAt, @updatedAt, @isPinned, @isArchived, @taskModeLegacy, @taskMode)`
     )
     this.database.transaction((items: Session[]) => {
       for (const session of items) {
+        const rawTaskMode = (session as unknown as { taskMode?: unknown }).taskMode
+        const taskMode = rawTaskMode === true || rawTaskMode === 'on' ? 'on' : 'auto'
         insert.run({
           ...session,
           isPinned: session.isPinned ? 1 : 0,
           isArchived: session.isArchived ? 1 : 0,
-          taskMode: session.taskMode ? 1 : 0
+          taskMode,
+          taskModeLegacy: taskMode === 'on' ? 1 : 0
         })
       }
     })(sessions)

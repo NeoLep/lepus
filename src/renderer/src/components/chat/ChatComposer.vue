@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { ArrowUp, FolderCog, ListTodo, LoaderCircle, Paperclip, Square } from '@lucide/vue'
 import { TooltipContent, TooltipPortal, TooltipRoot, TooltipTrigger } from 'reka-ui'
-import type { CompressionStatus, MessageAttachment } from '@ipc/chat/constants'
+import type { CompressionStatus, MessageAttachment, TaskModePreference } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import MessageAttachments from './MessageAttachments.vue'
 
@@ -16,7 +16,7 @@ const props = defineProps<{
   attachments: MessageAttachment[]
   addingAttachments: boolean
   attachmentError?: string
-  taskMode: boolean
+  taskMode: TaskModePreference
 }>()
 
 const emit = defineEmits<{
@@ -149,11 +149,11 @@ watch(model, async () => {
           <TooltipTrigger as-child>
             <button
               class="composer-icon"
-              :class="{ active: taskMode }"
+              :class="{ active: taskMode === 'on', auto: taskMode === 'auto' }"
               type="button"
               :disabled="disabled || sending"
-              :aria-label="taskMode ? t('disableTaskMode') : t('enableTaskMode')"
-              :aria-pressed="taskMode"
+              :aria-label="t(`taskMode.${taskMode}`)"
+              :aria-pressed="taskMode === 'on'"
               @click="emit('toggleTaskMode')"
             >
               <ListTodo :size="18" />
@@ -161,7 +161,7 @@ watch(model, async () => {
           </TooltipTrigger>
           <TooltipPortal>
             <TooltipContent class="tooltip-content" side="top" :side-offset="7">
-              {{ taskMode ? t('disableTaskMode') : t('enableTaskMode') }}
+              {{ t(`taskMode.${taskMode}`) }} · {{ t('taskMode.clickHint') }}
             </TooltipContent>
           </TooltipPortal>
         </TooltipRoot>
@@ -335,6 +335,12 @@ textarea::placeholder {
 .composer-icon.active {
   background: #f4f3ff;
   color: #6941c6;
+}
+
+.composer-icon.auto {
+  background: #f8f9fc;
+  color: #475467;
+  box-shadow: inset 0 0 0 1px #e4e7ec;
 }
 
 .composer-icon:disabled {
@@ -518,8 +524,11 @@ zh-CN:
   addAttachment: 添加附件
   dropAttachments: 松开即可添加附件
   filePermissions: 当前对话的文件与权限
-  enableTaskMode: 启用任务模式
-  disableTaskMode: 关闭任务模式
+  taskMode:
+    auto: 任务模式：自动判断
+    on: 任务模式：强制开启
+    off: 任务模式：关闭
+    clickHint: 点击切换
   keyboardHint: Enter 发送 · Shift + Enter 换行
   historyTokenUsage: 历史对话 Token 用量
   tokenUsage: 上下文约 {current} / {trigger} Token
@@ -542,8 +551,11 @@ en:
   addAttachment: Add attachment
   dropAttachments: Drop files to attach
   filePermissions: Files and permissions for this chat
-  enableTaskMode: Enable task mode
-  disableTaskMode: Disable task mode
+  taskMode:
+    auto: 'Task mode: Auto'
+    on: 'Task mode: Always on'
+    off: 'Task mode: Off'
+    clickHint: Click to switch
   keyboardHint: Enter to send · Shift + Enter for a new line
   historyTokenUsage: Chat history token usage
   tokenUsage: About {current} / {trigger} context tokens

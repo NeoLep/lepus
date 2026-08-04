@@ -25,10 +25,13 @@ import {
   SessionSearchResult,
   TaskPlan,
   TaskPlanChangedEvent,
+  TaskModeRoutedEvent,
   ToolActivityEvent,
   ToolCancelRequest,
   ToolApprovalDecision,
-  ToolApprovalRequest
+  ToolApprovalRequest,
+  UserInputAnswer,
+  UserInputRequest
 } from './constants'
 
 export default {
@@ -51,6 +54,20 @@ export default {
     ipcRenderer.on(CHAT_CHANNELS.TASK_PLAN_CHANGED, handler)
     return () => ipcRenderer.removeListener(CHAT_CHANNELS.TASK_PLAN_CHANGED, handler)
   },
+  onTaskModeRouted: (listener: (event: TaskModeRoutedEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: TaskModeRoutedEvent): void =>
+      listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.TASK_MODE_ROUTED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.TASK_MODE_ROUTED, handler)
+  },
+  onUserInputRequested: (listener: (request: UserInputRequest) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: UserInputRequest): void =>
+      listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.USER_INPUT_REQUESTED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.USER_INPUT_REQUESTED, handler)
+  },
+  resolveUserInput: (answer: UserInputAnswer): Promise<void> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.USER_INPUT_RESOLVE, answer),
   queryMessages: (sessionId: string): Promise<ChatMessage['messages']> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MESSAGE_QUERY, sessionId),
   reviseMessage: (request: MessageReviseRequest): Promise<void> =>

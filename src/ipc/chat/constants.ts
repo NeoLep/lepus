@@ -7,6 +7,9 @@ export const CHAT_CHANNELS = {
   SESSION_EXPORT: 'session:export',
   TASK_PLAN_QUERY: 'task-plan:query',
   TASK_PLAN_CHANGED: 'task-plan:changed',
+  TASK_MODE_ROUTED: 'task-mode:routed',
+  USER_INPUT_REQUESTED: 'user-input:requested',
+  USER_INPUT_RESOLVE: 'user-input:resolve',
   MESSAGE_QUERY: 'message:query',
   MESSAGE_REVISE: 'message:revise',
   MESSAGE_REGENERATE: 'message:regenerate',
@@ -42,6 +45,8 @@ export const CHAT_CHANNELS = {
   CHAT_SEND: 'chat:send-message'
 }
 
+export type TaskModePreference = 'auto' | 'on' | 'off'
+
 export type Session = {
   id: string
   title: string
@@ -49,7 +54,7 @@ export type Session = {
   updatedAt: string
   isPinned: boolean
   isArchived: boolean
-  taskMode: boolean
+  taskMode: TaskModePreference
 }
 
 export type TaskPlanItemStatus = 'pending' | 'in_progress' | 'completed' | 'skipped'
@@ -73,6 +78,41 @@ export type TaskPlan = TaskPlanUpdate & {
 export type TaskPlanChangedEvent = {
   sessionId: string
   plan: TaskPlan
+}
+
+export type TaskModeRoutedEvent = {
+  sessionId: string
+  preference: TaskModePreference
+  active: boolean
+  score: number
+  reasons: string[]
+}
+
+export type UserInputOption = {
+  id: string
+  label: string
+  description?: string
+}
+
+export type UserInputPrompt = {
+  question: string
+  options: UserInputOption[]
+  allowFreeform: boolean
+  placeholder?: string
+}
+
+export type UserInputRequest = UserInputPrompt & {
+  id: string
+  sessionId: string
+  toolCallId: string
+}
+
+export type UserInputAnswer = {
+  requestId: string
+  sessionId: string
+  answer: string
+  selectedOptionId?: string
+  canceled?: boolean
 }
 
 export type SessionSearchResult = {

@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import { ArrowUp, LoaderCircle, Pencil, RotateCcw, Sparkles, UserRound, X } from '@lucide/vue'
-import type { Message, ToolApprovalRequest, ToolCallRecord } from '@ipc/chat/constants'
+import type {
+  Message,
+  ToolApprovalRequest,
+  ToolCallRecord,
+  UserInputRequest
+} from '@ipc/chat/constants'
 import MarkdownContent from './MarkdownContent.vue'
 import GeneratedFileLinks from './GeneratedFileLinks.vue'
 import FileDiffCards from './FileDiffCards.vue'
@@ -10,6 +15,7 @@ import ToolCallCards from './ToolCallCards.vue'
 import DownloadCards from './DownloadCards.vue'
 import FileInspectionCards from './FileInspectionCards.vue'
 import MessageAttachments from './MessageAttachments.vue'
+import UserInputCards from './UserInputCards.vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -21,6 +27,8 @@ const props = defineProps<{
   activeToolCalls?: ToolCallRecord[]
   approvals?: ToolApprovalRequest[]
   resolvingApprovalIds?: string[]
+  userInputRequests?: UserInputRequest[]
+  resolvingUserInputIds?: string[]
   showToolCallDetails: boolean
 }>()
 
@@ -32,6 +40,7 @@ const emit = defineEmits<{
     approval: ToolApprovalRequest,
     decision: 'allow_once' | 'allow_session' | 'reject'
   ]
+  answerUserInput: [request: UserInputRequest, answer: string, selectedOptionId?: string]
 }>()
 
 const messageEnd = ref<HTMLElement | null>(null)
@@ -72,7 +81,8 @@ watch(
     props.sending,
     props.statusText,
     props.streamContent,
-    props.approvals?.length
+    props.approvals?.length,
+    props.userInputRequests?.length
   ],
   async () => {
     await nextTick()
@@ -183,8 +193,18 @@ watch(
             :resolving-ids="resolvingApprovalIds"
             @resolve="(approval, decision) => emit('resolveApproval', approval, decision)"
           />
+          <UserInputCards
+            :requests="userInputRequests ?? []"
+            :resolving-ids="resolvingUserInputIds ?? []"
+            @answer="
+              (request, answer, selectedOptionId) =>
+                emit('answerUserInput', request, answer, selectedOptionId)
+            "
+          />
           <MarkdownContent v-if="streamContent" :content="streamContent" />
-          <span v-if="statusText && !approvals?.length" class="thinking"
+          <span
+            v-if="statusText && !approvals?.length && !userInputRequests?.length"
+            class="thinking"
             ><LoaderCircle :size="15" /> {{ statusText ?? t('thinking') }}</span
           >
         </div>

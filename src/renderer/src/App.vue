@@ -65,7 +65,7 @@ function makeSession(): Session {
     updatedAt: now,
     isPinned: false,
     isArchived: false,
-    taskMode: false
+    taskMode: 'auto'
   }
 }
 
@@ -325,15 +325,16 @@ async function exportSession(session: Session, format: 'markdown' | 'json'): Pro
 
 async function toggleTaskMode(session: Session): Promise<void> {
   sessionError.value = ''
+  const taskMode = session.taskMode === 'auto' ? 'on' : session.taskMode === 'on' ? 'off' : 'auto'
   if (pendingSessionIds.value.has(session.id)) {
     const index = sessions.value.findIndex((item) => item.id === session.id)
-    if (index !== -1) sessions.value[index] = { ...session, taskMode: !session.taskMode }
+    if (index !== -1) sessions.value[index] = { ...session, taskMode }
     return
   }
   try {
     const updated = await window.api.chat.updateSession({
       ...session,
-      taskMode: !session.taskMode,
+      taskMode,
       updatedAt: session.updatedAt
     })
     const index = sessions.value.findIndex((item) => item.id === updated.id)
@@ -418,7 +419,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
             :session-persisted="activeSessionPersisted"
             :model-config="activeModelConfig"
             :prompt-settings-version="promptSettingsVersion"
-            :task-mode="activeSession?.taskMode ?? false"
+            :task-mode="activeSession?.taskMode ?? 'auto'"
             :disabled="sessionsLoading || modelsLoading || !activeSessionId || !activeModelConfig"
             :disabled-reason="!activeModelConfig ? t('configureModelFirst') : undefined"
             :ensure-session="persistSession"
