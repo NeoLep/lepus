@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
-import { ArrowUp, LoaderCircle, Pencil, Sparkles, UserRound, X } from '@lucide/vue'
-import type { Message } from '@ipc/chat/constants'
+import { ArrowUp, LoaderCircle, Pencil, RotateCcw, Sparkles, UserRound, X } from '@lucide/vue'
+import type { Message, ToolCallRecord } from '@ipc/chat/constants'
 import MarkdownContent from './MarkdownContent.vue'
+import ToolCallCards from './ToolCallCards.vue'
+import SearchSources from './SearchSources.vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -10,10 +12,13 @@ const props = defineProps<{
   sending: boolean
   statusText?: string
   streamContent?: string
+  activeToolCalls?: ToolCallRecord[]
+  showToolCallDetails: boolean
 }>()
 
 const emit = defineEmits<{
   resend: [message: Message, content: string]
+  regenerate: [message: Message]
 }>()
 
 const messageEnd = ref<HTMLElement | null>(null)
@@ -22,6 +27,9 @@ const editDraft = ref('')
 const { t } = useI18n({ useScope: 'local' })
 const latestUserMessageId = computed(
   () => [...props.messages].reverse().find((message) => message.role === 'user')?.id ?? null
+)
+const latestAssistantMessageId = computed(() =>
+  props.messages.at(-1)?.role === 'assistant' ? props.messages.at(-1)?.id : null
 )
 
 async function startEditing(message: Message): Promise<void> {
@@ -111,7 +119,22 @@ watch(
               </div>
             </template>
           </template>
-          <MarkdownContent v-else :content="message.content" />
+          <template v-else>
+            <ToolCallCards v-if="showToolCallDetails" :calls="message.toolCalls ?? []" />
+            <MarkdownContent :content="message.content" :sources="message.sources" />
+            <SearchSources :sources="message.sources ?? []" />
+            <div v-if="message.id === latestAssistantMessageId" class="message-actions">
+              <button
+                type="button"
+                :disabled="sending"
+                :aria-label="t('regenerate')"
+                @click="emit('regenerate', message)"
+              >
+                <RotateCcw :size="13" />
+                {{ t('regenerate') }}
+              </button>
+            </div>
+          </template>
         </div>
       </article>
 
@@ -119,6 +142,7 @@ watch(
         <div class="message-avatar"><Sparkles :size="16" /></div>
         <div class="message-body">
           <strong>Lepus</strong>
+          <ToolCallCards v-if="showToolCallDetails" :calls="activeToolCalls ?? []" />
           <MarkdownContent v-if="streamContent" :content="streamContent" />
           <span v-if="statusText" class="thinking"
             ><LoaderCircle :size="15" /> {{ statusText ?? t('thinking') }}</span
@@ -363,6 +387,7 @@ zh-CN:
   thinking: 正在思考
   editMessage: 编辑消息
   editAndResend: 编辑并重新发送
+  regenerate: 重新生成
   send: 发送
 en:
   welcomeTitle: How can I help?
@@ -371,5 +396,6 @@ en:
   thinking: Thinking
   editMessage: Edit message
   editAndResend: Edit and resend
+  regenerate: Regenerate
   send: Send
 </i18n>

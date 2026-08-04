@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ArrowUp, LoaderCircle, Paperclip } from '@lucide/vue'
+import { ArrowUp, Paperclip, Square } from '@lucide/vue'
 import { TooltipContent, TooltipPortal, TooltipRoot, TooltipTrigger } from 'reka-ui'
 import type { CompressionStatus } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
@@ -15,6 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   submit: []
+  stop: []
 }>()
 
 const { t, locale } = useI18n({ useScope: 'local' })
@@ -49,6 +50,11 @@ function resizeTextarea(): void {
 function submit(): void {
   if (!model.value.trim() || props.sending || props.disabled) return
   emit('submit')
+}
+
+function handlePrimaryAction(): void {
+  if (props.sending) emit('stop')
+  else submit()
 }
 
 function handleKeydown(event: KeyboardEvent): void {
@@ -135,12 +141,13 @@ watch(model, async () => {
         </TooltipRoot>
         <button
           class="send-button"
-          type="submit"
+          type="button"
           :class="{ sending }"
-          :disabled="!model.trim() || sending || disabled"
-          :aria-label="sending ? t('waitingForReply') : t('sendMessage')"
+          :disabled="sending ? false : !model.trim() || disabled"
+          :aria-label="sending ? t('stopGenerating') : t('sendMessage')"
+          @click="handlePrimaryAction"
         >
-          <LoaderCircle v-if="sending" :size="16" />
+          <Square v-if="sending" :size="14" fill="currentColor" />
           <ArrowUp v-else :size="18" :stroke-width="2.4" />
         </button>
       </div>
@@ -344,7 +351,7 @@ textarea::placeholder {
 }
 
 .send-button.sending svg {
-  animation: spin 900ms linear infinite;
+  animation: none;
 }
 
 .disclaimer {
@@ -395,6 +402,7 @@ zh-CN:
     detected: 自动识别
     fallback: 保守估算
   waitingForReply: 正在等待回复
+  stopGenerating: 停止生成
   sendMessage: 发送消息
   disclaimer: Lepus 可能会犯错，请核查重要信息。
 en:
@@ -414,6 +422,7 @@ en:
     detected: automatically detected
     fallback: conservatively estimated
   waitingForReply: Waiting for reply
+  stopGenerating: Stop generating
   sendMessage: Send message
   disclaimer: Lepus can make mistakes. Check important information.
 </i18n>

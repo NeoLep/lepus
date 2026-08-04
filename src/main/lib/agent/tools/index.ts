@@ -8,7 +8,7 @@ type JsonObject = Record<string, unknown>
 
 export type FunctionTool = {
   schema: ChatCompletionTool
-  execute: (argumentsValue: JsonObject) => unknown | Promise<unknown>
+  execute: (argumentsValue: JsonObject, signal?: AbortSignal) => unknown | Promise<unknown>
 }
 
 function requireString(value: unknown, name: string): string {
@@ -118,7 +118,7 @@ function createSearchTool(configs: SearchProviderConfig[]): FunctionTool | null 
       required: ['query'],
       additionalProperties: false
     },
-    async ({ query, provider, max_results: maxResults }) => {
+    async ({ query, provider, max_results: maxResults }, signal) => {
       const normalizedQuery = requireString(query, 'query')
       if (normalizedQuery.length > 500) throw new Error('query 不能超过 500 个字符')
       const selectedProvider =
@@ -127,7 +127,7 @@ function createSearchTool(configs: SearchProviderConfig[]): FunctionTool | null 
       if (!config) throw new Error(`搜索服务未启用：${selectedProvider}`)
       const limit = optionalInteger(maxResults, 'max_results', 5)
       if (limit < 1 || limit > 10) throw new Error('max_results 必须在 1 到 10 之间')
-      return searchWeb(normalizedQuery, limit, config)
+      return searchWeb(normalizedQuery, limit, config, signal)
     }
   )
 }
@@ -143,7 +143,7 @@ export function createFunctionToolRuntime(searchConfigs: SearchProviderConfig[])
   )
   return {
     schemas: tools.map((tool) => tool.schema),
-    async execute(name: string, rawArguments: string): Promise<string> {
+    async execute(name: string, rawArguments: string, signal?: AbortSignal): Promise<string> {
       const tool = toolMap.get(name)
       if (!tool) return JSON.stringify({ ok: false, error: `未知工具：${name}` })
 
@@ -152,7 +152,7 @@ export function createFunctionToolRuntime(searchConfigs: SearchProviderConfig[])
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
           throw new Error('工具参数必须是 JSON 对象')
         }
-        const data = await tool.execute(parsed as JsonObject)
+        const data = await tool.execute(parsed as JsonObject, signal)
         return JSON.stringify({ ok: true, data })
       } catch (error) {
         return JSON.stringify({

@@ -6,7 +6,7 @@ export const DEFAULT_PROMPT_SETTINGS: PromptSettings = {
   includeTimezone: true,
   includeLocale: true,
   includePlatform: true,
-  showToolCallNames: true
+  showToolCallDetails: true
 }
 
 export const PROMPT_CUSTOM_INSTRUCTIONS_MAX_LENGTH = 6_000

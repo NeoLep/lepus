@@ -52,10 +52,15 @@ function resultFrom(
   }
 }
 
-async function requestJson(url: string, init?: RequestInit): Promise<unknown> {
+async function requestJson(
+  url: string,
+  init?: RequestInit,
+  signal?: AbortSignal
+): Promise<unknown> {
+  const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS)
   const response = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+    signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
     headers: {
       Accept: 'application/json',
       ...init?.headers
@@ -77,15 +82,20 @@ function requireApiKey(config: SearchProviderConfig): string {
 async function searchBrave(
   query: string,
   limit: number,
-  config: SearchProviderConfig
+  config: SearchProviderConfig,
+  signal?: AbortSignal
 ): Promise<WebSearchResult[]> {
   const url = new URL('https://api.search.brave.com/res/v1/web/search')
   url.searchParams.set('q', query)
   url.searchParams.set('count', String(limit))
   const payload = asRecord(
-    await requestJson(url.toString(), {
-      headers: { 'X-Subscription-Token': requireApiKey(config) }
-    })
+    await requestJson(
+      url.toString(),
+      {
+        headers: { 'X-Subscription-Token': requireApiKey(config) }
+      },
+      signal
+    )
   )
   return asArray(asRecord(payload['web'])['results'])
     .map((item) => resultFrom(item, { title: 'title', url: 'url', snippet: 'description' }))
@@ -96,17 +106,22 @@ async function searchBrave(
 async function searchTavily(
   query: string,
   limit: number,
-  config: SearchProviderConfig
+  config: SearchProviderConfig,
+  signal?: AbortSignal
 ): Promise<WebSearchResult[]> {
   const payload = asRecord(
-    await requestJson('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${requireApiKey(config)}`,
-        'Content-Type': 'application/json'
+    await requestJson(
+      'https://api.tavily.com/search',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${requireApiKey(config)}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query, max_results: limit, search_depth: 'basic' })
       },
-      body: JSON.stringify({ query, max_results: limit, search_depth: 'basic' })
-    })
+      signal
+    )
   )
   return asArray(payload['results'])
     .map((item) =>
@@ -124,21 +139,26 @@ async function searchTavily(
 async function searchExa(
   query: string,
   limit: number,
-  config: SearchProviderConfig
+  config: SearchProviderConfig,
+  signal?: AbortSignal
 ): Promise<WebSearchResult[]> {
   const payload = asRecord(
-    await requestJson('https://api.exa.ai/search', {
-      method: 'POST',
-      headers: {
-        'x-api-key': requireApiKey(config),
-        'Content-Type': 'application/json'
+    await requestJson(
+      'https://api.exa.ai/search',
+      {
+        method: 'POST',
+        headers: {
+          'x-api-key': requireApiKey(config),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          query,
+          numResults: limit,
+          contents: { highlights: { maxCharacters: 800 } }
+        })
       },
-      body: JSON.stringify({
-        query,
-        numResults: limit,
-        contents: { highlights: { maxCharacters: 800 } }
-      })
-    })
+      signal
+    )
   )
   return asArray(payload['results'])
     .map((value) => {
@@ -161,17 +181,22 @@ async function searchExa(
 async function searchPerplexity(
   query: string,
   limit: number,
-  config: SearchProviderConfig
+  config: SearchProviderConfig,
+  signal?: AbortSignal
 ): Promise<WebSearchResult[]> {
   const payload = asRecord(
-    await requestJson('https://api.perplexity.ai/search', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${requireApiKey(config)}`,
-        'Content-Type': 'application/json'
+    await requestJson(
+      'https://api.perplexity.ai/search',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${requireApiKey(config)}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query, max_results: limit })
       },
-      body: JSON.stringify({ query, max_results: limit })
-    })
+      signal
+    )
   )
   return asArray(payload['results'])
     .map((item) =>
@@ -189,17 +214,22 @@ async function searchPerplexity(
 async function searchFirecrawl(
   query: string,
   limit: number,
-  config: SearchProviderConfig
+  config: SearchProviderConfig,
+  signal?: AbortSignal
 ): Promise<WebSearchResult[]> {
   const payload = asRecord(
-    await requestJson('https://api.firecrawl.dev/v2/search', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${requireApiKey(config)}`,
-        'Content-Type': 'application/json'
+    await requestJson(
+      'https://api.firecrawl.dev/v2/search',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${requireApiKey(config)}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query, limit, sources: ['web'] })
       },
-      body: JSON.stringify({ query, limit, sources: ['web'] })
-    })
+      signal
+    )
   )
   const data = asRecord(payload['data'])
   return asArray(data['web'])
@@ -217,7 +247,8 @@ async function searchFirecrawl(
 async function searchSearxng(
   query: string,
   limit: number,
-  config: SearchProviderConfig
+  config: SearchProviderConfig,
+  signal?: AbortSignal
 ): Promise<WebSearchResult[]> {
   const baseUrl = new URL(config.baseURL)
   if (!['http:', 'https:'].includes(baseUrl.protocol)) {
@@ -226,7 +257,7 @@ async function searchSearxng(
   const url = new URL('search', baseUrl.toString().endsWith('/') ? baseUrl : `${baseUrl}/`)
   url.searchParams.set('q', query)
   url.searchParams.set('format', 'json')
-  const payload = asRecord(await requestJson(url.toString()))
+  const payload = asRecord(await requestJson(url.toString(), undefined, signal))
   return asArray(payload['results'])
     .map((item) =>
       resultFrom(item, {
@@ -243,7 +274,8 @@ async function searchSearxng(
 export async function searchWeb(
   query: string,
   limit: number,
-  config: SearchProviderConfig
+  config: SearchProviderConfig,
+  signal?: AbortSignal
 ): Promise<SearchResponse> {
   if (!config.enabled) throw new Error(`${config.provider} 搜索未启用`)
   const provider = config.provider
@@ -255,5 +287,5 @@ export async function searchWeb(
     firecrawl: searchFirecrawl,
     searxng: searchSearxng
   } satisfies Record<SearchProviderId, typeof searchBrave>
-  return { provider, query, results: await search[provider](query, limit, config) }
+  return { provider, query, results: await search[provider](query, limit, config, signal) }
 }

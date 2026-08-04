@@ -3,7 +3,13 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import ChatComposer from './ChatComposer.vue'
 import ChatMessageList from './ChatMessageList.vue'
 
-import type { ChatLocale, CompressionStatus, Message, ModelConfig } from '@ipc/chat/constants'
+import type {
+  ChatLocale,
+  CompressionStatus,
+  Message,
+  ModelConfig,
+  ToolCallRecord
+} from '@ipc/chat/constants'
 import {
   createCompressionPolicy,
   estimateMessageTokens,
@@ -33,8 +39,9 @@ const loadingSessions = ref<Record<string, boolean>>({})
 const statusModelBySession = ref<Record<string, string>>({})
 const compressionStatusBySession = ref<Record<string, CompressionStatus>>({})
 const compressingBySession = ref<Record<string, boolean>>({})
-const toolCallNamesBySession = ref<Record<string, string[]>>({})
 const streamedContentBySession = ref<Record<string, string>>({})
+const toolActivitiesBySession = ref<Record<string, ToolCallRecord[]>>({})
+const showToolCallDetails = ref(true)
 const compressionEventVersionBySession = ref<Record<string, number>>({})
 const messages = computed(() =>
   props.sessionId ? (messagesBySession.value[props.sessionId] ?? []) : []
@@ -55,39 +62,50 @@ const compressionStatus = computed<CompressionStatus>(() =>
 const compressing = computed(() =>
   props.sessionId ? (compressingBySession.value[props.sessionId] ?? false) : false
 )
-const toolCallStatusText = computed(() => {
-  if (!props.sessionId) return ''
-  const names = toolCallNamesBySession.value[props.sessionId] ?? []
-  return names.length ? t('aboutToCallTools', { names: names.join(', ') }) : ''
-})
 const streamedContent = computed(() =>
   props.sessionId ? (streamedContentBySession.value[props.sessionId] ?? '') : ''
 )
+const activeToolCalls = computed(() =>
+  props.sessionId ? (toolActivitiesBySession.value[props.sessionId] ?? []) : []
+)
 
 let removeCompressionListener: (() => void) | null = null
-let removeToolCallListener: (() => void) | null = null
 let removeStreamListener: (() => void) | null = null
+let removeToolActivityListener: (() => void) | null = null
 
 onMounted(() => {
+  void refreshToolCallDetailSetting()
   removeCompressionListener = window.api.chat.onCompressionStatusChanged((event) => {
     compressionEventVersionBySession.value[event.sessionId] =
       (compressionEventVersionBySession.value[event.sessionId] ?? 0) + 1
     compressionStatusBySession.value[event.sessionId] = event.status
     compressingBySession.value[event.sessionId] = event.compressing
   })
-  removeToolCallListener = window.api.chat.onToolCallStatusChanged((event) => {
-    toolCallNamesBySession.value[event.sessionId] = event.toolNames
-  })
   removeStreamListener = window.api.chat.onChatStreamDelta((event) => {
     streamedContentBySession.value[event.sessionId] = event.content
-    toolCallNamesBySession.value[event.sessionId] = []
+  })
+  removeToolActivityListener = window.api.chat.onToolActivityChanged((event) => {
+    const calls = [...(toolActivitiesBySession.value[event.sessionId] ?? [])]
+    const index = calls.findIndex((call) => call.id === event.call.id)
+    if (index === -1) calls.push(event.call)
+    else calls[index] = event.call
+    toolActivitiesBySession.value[event.sessionId] = calls
   })
 })
 
+async function refreshToolCallDetailSetting(): Promise<void> {
+  try {
+    const settings = await window.api.chat.queryPromptSettings()
+    showToolCallDetails.value = settings.showToolCallDetails
+  } catch (error) {
+    console.error('Failed to load tool call detail setting', error)
+  }
+}
+
 onUnmounted(() => {
   removeCompressionListener?.()
-  removeToolCallListener?.()
   removeStreamListener?.()
+  removeToolActivityListener?.()
 })
 
 function emptyCompressionStatus(): CompressionStatus {
@@ -123,6 +141,16 @@ function createLocalMessage(role: Message['role'], content: string): Message {
   }
 }
 
+function toIpcMessage(message: Message): Message {
+  return {
+    ...message,
+    ...(message.toolCalls
+      ? { toolCalls: message.toolCalls.map((toolCall) => ({ ...toolCall })) }
+      : {}),
+    ...(message.sources ? { sources: message.sources.map((source) => ({ ...source })) } : {})
+  }
+}
+
 async function sendMessage(): Promise<void> {
   const content = draft.value.trim()
   const sessionId = props.sessionId
@@ -131,8 +159,8 @@ async function sendMessage(): Promise<void> {
     return
 
   sendingBySession.value[sessionId] = true
-  toolCallNamesBySession.value[sessionId] = []
   streamedContentBySession.value[sessionId] = ''
+  toolActivitiesBySession.value[sessionId] = []
   const sessionReady = await props.ensureSession(sessionId)
   if (!sessionReady) {
     sendingBySession.value[sessionId] = false
@@ -187,7 +215,6 @@ async function reviseAndResend(message: Message, revisedContent: string): Promis
 
   sendingBySession.value[sessionId] = true
   streamedContentBySession.value[sessionId] = ''
-  toolCallNamesBySession.value[sessionId] = []
   try {
     await window.api.chat.reviseMessage({
       sessionId,
@@ -208,6 +235,40 @@ async function reviseAndResend(message: Message, revisedContent: string): Promis
     return
   }
 
+  await requestAssistant(sessionId, modelConfigId, sessionMessages)
+}
+
+async function regenerate(message: Message): Promise<void> {
+  const sessionId = props.sessionId
+  const modelConfigId = props.modelConfig?.id ?? null
+  if (
+    message.role !== 'assistant' ||
+    sending.value ||
+    loading.value ||
+    !props.sessionPersisted ||
+    !sessionId ||
+    !modelConfigId
+  ) {
+    return
+  }
+  const sessionMessages = messagesBySession.value[sessionId] ?? []
+  if (sessionMessages.at(-1)?.id !== message.id) return
+
+  sendingBySession.value[sessionId] = true
+  streamedContentBySession.value[sessionId] = ''
+  try {
+    await window.api.chat.regenerateMessage({ sessionId, messageId: message.id })
+    sessionMessages.pop()
+    compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
+      sessionId,
+      modelConfigId,
+      locale: locale.value as ChatLocale
+    })
+  } catch (error) {
+    sessionMessages.push(createSendErrorMessage(error))
+    sendingBySession.value[sessionId] = false
+    return
+  }
   await requestAssistant(sessionId, modelConfigId, sessionMessages)
 }
 
@@ -235,10 +296,10 @@ async function requestAssistant(
       conversationId: sessionId,
       modelConfigId,
       locale: locale.value as ChatLocale,
-      messages: sessionMessages.map((message) => ({ ...message }))
+      messages: sessionMessages.map(toIpcMessage)
     })
 
-    sessionMessages.push(response.message)
+    if (response.message) sessionMessages.push(response.message)
     if ((compressionEventVersionBySession.value[sessionId] ?? 0) === compressionEventVersion) {
       compressionStatusBySession.value[sessionId] = response.compression
     }
@@ -261,10 +322,21 @@ async function requestAssistant(
       latestStatus.uncompressedMessages > HISTORY_COMPRESSION.minimumRecentMessages
     if (!backgroundCompressionExpected) compressingBySession.value[sessionId] = false
     sendingBySession.value[sessionId] = false
-    toolCallNamesBySession.value[sessionId] = []
     streamedContentBySession.value[sessionId] = ''
+    toolActivitiesBySession.value[sessionId] = []
   }
 }
+
+async function stopGeneration(): Promise<void> {
+  const sessionId = props.sessionId
+  if (!sessionId || !sendingBySession.value[sessionId]) return
+  await window.api.chat.cancelChat(sessionId)
+}
+
+watch(
+  () => props.promptSettingsVersion,
+  () => void refreshToolCallDetailSetting()
+)
 
 watch(
   () => props.sessionId,
@@ -351,18 +423,19 @@ watch(
       :messages="messages"
       :sending="sending || loading"
       :stream-content="streamedContent"
+      :active-tool-calls="activeToolCalls"
+      :show-tool-call-details="showToolCallDetails"
       :status-text="
         loading
           ? t('loadingChat')
-          : toolCallStatusText
-            ? toolCallStatusText
-            : streamedContent
-              ? undefined
-              : compressing
-                ? t('compressingHistory')
-                : t('thinking')
+          : streamedContent
+            ? undefined
+            : compressing
+              ? t('compressingHistory')
+              : t('thinking')
       "
       @resend="reviseAndResend"
+      @regenerate="regenerate"
     />
     <ChatComposer
       v-model="draft"
@@ -372,6 +445,7 @@ watch(
       :compression-status="compressionStatus"
       :compressing="compressing"
       @submit="sendMessage"
+      @stop="stopGeneration"
     />
   </main>
 </template>
@@ -393,12 +467,10 @@ zh-CN:
   loadingChat: 正在加载对话
   compressingHistory: 正在压缩历史对话
   thinking: 正在思考
-  aboutToCallTools: 即将调用 {names}
 en:
   sendFailedWithReason: 'Failed to send: {reason}'
   sendFailed: Failed to send. Please try again later.
   loadingChat: Loading chat
   compressingHistory: Compressing chat history
   thinking: Thinking
-  aboutToCallTools: About to call {names}
 </i18n>

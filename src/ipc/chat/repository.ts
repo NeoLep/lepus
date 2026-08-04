@@ -28,6 +28,8 @@ type MessageRow = {
   role: Message['role']
   content: string
   created_at: string
+  tool_calls_json: string
+  sources_json: string
 }
 
 type ModelConfigRow = {
@@ -121,7 +123,9 @@ function toMessage(row: MessageRow): Message {
     id: row.id,
     role: row.role,
     content: row.content,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    toolCalls: JSON.parse(row.tool_calls_json || '[]') as Message['toolCalls'],
+    sources: JSON.parse(row.sources_json || '[]') as Message['sources']
   }
 }
 
@@ -224,7 +228,7 @@ export class ChatRepository {
   queryMessages(sessionId: string): Message[] {
     const rows = this.database
       .prepare(
-        `SELECT id, role, content, created_at
+        `SELECT id, role, content, created_at, tool_calls_json, sources_json
          FROM messages
          WHERE session_id = ?
          ORDER BY created_at ASC, rowid ASC`
@@ -235,11 +239,20 @@ export class ChatRepository {
 
   saveMessages(sessionId: string, messages: Message[]): void {
     const insert = this.database.prepare(
-      `INSERT OR IGNORE INTO messages (id, session_id, role, content, created_at)
-       VALUES (@id, @sessionId, @role, @content, @createdAt)`
+      `INSERT OR IGNORE INTO messages
+         (id, session_id, role, content, created_at, tool_calls_json, sources_json)
+       VALUES
+         (@id, @sessionId, @role, @content, @createdAt, @toolCallsJson, @sourcesJson)`
     )
     const save = this.database.transaction((items: Message[]) => {
-      for (const message of items) insert.run({ ...message, sessionId })
+      for (const message of items) {
+        insert.run({
+          ...message,
+          sessionId,
+          toolCallsJson: JSON.stringify(message.toolCalls ?? []),
+          sourcesJson: JSON.stringify(message.sources ?? [])
+        })
+      }
     })
     save(messages)
   }
@@ -247,10 +260,17 @@ export class ChatRepository {
   createMessage(sessionId: string, message: Message): void {
     this.database
       .prepare(
-        `INSERT INTO messages (id, session_id, role, content, created_at)
-         VALUES (@id, @sessionId, @role, @content, @createdAt)`
+        `INSERT INTO messages
+           (id, session_id, role, content, created_at, tool_calls_json, sources_json)
+         VALUES
+           (@id, @sessionId, @role, @content, @createdAt, @toolCallsJson, @sourcesJson)`
       )
-      .run({ ...message, sessionId })
+      .run({
+        ...message,
+        sessionId,
+        toolCallsJson: JSON.stringify(message.toolCalls ?? []),
+        sourcesJson: JSON.stringify(message.sources ?? [])
+      })
   }
 
   reviseUserMessage(sessionId: string, messageId: string, content: string): void {
@@ -272,6 +292,31 @@ export class ChatRepository {
       this.database
         .prepare('DELETE FROM messages WHERE session_id = ? AND rowid > ?')
         .run(sessionId, target.rowid)
+      this.database
+        .prepare('DELETE FROM conversation_summaries WHERE session_id = ?')
+        .run(sessionId)
+    })()
+  }
+
+  deleteAssistantMessage(sessionId: string, messageId: string): void {
+    this.database.transaction(() => {
+      const target = this.database
+        .prepare(
+          `SELECT rowid, role
+           FROM messages
+           WHERE session_id = ? AND id = ?`
+        )
+        .get(sessionId, messageId) as { rowid: number; role: Message['role'] } | undefined
+      if (!target || target.role !== 'assistant') throw new Error('Assistant message not found')
+
+      const laterMessage = this.database
+        .prepare('SELECT 1 FROM messages WHERE session_id = ? AND rowid > ? LIMIT 1')
+        .get(sessionId, target.rowid)
+      if (laterMessage) throw new Error('Only the latest assistant message can be regenerated')
+
+      this.database
+        .prepare('DELETE FROM messages WHERE session_id = ? AND id = ?')
+        .run(sessionId, messageId)
       this.database
         .prepare('DELETE FROM conversation_summaries WHERE session_id = ?')
         .run(sessionId)
@@ -443,9 +488,9 @@ export class ChatRepository {
         'prompt.includePlatform',
         DEFAULT_PROMPT_SETTINGS.includePlatform
       ),
-      showToolCallNames: readBoolean(
-        'prompt.showToolCallNames',
-        DEFAULT_PROMPT_SETTINGS.showToolCallNames
+      showToolCallDetails: readBoolean(
+        'prompt.showToolCallDetails',
+        readBoolean('prompt.showToolCallNames', DEFAULT_PROMPT_SETTINGS.showToolCallDetails)
       )
     }
   }
@@ -469,7 +514,7 @@ export class ChatRepository {
       save.run('prompt.includeTimezone', settings.includeTimezone ? '1' : '0', now)
       save.run('prompt.includeLocale', settings.includeLocale ? '1' : '0', now)
       save.run('prompt.includePlatform', settings.includePlatform ? '1' : '0', now)
-      save.run('prompt.showToolCallNames', settings.showToolCallNames ? '1' : '0', now)
+      save.run('prompt.showToolCallDetails', settings.showToolCallDetails ? '1' : '0', now)
     })()
     return this.getPromptSettings()
   }
@@ -758,6 +803,24 @@ export class ChatRepository {
         this.database.exec('VACUUM')
         this.database.pragma('wal_checkpoint(TRUNCATE)')
       }
+    }
+
+    if (version < 8) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE messages ADD COLUMN tool_calls_json TEXT NOT NULL DEFAULT '[]';
+          PRAGMA user_version = 8;
+        `)
+      })()
+    }
+
+    if (version < 9) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE messages ADD COLUMN sources_json TEXT NOT NULL DEFAULT '[]';
+          PRAGMA user_version = 9;
+        `)
+      })()
     }
   }
 

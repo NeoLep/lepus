@@ -1,5 +1,12 @@
 import OpenAI from 'openai'
-import { Message, ModelConfig, SearchProviderConfig } from '@/ipc/chat/constants'
+import {
+  Message,
+  ModelConfig,
+  SearchCitation,
+  SearchProviderConfig,
+  SearchProviderId,
+  ToolCallRecord
+} from '@/ipc/chat/constants'
 import type { AgentInputMessage } from './types'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { createFunctionToolRuntime } from './tools'
@@ -23,22 +30,28 @@ export class Agent {
   async chat(
     message: AgentInputMessage[],
     options?: {
-      onToolCalls?: (toolNames: string[]) => void
       onContentUpdate?: (content: string) => void
+      signal?: AbortSignal
+      onToolActivity?: (call: ToolCallRecord) => void
     }
   ) {
     const messages: ChatCompletionMessageParam[] = [...message]
     let visibleContent = ''
     let initialPromptTokens: number | null = null
+    const toolExecutions: ToolCallRecord[] = []
+    const sources: SearchCitation[] = []
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-      const stream = await this.client.chat.completions.create({
-        model: this.model,
-        messages,
-        tools: this.toolRuntime.schemas,
-        tool_choice: 'auto',
-        stream: true
-      })
+      const stream = await this.client.chat.completions.create(
+        {
+          model: this.model,
+          messages,
+          tools: this.toolRuntime.schemas,
+          tool_choice: 'auto',
+          stream: true
+        },
+        { signal: options?.signal }
+      )
       let content = ''
       const toolCallParts: Array<{
         id: string
@@ -85,21 +98,81 @@ export class Agent {
       if (!toolCalls.length) {
         return {
           message: { role: 'assistant' as const, content: visibleContent },
-          promptTokens: initialPromptTokens
+          promptTokens: initialPromptTokens,
+          toolCalls: toolExecutions,
+          sources
         }
       }
 
-      options?.onToolCalls?.(toolCalls.map((toolCall) => toolCall.function.name))
       messages.push(responseMessage)
       const toolMessages = await Promise.all(
         toolCalls.map(async (toolCall): Promise<ChatCompletionMessageParam> => {
+          const runningCall: ToolCallRecord = {
+            id: toolCall.id,
+            name: toolCall.function.name,
+            arguments: toolCall.function.arguments,
+            status: 'running'
+          }
+          options?.onToolActivity?.(runningCall)
+          let result = await this.toolRuntime.execute(
+            toolCall.function.name,
+            toolCall.function.arguments,
+            options?.signal
+          )
+          if (toolCall.function.name === 'search_web') {
+            try {
+              const payload = JSON.parse(result) as {
+                ok?: boolean
+                data?: {
+                  provider?: SearchProviderId
+                  query?: string
+                  results?: Array<{
+                    title?: string
+                    url?: string
+                    snippet?: string
+                    publishedAt?: string
+                  }>
+                }
+              }
+              if (payload.ok && payload.data?.provider && payload.data.results) {
+                payload.data.results = payload.data.results.map((item) => {
+                  const index = sources.length + 1
+                  sources.push({
+                    index,
+                    provider: payload.data!.provider!,
+                    query: payload.data!.query ?? '',
+                    title: item.title ?? item.url ?? `Source ${index}`,
+                    url: item.url ?? '',
+                    snippet: item.snippet ?? '',
+                    ...(item.publishedAt ? { publishedAt: item.publishedAt } : {})
+                  })
+                  return { ...item, citationIndex: index }
+                })
+                ;(payload.data as Record<string, unknown>)['citationInstruction'] =
+                  'Cite factual claims using the matching [citationIndex], for example [1].'
+                result = JSON.stringify(payload)
+              }
+            } catch {
+              // Keep the original tool result if a provider returns an unexpected shape.
+            }
+          }
+          let succeeded = false
+          try {
+            succeeded = JSON.parse(result)?.ok === true
+          } catch {
+            succeeded = false
+          }
+          const completedCall: ToolCallRecord = {
+            ...runningCall,
+            status: succeeded ? 'completed' : 'error',
+            result
+          }
+          toolExecutions.push(completedCall)
+          options?.onToolActivity?.(completedCall)
           return {
             role: 'tool',
             tool_call_id: toolCall.id,
-            content: await this.toolRuntime.execute(
-              toolCall.function.name,
-              toolCall.function.arguments
-            )
+            content: result
           }
         })
       )

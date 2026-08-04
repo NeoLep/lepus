@@ -4,6 +4,7 @@ import {
   ChatMessage,
   CompressionStatusQuery,
   MessageReviseRequest,
+  MessageRegenerateRequest,
   ModelConfig,
   PromptPreviewRequest,
   PromptSettings,
@@ -19,6 +20,7 @@ import { HISTORY_COMPRESSION } from '@/shared/agent/history-compression'
 import { PromptBuilder } from '@/main/lib/agent/prompt-builder'
 
 const backgroundCompressionBySession = new Map<string, Promise<void>>()
+const activeChatControllers = new Map<string, AbortController>()
 
 function isContextLengthError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
@@ -33,6 +35,9 @@ function buildSystemPrompt(
 }
 
 export default () => {
+  ipcMain.handle(CHAT_CHANNELS.CHAT_CANCEL, (_event, sessionId: string) => {
+    activeChatControllers.get(sessionId)?.abort()
+  })
   ipcMain.handle(CHAT_CHANNELS.SESSION_QUERY, () => getChatRepository().querySessions())
   ipcMain.handle(CHAT_CHANNELS.SESSION_CREATE, (_event, request: Session) =>
     getChatRepository().createSession(request)
@@ -50,6 +55,13 @@ export default () => {
     await backgroundCompressionBySession.get(request.sessionId)
     getChatRepository().reviseUserMessage(request.sessionId, request.messageId, request.content)
   })
+  ipcMain.handle(
+    CHAT_CHANNELS.MESSAGE_REGENERATE,
+    async (_event, request: MessageRegenerateRequest) => {
+      await backgroundCompressionBySession.get(request.sessionId)
+      getChatRepository().deleteAssistantMessage(request.sessionId, request.messageId)
+    }
+  )
   ipcMain.handle(CHAT_CHANNELS.MODEL_CONFIG_QUERY, () => getChatRepository().queryModelConfigs())
   ipcMain.handle(CHAT_CHANNELS.MODEL_CONFIG_CREATE, (_event, request: ModelConfig) =>
     getChatRepository().createModelConfig(request)
@@ -93,6 +105,10 @@ export default () => {
   )
 
   ipcMain.handle(CHAT_CHANNELS.CHAT_SEND, async (event, request: ChatMessage) => {
+    activeChatControllers.get(request.conversationId)?.abort()
+    const controller = new AbortController()
+    activeChatControllers.set(request.conversationId, controller)
+    let streamedContent = ''
     try {
       const repository = getChatRepository()
       const modelConfig = repository.getModelConfig(request.modelConfigId)
@@ -101,22 +117,43 @@ export default () => {
       repository.saveMessages(request.conversationId, request.messages)
       const agent = new Agent(modelConfig, repository.getSearchProviderConfigs())
       const systemPrompt = buildSystemPrompt(repository, request.locale)
-      const showToolCallNames = repository.getPromptSettings().showToolCallNames
-      const onToolCalls = (toolNames: string[]): void => {
-        if (!showToolCallNames || !toolNames.length || event.sender.isDestroyed()) return
-        event.sender.send(CHAT_CHANNELS.TOOL_CALL_STATUS_CHANGED, {
-          sessionId: request.conversationId,
-          toolNames
-        })
-      }
+      const showToolCallDetails = repository.getPromptSettings().showToolCallDetails
       const onContentUpdate = (content: string): void => {
         if (!content || event.sender.isDestroyed()) return
+        streamedContent = content
         event.sender.send(CHAT_CHANNELS.CHAT_STREAM_DELTA, {
           sessionId: request.conversationId,
           content
         })
       }
+      const onToolActivity = (call: import('./constants').ToolCallRecord): void => {
+        if (!showToolCallDetails || event.sender.isDestroyed()) return
+        event.sender.send(CHAT_CHANNELS.TOOL_ACTIVITY_CHANGED, {
+          sessionId: request.conversationId,
+          call
+        })
+      }
       const compressor = new HistoryCompressor(repository, modelConfig, agent, systemPrompt)
+      const buildStoppedResponse = () => {
+        const partialContent = streamedContent.trim()
+        const partialMessage = partialContent
+          ? {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              content: partialContent,
+              createdAt: new Date().toISOString()
+            }
+          : null
+        if (partialMessage) repository.createMessage(request.conversationId, partialMessage)
+        const partialHistory = partialMessage
+          ? [...request.messages, partialMessage]
+          : request.messages
+        return {
+          message: partialMessage,
+          compression: compressor.getStatus(request.conversationId, partialHistory),
+          stopped: true
+        }
+      }
       let context: AgentInputMessage[] = compressor.buildUncompressedContext(
         request.conversationId,
         request.messages
@@ -142,12 +179,26 @@ export default () => {
       let estimatedPromptTokens = estimateMessageTokens(context)
       let response
       try {
-        response = await agent.chat(context, { onToolCalls, onContentUpdate })
+        response = await agent.chat(context, {
+          onContentUpdate,
+          onToolActivity,
+          signal: controller.signal
+        })
       } catch (error) {
+        if (controller.signal.aborted) return buildStoppedResponse()
         if (!isContextLengthError(error)) throw error
         context = compressor.buildEmergencyContext(request.conversationId, request.messages)
         estimatedPromptTokens = estimateMessageTokens(context)
-        response = await agent.chat(context, { onToolCalls, onContentUpdate })
+        try {
+          response = await agent.chat(context, {
+            onContentUpdate,
+            onToolActivity,
+            signal: controller.signal
+          })
+        } catch (retryError) {
+          if (controller.signal.aborted) return buildStoppedResponse()
+          throw retryError
+        }
       }
       if (response.promptTokens) {
         repository.updateModelTokenEstimateRatio(
@@ -161,7 +212,9 @@ export default () => {
         id: crypto.randomUUID(),
         role: 'assistant' as const,
         content,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        toolCalls: response.toolCalls,
+        sources: response.sources
       }
       repository.createMessage(request.conversationId, message)
       const completedHistory = [...request.messages, message]
@@ -174,7 +227,8 @@ export default () => {
       ).getStatus(request.conversationId, completedHistory)
       const result = {
         message,
-        compression: status
+        compression: status,
+        stopped: false
       }
 
       if (
@@ -223,6 +277,10 @@ export default () => {
     } catch (error) {
       console.error('sendChatMessage error - ipcMain.handle', error)
       throw error
+    } finally {
+      if (activeChatControllers.get(request.conversationId) === controller) {
+        activeChatControllers.delete(request.conversationId)
+      }
     }
   })
 }

@@ -8,12 +8,13 @@ import {
   CompressionStatusEvent,
   CompressionStatusQuery,
   MessageReviseRequest,
+  MessageRegenerateRequest,
   ModelConfig,
   PromptPreviewRequest,
   PromptSettings,
   SearchProviderConfig,
   Session,
-  ToolCallStatusEvent
+  ToolActivityEvent
 } from './constants'
 
 export default {
@@ -28,6 +29,8 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.MESSAGE_QUERY, sessionId),
   reviseMessage: (request: MessageReviseRequest): Promise<void> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MESSAGE_REVISE, request),
+  regenerateMessage: (request: MessageRegenerateRequest): Promise<void> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.MESSAGE_REGENERATE, request),
   queryModelConfigs: (): Promise<ModelConfig[]> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_QUERY),
   createModelConfig: (request: ModelConfig): Promise<ModelConfig> =>
@@ -56,11 +59,11 @@ export default {
     ipcRenderer.on(CHAT_CHANNELS.COMPRESSION_STATUS_CHANGED, handler)
     return () => ipcRenderer.removeListener(CHAT_CHANNELS.COMPRESSION_STATUS_CHANGED, handler)
   },
-  onToolCallStatusChanged: (listener: (event: ToolCallStatusEvent) => void): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, payload: ToolCallStatusEvent): void =>
+  onToolActivityChanged: (listener: (event: ToolActivityEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: ToolActivityEvent): void =>
       listener(payload)
-    ipcRenderer.on(CHAT_CHANNELS.TOOL_CALL_STATUS_CHANGED, handler)
-    return () => ipcRenderer.removeListener(CHAT_CHANNELS.TOOL_CALL_STATUS_CHANGED, handler)
+    ipcRenderer.on(CHAT_CHANNELS.TOOL_ACTIVITY_CHANGED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.TOOL_ACTIVITY_CHANGED, handler)
   },
   onChatStreamDelta: (listener: (event: ChatStreamDeltaEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: ChatStreamDeltaEvent): void =>
@@ -68,6 +71,8 @@ export default {
     ipcRenderer.on(CHAT_CHANNELS.CHAT_STREAM_DELTA, handler)
     return () => ipcRenderer.removeListener(CHAT_CHANNELS.CHAT_STREAM_DELTA, handler)
   },
+  cancelChat: (sessionId: string): Promise<void> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.CHAT_CANCEL, sessionId),
 
   sendChatMessage: (request: ChatMessage): Promise<ChatResponse> =>
     ipcRenderer.invoke(CHAT_CHANNELS.CHAT_SEND, request)

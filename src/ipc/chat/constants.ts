@@ -5,6 +5,7 @@ export const CHAT_CHANNELS = {
   SESSION_DELETE: 'session:delete',
   MESSAGE_QUERY: 'message:query',
   MESSAGE_REVISE: 'message:revise',
+  MESSAGE_REGENERATE: 'message:regenerate',
 
   MODEL_CONFIG_QUERY: 'model-config:query',
   MODEL_CONFIG_CREATE: 'model-config:create',
@@ -18,8 +19,9 @@ export const CHAT_CHANNELS = {
   SEARCH_CONFIG_UPDATE: 'search-config:update',
   COMPRESSION_STATUS_QUERY: 'compression-status:query',
   COMPRESSION_STATUS_CHANGED: 'compression-status:changed',
-  TOOL_CALL_STATUS_CHANGED: 'tool-call-status:changed',
   CHAT_STREAM_DELTA: 'chat:stream-delta',
+  CHAT_CANCEL: 'chat:cancel',
+  TOOL_ACTIVITY_CHANGED: 'tool-activity:changed',
 
   CHAT_SEND: 'chat:send-message'
 }
@@ -36,6 +38,31 @@ export type Message = {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
+  toolCalls?: ToolCallRecord[]
+  sources?: SearchCitation[]
+}
+
+export type SearchCitation = {
+  index: number
+  provider: SearchProviderId
+  query: string
+  title: string
+  url: string
+  snippet: string
+  publishedAt?: string
+}
+
+export type ToolCallRecord = {
+  id: string
+  name: string
+  arguments: string
+  status: 'running' | 'completed' | 'error'
+  result?: string
+}
+
+export type ToolActivityEvent = {
+  sessionId: string
+  call: ToolCallRecord
 }
 
 export type ChatMessage = {
@@ -51,6 +78,11 @@ export type MessageReviseRequest = {
   content: string
 }
 
+export type MessageRegenerateRequest = {
+  sessionId: string
+  messageId: string
+}
+
 export type ChatLocale = 'zh-CN' | 'en'
 
 export type PromptSettings = {
@@ -59,12 +91,7 @@ export type PromptSettings = {
   includeTimezone: boolean
   includeLocale: boolean
   includePlatform: boolean
-  showToolCallNames: boolean
-}
-
-export type ToolCallStatusEvent = {
-  sessionId: string
-  toolNames: string[]
+  showToolCallDetails: boolean
 }
 
 export type ChatStreamDeltaEvent = {
@@ -114,8 +141,9 @@ export type CompressionStatus = {
 }
 
 export type ChatResponse = {
-  message: Message
+  message: Message | null
   compression: CompressionStatus
+  stopped: boolean
 }
 
 export type ModelConfig = {

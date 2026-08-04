@@ -157,10 +157,10 @@ onBeforeUnmount(() => {
             <details class="advanced-settings">
               <summary>{{ t('advancedSettings') }}</summary>
               <label class="advanced-toggle">
-                <input v-model="draft.showToolCallNames" type="checkbox" />
+                <input v-model="draft.showToolCallDetails" type="checkbox" />
                 <span>
-                  <strong>{{ t('showToolCallNames') }}</strong>
-                  <small>{{ t('showToolCallNamesHelp') }}</small>
+                  <strong>{{ t('showToolCallDetails') }}</strong>
+                  <small>{{ t('showToolCallDetailsHelp') }}</small>
                 </span>
               </label>
             </details>
@@ -526,8 +526,8 @@ zh-CN:
   includeLocale: 携带界面语言
   includePlatform: 携带操作系统
   advancedSettings: 高级设置
-  showToolCallNames: 显示工具调用名称
-  showToolCallNamesHelp: 回答过程中提示“即将调用 xxx”，便于了解 AI 正在执行的操作。
+  showToolCallDetails: 显示工具调用详情
+  showToolCallDetailsHelp: 在回答中显示工具的运行状态、调用参数和返回结果。
   preview: 最终 System Prompt 预览
   previewHelp: 实际发送时会重新生成时间
   updatingPreview: 正在更新…
@@ -549,8 +549,8 @@ en:
   includeLocale: Include interface language
   includePlatform: Include operating system
   advancedSettings: Advanced settings
-  showToolCallNames: Show tool call names
-  showToolCallNamesHelp: Show “About to call xxx” while the AI is using a tool.
+  showToolCallDetails: Show tool call details
+  showToolCallDetailsHelp: Show tool status, arguments, and results in assistant responses.
   preview: Final system prompt preview
   previewHelp: Time is regenerated when a message is sent
   updatingPreview: Updating…

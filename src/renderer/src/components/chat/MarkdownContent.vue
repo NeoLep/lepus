@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
+import type { SearchCitation } from '@ipc/chat/constants'
 
 const props = defineProps<{
   content: string
+  sources?: SearchCitation[]
 }>()
 
 const markdown = new MarkdownIt({
@@ -23,7 +25,14 @@ markdown.renderer.rules.link_open = (tokens, index, options, environment, render
   return defaultLinkOpen(tokens, index, options, environment, renderer)
 }
 
-const renderedContent = computed(() => markdown.render(props.content))
+const renderedContent = computed(() => {
+  const sourceByIndex = new Map((props.sources ?? []).map((source) => [source.index, source]))
+  const contentWithCitations = props.content.replace(/\[(\d+)\](?!\()/g, (match, value) => {
+    const source = sourceByIndex.get(Number(value))
+    return source ? `[${value}](${source.url})` : match
+  })
+  return markdown.render(contentWithCitations)
+})
 </script>
 
 <template>
