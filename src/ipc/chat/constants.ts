@@ -18,6 +18,8 @@ export const CHAT_CHANNELS = {
   SEARCH_CONFIG_UPDATE: 'search-config:update',
   COMPRESSION_STATUS_QUERY: 'compression-status:query',
   COMPRESSION_STATUS_CHANGED: 'compression-status:changed',
+  TOOL_CALL_STATUS_CHANGED: 'tool-call-status:changed',
+  CHAT_STREAM_DELTA: 'chat:stream-delta',
 
   CHAT_SEND: 'chat:send-message'
 }
@@ -57,6 +59,17 @@ export type PromptSettings = {
   includeTimezone: boolean
   includeLocale: boolean
   includePlatform: boolean
+  showToolCallNames: boolean
+}
+
+export type ToolCallStatusEvent = {
+  sessionId: string
+  toolNames: string[]
+}
+
+export type ChatStreamDeltaEvent = {
+  sessionId: string
+  content: string
 }
 
 export type SearchProviderId = 'brave' | 'tavily' | 'exa' | 'perplexity' | 'firecrawl' | 'searxng'

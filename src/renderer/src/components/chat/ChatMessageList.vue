@@ -9,6 +9,7 @@ const props = defineProps<{
   messages: Message[]
   sending: boolean
   statusText?: string
+  streamContent?: string
 }>()
 
 const emit = defineEmits<{
@@ -45,7 +46,7 @@ function submitEditing(message: Message): void {
 }
 
 watch(
-  () => [props.messages.length, props.sending],
+  () => [props.messages.length, props.sending, props.statusText, props.streamContent],
   async () => {
     await nextTick()
     messageEnd.value?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -118,7 +119,8 @@ watch(
         <div class="message-avatar"><Sparkles :size="16" /></div>
         <div class="message-body">
           <strong>Lepus</strong>
-          <span class="thinking"
+          <MarkdownContent v-if="streamContent" :content="streamContent" />
+          <span v-if="statusText" class="thinking"
             ><LoaderCircle :size="15" /> {{ statusText ?? t('thinking') }}</span
           >
         </div>

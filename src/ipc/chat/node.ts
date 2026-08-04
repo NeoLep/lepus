@@ -101,6 +101,21 @@ export default () => {
       repository.saveMessages(request.conversationId, request.messages)
       const agent = new Agent(modelConfig, repository.getSearchProviderConfigs())
       const systemPrompt = buildSystemPrompt(repository, request.locale)
+      const showToolCallNames = repository.getPromptSettings().showToolCallNames
+      const onToolCalls = (toolNames: string[]): void => {
+        if (!showToolCallNames || !toolNames.length || event.sender.isDestroyed()) return
+        event.sender.send(CHAT_CHANNELS.TOOL_CALL_STATUS_CHANGED, {
+          sessionId: request.conversationId,
+          toolNames
+        })
+      }
+      const onContentUpdate = (content: string): void => {
+        if (!content || event.sender.isDestroyed()) return
+        event.sender.send(CHAT_CHANNELS.CHAT_STREAM_DELTA, {
+          sessionId: request.conversationId,
+          content
+        })
+      }
       const compressor = new HistoryCompressor(repository, modelConfig, agent, systemPrompt)
       let context: AgentInputMessage[] = compressor.buildUncompressedContext(
         request.conversationId,
@@ -127,12 +142,12 @@ export default () => {
       let estimatedPromptTokens = estimateMessageTokens(context)
       let response
       try {
-        response = await agent.chat(context)
+        response = await agent.chat(context, { onToolCalls, onContentUpdate })
       } catch (error) {
         if (!isContextLengthError(error)) throw error
         context = compressor.buildEmergencyContext(request.conversationId, request.messages)
         estimatedPromptTokens = estimateMessageTokens(context)
-        response = await agent.chat(context)
+        response = await agent.chat(context, { onToolCalls, onContentUpdate })
       }
       if (response.promptTokens) {
         repository.updateModelTokenEstimateRatio(

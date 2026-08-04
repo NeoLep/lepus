@@ -20,35 +20,79 @@ export class Agent {
     this.model = config.model
     this.toolRuntime = createFunctionToolRuntime(searchConfigs)
   }
-  async chat(message: AgentInputMessage[]) {
+  async chat(
+    message: AgentInputMessage[],
+    options?: {
+      onToolCalls?: (toolNames: string[]) => void
+      onContentUpdate?: (content: string) => void
+    }
+  ) {
     const messages: ChatCompletionMessageParam[] = [...message]
+    let visibleContent = ''
     let initialPromptTokens: number | null = null
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
-      const response = await this.client.chat.completions.create({
+      const stream = await this.client.chat.completions.create({
         model: this.model,
         messages,
         tools: this.toolRuntime.schemas,
-        tool_choice: 'auto'
+        tool_choice: 'auto',
+        stream: true
       })
-      initialPromptTokens ??= response.usage?.prompt_tokens ?? null
-      const responseMessage = response.choices[0]?.message
-      if (!responseMessage) throw new Error('模型没有返回消息')
+      let content = ''
+      const toolCallParts: Array<{
+        id: string
+        name: string
+        arguments: string
+      }> = []
 
-      if (!responseMessage.tool_calls?.length) {
-        return { message: responseMessage, promptTokens: initialPromptTokens }
+      for await (const chunk of stream) {
+        initialPromptTokens ??= chunk.usage?.prompt_tokens ?? null
+        const delta = chunk.choices[0]?.delta
+        if (!delta) continue
+        if (delta.content) {
+          content += delta.content
+          visibleContent += delta.content
+          options?.onContentUpdate?.(visibleContent)
+        }
+        for (const toolCallDelta of delta.tool_calls ?? []) {
+          const part = (toolCallParts[toolCallDelta.index] ??= {
+            id: '',
+            name: '',
+            arguments: ''
+          })
+          if (toolCallDelta.id) part.id = toolCallDelta.id
+          if (toolCallDelta.function?.name) part.name += toolCallDelta.function.name
+          if (toolCallDelta.function?.arguments) {
+            part.arguments += toolCallDelta.function.arguments
+          }
+        }
       }
 
+      const toolCalls = toolCallParts
+        .filter((part) => Boolean(part))
+        .map((part, index) => ({
+          id: part.id || `tool-call-${round}-${index}`,
+          type: 'function' as const,
+          function: { name: part.name, arguments: part.arguments }
+        }))
+      const responseMessage: ChatCompletionMessageParam = {
+        role: 'assistant',
+        content: content || null,
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {})
+      }
+
+      if (!toolCalls.length) {
+        return {
+          message: { role: 'assistant' as const, content: visibleContent },
+          promptTokens: initialPromptTokens
+        }
+      }
+
+      options?.onToolCalls?.(toolCalls.map((toolCall) => toolCall.function.name))
       messages.push(responseMessage)
       const toolMessages = await Promise.all(
-        responseMessage.tool_calls.map(async (toolCall): Promise<ChatCompletionMessageParam> => {
-          if (toolCall.type !== 'function') {
-            return {
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: JSON.stringify({ ok: false, error: '不支持的工具调用类型' })
-            }
-          }
+        toolCalls.map(async (toolCall): Promise<ChatCompletionMessageParam> => {
           return {
             role: 'tool',
             tool_call_id: toolCall.id,

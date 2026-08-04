@@ -33,6 +33,8 @@ const loadingSessions = ref<Record<string, boolean>>({})
 const statusModelBySession = ref<Record<string, string>>({})
 const compressionStatusBySession = ref<Record<string, CompressionStatus>>({})
 const compressingBySession = ref<Record<string, boolean>>({})
+const toolCallNamesBySession = ref<Record<string, string[]>>({})
+const streamedContentBySession = ref<Record<string, string>>({})
 const compressionEventVersionBySession = ref<Record<string, number>>({})
 const messages = computed(() =>
   props.sessionId ? (messagesBySession.value[props.sessionId] ?? []) : []
@@ -53,8 +55,18 @@ const compressionStatus = computed<CompressionStatus>(() =>
 const compressing = computed(() =>
   props.sessionId ? (compressingBySession.value[props.sessionId] ?? false) : false
 )
+const toolCallStatusText = computed(() => {
+  if (!props.sessionId) return ''
+  const names = toolCallNamesBySession.value[props.sessionId] ?? []
+  return names.length ? t('aboutToCallTools', { names: names.join(', ') }) : ''
+})
+const streamedContent = computed(() =>
+  props.sessionId ? (streamedContentBySession.value[props.sessionId] ?? '') : ''
+)
 
 let removeCompressionListener: (() => void) | null = null
+let removeToolCallListener: (() => void) | null = null
+let removeStreamListener: (() => void) | null = null
 
 onMounted(() => {
   removeCompressionListener = window.api.chat.onCompressionStatusChanged((event) => {
@@ -63,9 +75,20 @@ onMounted(() => {
     compressionStatusBySession.value[event.sessionId] = event.status
     compressingBySession.value[event.sessionId] = event.compressing
   })
+  removeToolCallListener = window.api.chat.onToolCallStatusChanged((event) => {
+    toolCallNamesBySession.value[event.sessionId] = event.toolNames
+  })
+  removeStreamListener = window.api.chat.onChatStreamDelta((event) => {
+    streamedContentBySession.value[event.sessionId] = event.content
+    toolCallNamesBySession.value[event.sessionId] = []
+  })
 })
 
-onUnmounted(() => removeCompressionListener?.())
+onUnmounted(() => {
+  removeCompressionListener?.()
+  removeToolCallListener?.()
+  removeStreamListener?.()
+})
 
 function emptyCompressionStatus(): CompressionStatus {
   const policy = createCompressionPolicy(
@@ -108,6 +131,8 @@ async function sendMessage(): Promise<void> {
     return
 
   sendingBySession.value[sessionId] = true
+  toolCallNamesBySession.value[sessionId] = []
+  streamedContentBySession.value[sessionId] = ''
   const sessionReady = await props.ensureSession(sessionId)
   if (!sessionReady) {
     sendingBySession.value[sessionId] = false
@@ -161,6 +186,8 @@ async function reviseAndResend(message: Message, revisedContent: string): Promis
   if (messageIndex === -1 || hasLaterUserMessage) return
 
   sendingBySession.value[sessionId] = true
+  streamedContentBySession.value[sessionId] = ''
+  toolCallNamesBySession.value[sessionId] = []
   try {
     await window.api.chat.reviseMessage({
       sessionId,
@@ -234,6 +261,8 @@ async function requestAssistant(
       latestStatus.uncompressedMessages > HISTORY_COMPRESSION.minimumRecentMessages
     if (!backgroundCompressionExpected) compressingBySession.value[sessionId] = false
     sendingBySession.value[sessionId] = false
+    toolCallNamesBySession.value[sessionId] = []
+    streamedContentBySession.value[sessionId] = ''
   }
 }
 
@@ -321,8 +350,17 @@ watch(
     <ChatMessageList
       :messages="messages"
       :sending="sending || loading"
+      :stream-content="streamedContent"
       :status-text="
-        loading ? t('loadingChat') : compressing ? t('compressingHistory') : t('thinking')
+        loading
+          ? t('loadingChat')
+          : toolCallStatusText
+            ? toolCallStatusText
+            : streamedContent
+              ? undefined
+              : compressing
+                ? t('compressingHistory')
+                : t('thinking')
       "
       @resend="reviseAndResend"
     />
@@ -355,10 +393,12 @@ zh-CN:
   loadingChat: 正在加载对话
   compressingHistory: 正在压缩历史对话
   thinking: 正在思考
+  aboutToCallTools: 即将调用 {names}
 en:
   sendFailedWithReason: 'Failed to send: {reason}'
   sendFailed: Failed to send. Please try again later.
   loadingChat: Loading chat
   compressingHistory: Compressing chat history
   thinking: Thinking
+  aboutToCallTools: About to call {names}
 </i18n>

@@ -3,6 +3,7 @@ import {
   CHAT_CHANNELS,
   ChatMessage,
   ChatResponse,
+  ChatStreamDeltaEvent,
   CompressionStatus,
   CompressionStatusEvent,
   CompressionStatusQuery,
@@ -11,7 +12,8 @@ import {
   PromptPreviewRequest,
   PromptSettings,
   SearchProviderConfig,
-  Session
+  Session,
+  ToolCallStatusEvent
 } from './constants'
 
 export default {
@@ -53,6 +55,18 @@ export default {
       listener(payload)
     ipcRenderer.on(CHAT_CHANNELS.COMPRESSION_STATUS_CHANGED, handler)
     return () => ipcRenderer.removeListener(CHAT_CHANNELS.COMPRESSION_STATUS_CHANGED, handler)
+  },
+  onToolCallStatusChanged: (listener: (event: ToolCallStatusEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: ToolCallStatusEvent): void =>
+      listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.TOOL_CALL_STATUS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.TOOL_CALL_STATUS_CHANGED, handler)
+  },
+  onChatStreamDelta: (listener: (event: ChatStreamDeltaEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: ChatStreamDeltaEvent): void =>
+      listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.CHAT_STREAM_DELTA, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.CHAT_STREAM_DELTA, handler)
   },
 
   sendChatMessage: (request: ChatMessage): Promise<ChatResponse> =>

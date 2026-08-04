@@ -442,6 +442,10 @@ export class ChatRepository {
       includePlatform: readBoolean(
         'prompt.includePlatform',
         DEFAULT_PROMPT_SETTINGS.includePlatform
+      ),
+      showToolCallNames: readBoolean(
+        'prompt.showToolCallNames',
+        DEFAULT_PROMPT_SETTINGS.showToolCallNames
       )
     }
   }
@@ -465,6 +469,7 @@ export class ChatRepository {
       save.run('prompt.includeTimezone', settings.includeTimezone ? '1' : '0', now)
       save.run('prompt.includeLocale', settings.includeLocale ? '1' : '0', now)
       save.run('prompt.includePlatform', settings.includePlatform ? '1' : '0', now)
+      save.run('prompt.showToolCallNames', settings.showToolCallNames ? '1' : '0', now)
     })()
     return this.getPromptSettings()
   }

@@ -153,6 +153,17 @@ onBeforeUnmount(() => {
                 <span>{{ t('includePlatform') }}</span>
               </label>
             </fieldset>
+
+            <details class="advanced-settings">
+              <summary>{{ t('advancedSettings') }}</summary>
+              <label class="advanced-toggle">
+                <input v-model="draft.showToolCallNames" type="checkbox" />
+                <span>
+                  <strong>{{ t('showToolCallNames') }}</strong>
+                  <small>{{ t('showToolCallNamesHelp') }}</small>
+                </span>
+              </label>
+            </details>
           </section>
 
           <section class="preview-panel">
@@ -347,6 +358,51 @@ fieldset input {
   accent-color: #182230;
 }
 
+.advanced-settings {
+  margin-top: 16px;
+  padding: 12px 13px;
+  border: 1px solid #eaecf0;
+  border-radius: 9px;
+  background: #f9fafb;
+}
+
+.advanced-settings summary {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.advanced-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  cursor: pointer;
+}
+
+.advanced-toggle input {
+  margin-top: 2px;
+  accent-color: #182230;
+}
+
+.advanced-toggle > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.advanced-toggle strong {
+  color: #344054;
+  font-size: 12px;
+}
+
+.advanced-toggle small {
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .preview-panel {
   display: flex;
   min-height: 350px;
@@ -469,6 +525,9 @@ zh-CN:
   includeTimezone: 携带时区
   includeLocale: 携带界面语言
   includePlatform: 携带操作系统
+  advancedSettings: 高级设置
+  showToolCallNames: 显示工具调用名称
+  showToolCallNamesHelp: 回答过程中提示“即将调用 xxx”，便于了解 AI 正在执行的操作。
   preview: 最终 System Prompt 预览
   previewHelp: 实际发送时会重新生成时间
   updatingPreview: 正在更新…
@@ -489,6 +548,9 @@ en:
   includeTimezone: Include time zone
   includeLocale: Include interface language
   includePlatform: Include operating system
+  advancedSettings: Advanced settings
+  showToolCallNames: Show tool call names
+  showToolCallNamesHelp: Show “About to call xxx” while the AI is using a tool.
   preview: Final system prompt preview
   previewHelp: Time is regenerated when a message is sent
   updatingPreview: Updating…

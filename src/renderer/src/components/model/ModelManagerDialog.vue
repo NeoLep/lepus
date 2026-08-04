@@ -346,7 +346,7 @@ watch(
   left: 50%;
   display: flex;
   width: min(760px, calc(100vw - 40px));
-  height: min(540px, calc(100vh - 60px));
+  height: min(560px, calc(100vh - 60px));
   flex-direction: column;
   overflow: hidden;
   border: 1px solid #dfe3e8;
