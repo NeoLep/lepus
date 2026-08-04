@@ -25,7 +25,7 @@ function createWindow(): void {
           }
         }),
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -54,6 +54,12 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  // Development runs through the Electron executable on macOS, so the
+  // packaged ICNS is not applied to the Dock icon automatically.
+  if (process.platform === 'darwin') {
+    app.dock?.setIcon(icon)
+  }
+
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
