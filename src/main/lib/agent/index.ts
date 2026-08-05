@@ -14,7 +14,7 @@ import {
 import type { TaskPlanUpdate } from '@/ipc/chat/constants'
 import type { AgentInputMessage } from './types'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
-import { createFunctionToolRuntime } from './tools'
+import { createFunctionToolRuntime, type FunctionToolRuntimeOptions } from './tools'
 import { interactiveDecisionContext } from './history-compressor'
 
 const MAX_TOOL_ROUNDS = 12
@@ -24,19 +24,29 @@ export class Agent {
   private readonly model: string
 
   private readonly toolRuntime
+  private readonly maxToolRounds: number
 
   constructor(
     config: ModelConfig,
     searchConfigs: SearchProviderConfig[] = [],
     permissionSettings?: PermissionSettings,
-    taskMode = false
+    taskMode = false,
+    options: FunctionToolRuntimeOptions & {
+      maxToolRounds?: number
+    } = {}
   ) {
     this.client = new OpenAI({
       apiKey: config.apiKey,
       baseURL: config.baseURL
     })
     this.model = config.model
-    this.toolRuntime = createFunctionToolRuntime(searchConfigs, permissionSettings, taskMode)
+    this.maxToolRounds = options.maxToolRounds ?? MAX_TOOL_ROUNDS
+    this.toolRuntime = createFunctionToolRuntime(
+      searchConfigs,
+      permissionSettings,
+      taskMode,
+      options
+    )
   }
   async chat(
     message: AgentInputMessage[],
@@ -63,7 +73,7 @@ export class Agent {
     const toolExecutions: ToolCallRecord[] = []
     const sources: SearchCitation[] = []
 
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+    for (let round = 0; round < this.maxToolRounds; round += 1) {
       const stream = await this.client.chat.completions.create(
         {
           model: this.model,
@@ -220,6 +230,31 @@ export class Agent {
               // Keep the original tool result if a provider returns an unexpected shape.
             }
           }
+          if (toolCall.function.name === 'delegate_tasks') {
+            try {
+              const payload = JSON.parse(result) as {
+                ok?: boolean
+                data?: {
+                  tasks?: Array<{ sources?: SearchCitation[] }>
+                  citationInstruction?: string
+                }
+              }
+              if (payload.ok && payload.data?.tasks) {
+                for (const task of payload.data.tasks) {
+                  task.sources = task.sources?.map((source) => {
+                    const citation = { ...source, index: sources.length + 1 }
+                    sources.push(citation)
+                    return citation
+                  })
+                }
+                payload.data.citationInstruction =
+                  'Cite claims from sub-agent sources using their matching [index].'
+                result = JSON.stringify(payload)
+              }
+            } catch {
+              // Keep the original sub-agent result if it has an unexpected shape.
+            }
+          }
           if (toolCall.function.name === 'request_user_input') {
             try {
               const payload = JSON.parse(result) as { ok?: boolean; data?: UserInputPrompt }
@@ -277,7 +312,7 @@ export class Agent {
       messages.push(...toolMessages)
     }
 
-    throw new Error(`工具调用超过最大轮数（${MAX_TOOL_ROUNDS}）`)
+    throw new Error(`工具调用超过最大轮数（${this.maxToolRounds}）`)
   }
 
   async summarizeConversation(

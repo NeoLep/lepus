@@ -44,6 +44,22 @@ export type FunctionTool = {
   approval?: { risk: ToolApprovalRisk; reason: string; allowSession?: boolean }
 }
 
+export type DelegatedTaskInput = {
+  id: string
+  goal: string
+  context?: string
+}
+
+export type DelegateTasksHandler = (
+  tasks: DelegatedTaskInput[],
+  signal?: AbortSignal
+) => Promise<unknown>
+
+export type FunctionToolRuntimeOptions = {
+  readOnly?: boolean
+  delegateTasks?: DelegateTasksHandler
+}
+
 function requireString(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} 必须是非空字符串`)
   return value.trim()
@@ -817,6 +833,63 @@ function createSearchTool(configs: SearchProviderConfig[]): FunctionTool | null 
   )
 }
 
+function createDelegateTasksTool(delegateTasks: DelegateTasksHandler): FunctionTool {
+  return createTool(
+    'delegate_tasks',
+    '将彼此独立的只读分析任务委派给受控子 Agent。最多 4 个任务、同时运行 2 个；子 Agent 不能修改文件或继续委派。请为每个任务提供完成所需的明确目标和最小上下文。',
+    {
+      type: 'object',
+      properties: {
+        tasks: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 4,
+          items: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 80,
+                description: '当前委派批次内唯一且稳定的任务 ID'
+              },
+              goal: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 2_000,
+                description: '子 Agent 要独立完成的具体目标'
+              },
+              context: {
+                type: 'string',
+                maxLength: 8_000,
+                description: '完成任务所需的最小背景、路径或约束；不要粘贴无关对话历史'
+              }
+            },
+            required: ['id', 'goal'],
+            additionalProperties: false
+          }
+        }
+      },
+      required: ['tasks'],
+      additionalProperties: false
+    },
+    async ({ tasks }, signal) => {
+      const normalizedTasks = (tasks as DelegatedTaskInput[]).map((task) => ({
+        id: task.id.trim(),
+        goal: task.goal.trim(),
+        ...(task.context?.trim() ? { context: task.context.trim() } : {})
+      }))
+      if (normalizedTasks.some((task) => !task.id || !task.goal)) {
+        throw new Error('子任务 ID 和目标不能为空')
+      }
+      if (new Set(normalizedTasks.map((task) => task.id)).size !== normalizedTasks.length) {
+        throw new Error('子任务 ID 不能重复')
+      }
+      return delegateTasks(normalizedTasks, signal)
+    }
+  )
+}
+
 function parseArguments(rawArguments: string): JsonObject {
   const parsed: unknown = JSON.parse(rawArguments || '{}')
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -849,7 +922,8 @@ const FILE_TOOL_NAMES = new Set([
 export function createFunctionToolRuntime(
   searchConfigs: SearchProviderConfig[],
   permissionSettings: PermissionSettings = DEFAULT_PERMISSION_SETTINGS,
-  taskMode = false
+  taskMode = false,
+  options: FunctionToolRuntimeOptions = {}
 ) {
   const searchTool = createSearchTool(searchConfigs)
   const safeTools = baseTools.filter((tool) => {
@@ -863,13 +937,27 @@ export function createFunctionToolRuntime(
           ['update_plan', 'request_user_input'].includes(tool.schema.function.name)
       )
     : []
+  const readOnlyFileToolNames = new Set([
+    'inspect_file',
+    'search_files',
+    'search_text',
+    'read_file',
+    'list_directory'
+  ])
   const fileTools = permissionSettings.workspacePath
     ? baseTools.filter((tool) => {
         const name = tool.schema.type === 'function' ? tool.schema.function.name : ''
-        return FILE_TOOL_NAMES.has(name)
+        return FILE_TOOL_NAMES.has(name) && (!options.readOnly || readOnlyFileToolNames.has(name))
       })
     : []
-  const tools = [...safeTools, ...taskTools, ...fileTools, ...(searchTool ? [searchTool] : [])]
+  const delegateTool = options.delegateTasks ? createDelegateTasksTool(options.delegateTasks) : null
+  const tools = [
+    ...safeTools,
+    ...taskTools,
+    ...fileTools,
+    ...(searchTool ? [searchTool] : []),
+    ...(delegateTool ? [delegateTool] : [])
+  ]
   const toolMap = new Map(
     tools.map((tool) => {
       if (tool.schema.type !== 'function') throw new Error('仅支持 function 类型工具')

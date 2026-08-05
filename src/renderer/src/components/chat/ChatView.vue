@@ -6,6 +6,7 @@ import PermissionSettingsDialog from '../settings/PermissionSettingsDialog.vue'
 import TaskPlanPanel from './TaskPlanPanel.vue'
 
 import type {
+  AgentRun,
   ChatLocale,
   CompressionRecord,
   CompressionStatus,
@@ -38,7 +39,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   messageSent: [sessionId: string, content: string]
-  taskModeChange: []
+  taskModeChange: [preference: TaskModePreference]
 }>()
 
 const { t, locale } = useI18n({ useScope: 'local' })
@@ -52,6 +53,7 @@ const compressionRecordsBySession = ref<Record<string, CompressionRecord[]>>({})
 const compressingBySession = ref<Record<string, boolean>>({})
 const streamedContentBySession = ref<Record<string, string>>({})
 const toolActivitiesBySession = ref<Record<string, ToolCallRecord[]>>({})
+const agentRunsBySession = ref<Record<string, AgentRun[]>>({})
 const toolApprovalsBySession = ref<Record<string, ToolApprovalRequest[]>>({})
 const taskPlansBySession = ref<Record<string, TaskPlan | null>>({})
 const taskPlanLoadingBySession = ref<Record<string, boolean>>({})
@@ -103,6 +105,9 @@ const streamedContent = computed(() =>
 const activeToolCalls = computed(() =>
   props.sessionId ? (toolActivitiesBySession.value[props.sessionId] ?? []) : []
 )
+const agentRuns = computed(() =>
+  props.sessionId ? (agentRunsBySession.value[props.sessionId] ?? []) : []
+)
 const activeToolApprovals = computed(() =>
   props.sessionId ? (toolApprovalsBySession.value[props.sessionId] ?? []) : []
 )
@@ -125,6 +130,7 @@ let removeCompressionListener: (() => void) | null = null
 let removeCompressionRecordListener: (() => void) | null = null
 let removeStreamListener: (() => void) | null = null
 let removeToolActivityListener: (() => void) | null = null
+let removeAgentRunListener: (() => void) | null = null
 let removeToolApprovalListener: (() => void) | null = null
 let removeTaskPlanListener: (() => void) | null = null
 let removeTaskModeRoutedListener: (() => void) | null = null
@@ -156,6 +162,13 @@ onMounted(() => {
     if (index === -1) calls.push(event.call)
     else calls[index] = event.call
     toolActivitiesBySession.value[event.sessionId] = calls
+  })
+  removeAgentRunListener = window.api.chat.onAgentRunChanged((event) => {
+    const runs = [...(agentRunsBySession.value[event.sessionId] ?? [])]
+    const index = runs.findIndex((run) => run.id === event.run.id)
+    if (index === -1) runs.push(event.run)
+    else runs[index] = event.run
+    agentRunsBySession.value[event.sessionId] = runs
   })
   removeToolApprovalListener = window.api.chat.onToolApprovalRequested((event) => {
     const approvals = [...(toolApprovalsBySession.value[event.sessionId] ?? [])]
@@ -194,6 +207,7 @@ onUnmounted(() => {
   removeCompressionRecordListener?.()
   removeStreamListener?.()
   removeToolActivityListener?.()
+  removeAgentRunListener?.()
   removeToolApprovalListener?.()
   removeTaskPlanListener?.()
   removeTaskModeRoutedListener?.()
@@ -641,6 +655,7 @@ watch(
 
     if (!sessionPersisted) {
       messagesBySession.value[sessionId] = []
+      agentRunsBySession.value[sessionId] = []
       compressionRecordsBySession.value[sessionId] = []
       compressionStatusBySession.value[sessionId] = modelConfigId
         ? await window.api.chat.queryCompressionStatus({
@@ -661,6 +676,9 @@ watch(
     const modelConfigKey = `${modelConfigId}:${modelConfigUpdatedAt ?? ''}:${activeLocale}:${promptSettingsVersion}:${taskMode}`
 
     if (loadedSessions.value[sessionId]) {
+      if (!agentRunsBySession.value[sessionId]) {
+        agentRunsBySession.value[sessionId] = await window.api.chat.queryAgentRuns(sessionId)
+      }
       if (!compressionRecordsBySession.value[sessionId]) {
         compressionRecordsBySession.value[sessionId] =
           await window.api.chat.queryCompressionRecords(sessionId)
@@ -679,6 +697,7 @@ watch(
     loadingSessions.value[sessionId] = true
     try {
       messagesBySession.value[sessionId] = await window.api.chat.queryMessages(sessionId)
+      agentRunsBySession.value[sessionId] = await window.api.chat.queryAgentRuns(sessionId)
       compressionRecordsBySession.value[sessionId] =
         await window.api.chat.queryCompressionRecords(sessionId)
       compressionStatusBySession.value[sessionId] = await window.api.chat.queryCompressionStatus({
@@ -710,6 +729,7 @@ watch(
       :compression-records="compressionRecords"
       :stream-content="streamedContent"
       :active-tool-calls="activeToolCalls"
+      :agent-runs="agentRuns"
       :approvals="activeToolApprovals"
       :resolving-approval-ids="resolvingApprovalIds"
       :user-input-requests="activeUserInputRequests"
@@ -747,7 +767,7 @@ watch(
       @add-attachments="addAttachments"
       @drop-attachments="dropAttachments"
       @remove-attachment="removeAttachment"
-      @toggle-task-mode="emit('taskModeChange')"
+      @toggle-task-mode="(preference) => emit('taskModeChange', preference)"
     />
   </main>
   <PermissionSettingsDialog v-model:open="permissionSettingsOpen" :session-id="sessionId" />

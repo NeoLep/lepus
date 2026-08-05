@@ -3,6 +3,7 @@ import { app, safeStorage } from 'electron'
 import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type {
+  AgentRun,
   Message,
   ModelConfig,
   CompressionRecord,
@@ -89,6 +90,27 @@ type CompressionRecordRow = {
   error_message: string
 }
 
+type AgentRunRow = {
+  id: string
+  session_id: string
+  parent_run_id: string | null
+  kind: AgentRun['kind']
+  goal: string
+  status: AgentRun['status']
+  model_config_id: string | null
+  task_mode_active: number
+  request_message_id: string | null
+  response_message_id: string | null
+  result: string
+  error_name: string
+  error_message: string
+  prompt_tokens: number | null
+  tool_call_count: number
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
 const ENCRYPTED_API_KEY_PREFIX = 'safe-storage:v1:'
 
 function secureStorageAvailable(): boolean {
@@ -113,7 +135,13 @@ function decryptApiKey(storedValue: string): string {
     throw new Error('系统安全存储不可用，无法读取 API Key')
   }
   const encrypted = Buffer.from(storedValue.slice(ENCRYPTED_API_KEY_PREFIX.length), 'base64')
-  return safeStorage.decryptString(encrypted)
+  try {
+    return safeStorage.decryptString(encrypted)
+  } catch {
+    throw new Error(
+      '无法解密已保存的 API Key。应用身份或系统钥匙串可能已变化，请在模型或搜索设置中重新输入 API Key。'
+    )
+  }
 }
 
 type SearchProviderRow = {
@@ -218,6 +246,29 @@ function toCompressionRecord(row: CompressionRecordRow): CompressionRecord {
     sourceMessages: row.source_messages,
     ...(row.error_name ? { errorName: row.error_name } : {}),
     ...(row.error_message ? { errorMessage: row.error_message } : {})
+  }
+}
+
+function toAgentRun(row: AgentRunRow): AgentRun {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    ...(row.parent_run_id ? { parentRunId: row.parent_run_id } : {}),
+    kind: row.kind,
+    goal: row.goal,
+    status: row.status,
+    ...(row.model_config_id ? { modelConfigId: row.model_config_id } : {}),
+    taskModeActive: row.task_mode_active === 1,
+    ...(row.request_message_id ? { requestMessageId: row.request_message_id } : {}),
+    ...(row.response_message_id ? { responseMessageId: row.response_message_id } : {}),
+    ...(row.result ? { result: row.result } : {}),
+    ...(row.error_name ? { errorName: row.error_name } : {}),
+    ...(row.error_message ? { errorMessage: row.error_message } : {}),
+    ...(row.prompt_tokens !== null ? { promptTokens: row.prompt_tokens } : {}),
+    toolCallCount: row.tool_call_count,
+    createdAt: row.created_at,
+    ...(row.started_at ? { startedAt: row.started_at } : {}),
+    ...(row.finished_at ? { finishedAt: row.finished_at } : {})
   }
 }
 
@@ -359,6 +410,100 @@ export class ChatRepository {
         updatedAt
       })
     return this.getTaskPlan(sessionId)!
+  }
+
+  finalizeTaskPlan(sessionId: string): TaskPlan | null {
+    const plan = this.getTaskPlan(sessionId)
+    if (!plan || plan.items.every((item) => ['completed', 'skipped'].includes(item.status))) {
+      return plan
+    }
+    return this.saveTaskPlan(sessionId, {
+      explanation: plan.explanation,
+      items: plan.items.map((item) => ({
+        ...item,
+        status:
+          item.status === 'in_progress'
+            ? ('completed' as const)
+            : item.status === 'pending'
+              ? ('skipped' as const)
+              : item.status
+      }))
+    })
+  }
+
+  getAgentRun(id: string): AgentRun | null {
+    const row = this.database
+      .prepare(
+        `SELECT id, session_id, parent_run_id, kind, goal, status, model_config_id,
+                task_mode_active, request_message_id, response_message_id, result,
+                error_name, error_message, prompt_tokens, tool_call_count,
+                created_at, started_at, finished_at
+         FROM agent_runs
+         WHERE id = ?`
+      )
+      .get(id) as AgentRunRow | undefined
+    return row ? toAgentRun(row) : null
+  }
+
+  queryAgentRuns(sessionId: string): AgentRun[] {
+    const rows = this.database
+      .prepare(
+        `SELECT id, session_id, parent_run_id, kind, goal, status, model_config_id,
+                task_mode_active, request_message_id, response_message_id, result,
+                error_name, error_message, prompt_tokens, tool_call_count,
+                created_at, started_at, finished_at
+         FROM agent_runs
+         WHERE session_id = ?
+         ORDER BY created_at DESC, rowid DESC`
+      )
+      .all(sessionId) as AgentRunRow[]
+    return rows.map(toAgentRun)
+  }
+
+  saveAgentRun(run: AgentRun): AgentRun {
+    this.database
+      .prepare(
+        `INSERT INTO agent_runs
+           (id, session_id, parent_run_id, kind, goal, status, model_config_id,
+            task_mode_active, request_message_id, response_message_id, result,
+            error_name, error_message, prompt_tokens, tool_call_count,
+            created_at, started_at, finished_at)
+         VALUES
+           (@id, @sessionId, @parentRunId, @kind, @goal, @status, @modelConfigId,
+            @taskModeActive, @requestMessageId, @responseMessageId, @result,
+            @errorName, @errorMessage, @promptTokens, @toolCallCount,
+            @createdAt, @startedAt, @finishedAt)
+         ON CONFLICT(id) DO UPDATE SET
+           parent_run_id = excluded.parent_run_id,
+           goal = excluded.goal,
+           status = excluded.status,
+           model_config_id = excluded.model_config_id,
+           task_mode_active = excluded.task_mode_active,
+           request_message_id = excluded.request_message_id,
+           response_message_id = excluded.response_message_id,
+           result = excluded.result,
+           error_name = excluded.error_name,
+           error_message = excluded.error_message,
+           prompt_tokens = excluded.prompt_tokens,
+           tool_call_count = excluded.tool_call_count,
+           started_at = excluded.started_at,
+           finished_at = excluded.finished_at`
+      )
+      .run({
+        ...run,
+        parentRunId: run.parentRunId ?? null,
+        modelConfigId: run.modelConfigId ?? null,
+        taskModeActive: run.taskModeActive ? 1 : 0,
+        requestMessageId: run.requestMessageId ?? null,
+        responseMessageId: run.responseMessageId ?? null,
+        result: run.result ?? '',
+        errorName: run.errorName ?? '',
+        errorMessage: run.errorMessage ?? '',
+        promptTokens: run.promptTokens ?? null,
+        startedAt: run.startedAt ?? null,
+        finishedAt: run.finishedAt ?? null
+      })
+    return this.getAgentRun(run.id)!
   }
 
   searchSessions(query: string): SessionSearchResult[] {
@@ -653,6 +798,10 @@ export class ChatRepository {
   getModelConfig(id: string): ModelConfig | null {
     const row = this.getModelConfigRow(id)
     return row ? toModelConfig(row, decryptApiKey(row.api_key)) : null
+  }
+
+  getModelConfigMetadata(id: string): ModelConfig | null {
+    return this.getPublicModelConfig(id)
   }
 
   createModelConfig(config: ModelConfig): ModelConfig {
@@ -1229,6 +1378,45 @@ export class ChatRepository {
       })()
     }
 
+    if (version < 16) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE agent_runs (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            parent_run_id TEXT,
+            kind TEXT NOT NULL CHECK (kind IN ('primary', 'subtask')),
+            goal TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (
+              status IN (
+                'queued', 'running', 'waiting_approval', 'waiting_input',
+                'completed', 'failed', 'canceled'
+              )
+            ),
+            model_config_id TEXT,
+            task_mode_active INTEGER NOT NULL DEFAULT 0 CHECK (task_mode_active IN (0, 1)),
+            request_message_id TEXT,
+            response_message_id TEXT,
+            result TEXT NOT NULL DEFAULT '',
+            error_name TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            prompt_tokens INTEGER,
+            tool_call_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
+          );
+          CREATE INDEX idx_agent_runs_session_created
+            ON agent_runs(session_id, created_at DESC);
+          CREATE INDEX idx_agent_runs_parent_created
+            ON agent_runs(parent_run_id, created_at ASC);
+          PRAGMA user_version = 16;
+        `)
+      })()
+    }
+
     const interruptedAt = new Date().toISOString()
     this.database
       .prepare(
@@ -1239,6 +1427,14 @@ export class ChatRepository {
          WHERE status = 'running'`
       )
       .run(interruptedAt, interruptedAt)
+    this.database
+      .prepare(
+        `UPDATE agent_runs
+         SET status = 'failed', finished_at = ?,
+             error_name = 'Interrupted', error_message = '应用在 Agent Run 完成前退出'
+         WHERE status IN ('queued', 'running', 'waiting_approval', 'waiting_input')`
+      )
+      .run(interruptedAt)
   }
 
   private importLegacySessions(jsonPath: string): void {

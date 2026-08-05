@@ -1,7 +1,29 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ArrowUp, FolderCog, ListTodo, LoaderCircle, Paperclip, Square } from '@lucide/vue'
-import { TooltipContent, TooltipPortal, TooltipRoot, TooltipTrigger } from 'reka-ui'
+import {
+  ArrowUp,
+  Check,
+  FolderCog,
+  ListTodo,
+  LoaderCircle,
+  Paperclip,
+  Square,
+  Users,
+  X
+} from '@lucide/vue'
+import {
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+  TooltipContent,
+  TooltipPortal,
+  TooltipRoot,
+  TooltipTrigger
+} from 'reka-ui'
 import type { CompressionStatus, MessageAttachment, TaskModePreference } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import MessageAttachments from './MessageAttachments.vue'
@@ -26,7 +48,7 @@ const emit = defineEmits<{
   addAttachments: []
   dropAttachments: [files: File[]]
   removeAttachment: [attachmentId: string]
-  toggleTaskMode: []
+  toggleTaskMode: [preference: TaskModePreference]
 }>()
 
 const { t, locale } = useI18n({ useScope: 'local' })
@@ -35,6 +57,8 @@ const formatNumber = (value: number): string => new Intl.NumberFormat(locale.val
 const model = defineModel<string>({ required: true })
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const draggingFiles = ref(false)
+const taskModeDialogOpen = ref(false)
+const taskModes: TaskModePreference[] = ['auto', 'on', 'off']
 const ringProgress = computed(() => Math.min(Math.max(props.compressionStatus.usageRatio, 0), 1))
 const ringOffset = computed(() => 100 - ringProgress.value * 100)
 const tokenLabel = computed(() => {
@@ -73,6 +97,21 @@ function handleDrop(event: DragEvent): void {
 function handlePrimaryAction(): void {
   if (props.sending) emit('stop')
   else submit()
+}
+
+async function prepareMultiAgentPrompt(): Promise<void> {
+  if (props.disabled || props.sending) return
+  if (props.taskMode === 'off') emit('toggleTaskMode', 'on')
+  const prefix = t('multiAgentTemplate')
+  model.value = model.value.trim() ? `${prefix}\n${model.value}` : prefix
+  await nextTick()
+  textarea.value?.focus()
+  resizeTextarea()
+}
+
+function selectTaskMode(mode: TaskModePreference): void {
+  if (mode !== props.taskMode) emit('toggleTaskMode', mode)
+  taskModeDialogOpen.value = false
 }
 
 function handleKeydown(event: KeyboardEvent): void {
@@ -133,6 +172,24 @@ watch(model, async () => {
             <button
               class="composer-icon"
               type="button"
+              :disabled="disabled || sending"
+              :aria-label="t('multiAgent')"
+              @click="prepareMultiAgentPrompt"
+            >
+              <Users :size="18" />
+            </button>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent class="tooltip-content" side="top" :side-offset="7">
+              {{ t('multiAgentHint') }}
+            </TooltipContent>
+          </TooltipPortal>
+        </TooltipRoot>
+        <TooltipRoot>
+          <TooltipTrigger as-child>
+            <button
+              class="composer-icon"
+              type="button"
               :aria-label="t('filePermissions')"
               @click="emit('permissions')"
             >
@@ -154,9 +211,12 @@ watch(model, async () => {
               :disabled="disabled || sending"
               :aria-label="t(`taskMode.${taskMode}`)"
               :aria-pressed="taskMode === 'on'"
-              @click="emit('toggleTaskMode')"
+              @click="taskModeDialogOpen = true"
             >
               <ListTodo :size="18" />
+              <span v-if="taskMode === 'auto'" class="task-mode-auto-badge" aria-hidden="true">
+                A
+              </span>
             </button>
           </TooltipTrigger>
           <TooltipPortal>
@@ -233,6 +293,49 @@ watch(model, async () => {
     </form>
     <p v-if="attachmentError" class="attachment-error">{{ attachmentError }}</p>
     <p class="disclaimer">{{ t('disclaimer') }}</p>
+
+    <DialogRoot v-model:open="taskModeDialogOpen">
+      <DialogPortal>
+        <DialogOverlay class="task-mode-dialog-overlay" />
+        <DialogContent class="task-mode-dialog-content">
+          <header class="task-mode-dialog-header">
+            <span class="task-mode-dialog-icon"><ListTodo :size="19" /></span>
+            <div class="task-mode-dialog-heading">
+              <DialogTitle class="task-mode-dialog-title">
+                {{ t('taskModeDialog.title') }}
+              </DialogTitle>
+              <DialogDescription class="task-mode-dialog-description">
+                {{ t('taskModeDialog.description') }}
+              </DialogDescription>
+            </div>
+            <DialogClose class="task-mode-dialog-close" :aria-label="t('taskModeDialog.close')">
+              <X :size="18" />
+            </DialogClose>
+          </header>
+
+          <div class="task-mode-options" role="radiogroup" :aria-label="t('taskModeDialog.title')">
+            <button
+              v-for="mode in taskModes"
+              :key="mode"
+              class="task-mode-option"
+              :class="{ selected: taskMode === mode }"
+              type="button"
+              role="radio"
+              :aria-checked="taskMode === mode"
+              @click="selectTaskMode(mode)"
+            >
+              <span class="task-mode-option-copy">
+                <strong>{{ t(`taskModeDialog.modes.${mode}.title`) }}</strong>
+                <span>{{ t(`taskModeDialog.modes.${mode}.description`) }}</span>
+              </span>
+              <span class="task-mode-option-check" aria-hidden="true">
+                <Check v-if="taskMode === mode" :size="16" :stroke-width="2.5" />
+              </span>
+            </button>
+          </div>
+        </DialogContent>
+      </DialogPortal>
+    </DialogRoot>
   </div>
 </template>
 
@@ -320,11 +423,30 @@ textarea::placeholder {
 }
 
 .composer-icon {
+  position: relative;
   width: 32px;
   height: 32px;
   border-radius: 9px;
   background: transparent;
   color: #667085;
+}
+
+.task-mode-auto-badge {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  display: inline-flex;
+  width: 13px;
+  height: 13px;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #ffffff;
+  border-radius: 50%;
+  background: #475467;
+  color: #ffffff;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .composer-icon:hover {
@@ -493,6 +615,156 @@ textarea::placeholder {
   text-align: center;
 }
 
+:global(.task-mode-dialog-overlay) {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  background: rgb(16 24 40 / 38%);
+  backdrop-filter: blur(2px);
+}
+
+:global(.task-mode-dialog-content) {
+  position: fixed;
+  z-index: 111;
+  top: 50%;
+  left: 50%;
+  width: min(460px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid #eaecf0;
+  border-radius: 18px;
+  outline: none;
+  background: #ffffff;
+  box-shadow: 0 24px 64px rgb(16 24 40 / 22%);
+  transform: translate(-50%, -50%);
+}
+
+.task-mode-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.task-mode-dialog-icon {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: #f4f3ff;
+  color: #6941c6;
+}
+
+.task-mode-dialog-heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.task-mode-dialog-title {
+  color: #182230;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.task-mode-dialog-description {
+  margin-top: 3px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.task-mode-dialog-close {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #667085;
+  cursor: pointer;
+}
+
+.task-mode-dialog-close:hover {
+  background: #f2f4f7;
+  color: #344054;
+}
+
+.task-mode-options {
+  display: grid;
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.task-mode-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 14px;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #344054;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.task-mode-option:hover {
+  border-color: #c7cdd5;
+  background: #f9fafb;
+}
+
+.task-mode-option.selected {
+  border-color: #9b8afb;
+  background: #f9f7ff;
+  box-shadow: 0 0 0 1px rgb(127 86 217 / 8%);
+}
+
+.task-mode-option-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.task-mode-option-copy strong {
+  color: #182230;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.task-mode-option-copy span {
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.task-mode-option-check {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d0d5dd;
+  border-radius: 50%;
+  color: #6941c6;
+}
+
+.task-mode-option.selected .task-mode-option-check {
+  border-color: #9b8afb;
+  background: #f4f3ff;
+}
+
 @media (max-width: 720px) {
   .composer-hint {
     display: none;
@@ -524,11 +796,28 @@ zh-CN:
   addAttachment: 添加附件
   dropAttachments: 松开即可添加附件
   filePermissions: 当前对话的文件与权限
+  multiAgent: 使用子 Agent
+  multiAgentHint: 插入并行委派提示，并自动开启任务模式
+  multiAgentTemplate: 请使用子 Agent 并行处理以下任务：
   taskMode:
     auto: 任务模式：自动判断
     on: 任务模式：强制开启
     off: 任务模式：关闭
-    clickHint: 点击切换
+    clickHint: 点击选择
+  taskModeDialog:
+    title: 选择任务模式
+    description: 控制 Lepus 何时启用任务计划、交互追问和子 Agent。
+    close: 关闭任务模式选择
+    modes:
+      auto:
+        title: 自动判断
+        description: 根据请求复杂度自动启用；明确要求使用子 Agent 时也会启用。
+      on:
+        title: 强制开启
+        description: 每次请求都启用任务工作流，并提供计划、追问和子 Agent 能力。
+      off:
+        title: 关闭
+        description: 不启用任务计划、交互追问或子 Agent。
   keyboardHint: Enter 发送 · Shift + Enter 换行
   historyTokenUsage: 历史对话 Token 用量
   tokenUsage: 上下文约 {current} / {trigger} Token
@@ -551,11 +840,28 @@ en:
   addAttachment: Add attachment
   dropAttachments: Drop files to attach
   filePermissions: Files and permissions for this chat
+  multiAgent: Use sub-agents
+  multiAgentHint: Insert a delegation prompt and enable task mode
+  multiAgentTemplate: 'Use sub-agents to handle these tasks in parallel:'
   taskMode:
     auto: 'Task mode: Auto'
     on: 'Task mode: Always on'
     off: 'Task mode: Off'
-    clickHint: Click to switch
+    clickHint: Click to choose
+  taskModeDialog:
+    title: Choose task mode
+    description: Control when Lepus uses task plans, follow-up questions, and sub-agents.
+    close: Close task mode selection
+    modes:
+      auto:
+        title: Auto
+        description: Enable based on request complexity, including explicit sub-agent requests.
+      on:
+        title: Always on
+        description: Use the task workflow for every request, with plans, questions, and sub-agents.
+      off:
+        title: 'Off'
+        description: Do not use task plans, interactive questions, or sub-agents.
   keyboardHint: Enter to send · Shift + Enter for a new line
   historyTokenUsage: Chat history token usage
   tokenUsage: About {current} / {trigger} context tokens

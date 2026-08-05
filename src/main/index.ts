@@ -1,15 +1,24 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { initial } from '../ipc/node'
 import { closeChatRepository } from '../ipc/chat/repository'
 
+const APPLICATION_NAME = 'Lepus'
+const APPLICATION_ID = 'com.electron'
+
+// Keep Electron's application identity stable because macOS safeStorage binds
+// encrypted values to the app's Keychain identity. process.title changes the
+// development Dock/process label without invalidating existing ciphertext.
+process.title = APPLICATION_NAME
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
+    title: APPLICATION_NAME,
     show: false,
     ...(process.platform === 'darwin'
       ? {
@@ -54,6 +63,14 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  // Initialize safeStorage with the existing app identity before changing the
+  // visible name. On macOS the encryption key belongs to that Keychain identity.
+  if (safeStorage.isEncryptionAvailable()) {
+    const probe = safeStorage.encryptString('lepus-safe-storage-probe')
+    safeStorage.decryptString(probe)
+  }
+  app.setName(APPLICATION_NAME)
+
   // Development runs through the Electron executable on macOS, so the
   // packaged ICNS is not applied to the Dock icon automatically.
   if (process.platform === 'darwin') {
@@ -61,7 +78,7 @@ app.whenReady().then(() => {
   }
 
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId(APPLICATION_ID)
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.

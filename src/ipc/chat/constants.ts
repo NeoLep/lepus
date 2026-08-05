@@ -8,6 +8,8 @@ export const CHAT_CHANNELS = {
   TASK_PLAN_QUERY: 'task-plan:query',
   TASK_PLAN_CHANGED: 'task-plan:changed',
   TASK_MODE_ROUTED: 'task-mode:routed',
+  AGENT_RUN_QUERY: 'agent-run:query',
+  AGENT_RUN_CHANGED: 'agent-run:changed',
   USER_INPUT_REQUESTED: 'user-input:requested',
   USER_INPUT_RESOLVE: 'user-input:resolve',
   MESSAGE_QUERY: 'message:query',
@@ -88,6 +90,37 @@ export type TaskModeRoutedEvent = {
   active: boolean
   score: number
   reasons: string[]
+}
+
+export type AgentRunKind = 'primary' | 'subtask'
+
+export type AgentRunStatus =
+  'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'completed' | 'failed' | 'canceled'
+
+export type AgentRun = {
+  id: string
+  sessionId: string
+  parentRunId?: string
+  kind: AgentRunKind
+  goal: string
+  status: AgentRunStatus
+  modelConfigId?: string
+  taskModeActive: boolean
+  requestMessageId?: string
+  responseMessageId?: string
+  result?: string
+  errorName?: string
+  errorMessage?: string
+  promptTokens?: number
+  toolCallCount: number
+  createdAt: string
+  startedAt?: string
+  finishedAt?: string
+}
+
+export type AgentRunChangedEvent = {
+  sessionId: string
+  run: AgentRun
 }
 
 export type UserInputOption = {
@@ -342,6 +375,7 @@ export type ChatResponse = {
   message: Message | null
   compression: CompressionStatus
   stopped: boolean
+  runId: string
 }
 
 export type ModelConfig = {

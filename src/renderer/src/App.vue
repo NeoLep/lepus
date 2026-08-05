@@ -7,7 +7,7 @@ import ChatView from './components/chat/ChatView.vue'
 import ModelManagerDialog from './components/model/ModelManagerDialog.vue'
 import PromptSettingsDialog from './components/settings/PromptSettingsDialog.vue'
 import SearchProviderDialog from './components/settings/SearchProviderDialog.vue'
-import type { ModelConfig, Session } from '@ipc/chat/constants'
+import type { ModelConfig, Session, TaskModePreference } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 
 type SplitterPanelInstance = {
@@ -323,9 +323,9 @@ async function exportSession(session: Session, format: 'markdown' | 'json'): Pro
   }
 }
 
-async function toggleTaskMode(session: Session): Promise<void> {
+async function toggleTaskMode(session: Session, taskMode: TaskModePreference): Promise<void> {
   sessionError.value = ''
-  const taskMode = session.taskMode === 'auto' ? 'on' : session.taskMode === 'on' ? 'off' : 'auto'
+  if (session.taskMode === taskMode) return
   if (pendingSessionIds.value.has(session.id)) {
     const index = sessions.value.findIndex((item) => item.id === session.id)
     if (index !== -1) sessions.value[index] = { ...session, taskMode }
@@ -424,7 +424,9 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
             :disabled-reason="!activeModelConfig ? t('configureModelFirst') : undefined"
             :ensure-session="persistSession"
             @message-sent="updateSessionFromMessage"
-            @task-mode-change="activeSession && toggleTaskMode(activeSession)"
+            @task-mode-change="
+              (preference) => activeSession && toggleTaskMode(activeSession, preference)
+            "
           />
         </section>
       </SplitterPanel>

@@ -1,5 +1,7 @@
 import { ipcRenderer, webUtils } from 'electron'
 import {
+  AgentRun,
+  AgentRunChangedEvent,
   AttachmentImportRequest,
   AttachmentImportResult,
   AttachmentDiscardRequest,
@@ -50,6 +52,14 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.SESSION_EXPORT, request),
   queryTaskPlan: (sessionId: string): Promise<TaskPlan | null> =>
     ipcRenderer.invoke(CHAT_CHANNELS.TASK_PLAN_QUERY, sessionId),
+  queryAgentRuns: (sessionId: string): Promise<AgentRun[]> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.AGENT_RUN_QUERY, sessionId),
+  onAgentRunChanged: (listener: (event: AgentRunChangedEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: AgentRunChangedEvent): void =>
+      listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.AGENT_RUN_CHANGED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.AGENT_RUN_CHANGED, handler)
+  },
   onTaskPlanChanged: (listener: (event: TaskPlanChangedEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: TaskPlanChangedEvent): void =>
       listener(payload)

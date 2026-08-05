@@ -2,6 +2,7 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import { ArrowUp, LoaderCircle, Pencil, RotateCcw, Sparkles, UserRound, X } from '@lucide/vue'
 import type {
+  AgentRun,
   CompressionRecord,
   Message,
   ToolApprovalRequest,
@@ -18,6 +19,7 @@ import FileInspectionCards from './FileInspectionCards.vue'
 import MessageAttachments from './MessageAttachments.vue'
 import UserInputCards from './UserInputCards.vue'
 import CompressionRecordDividers from './CompressionRecordDividers.vue'
+import SubAgentRunCards from './SubAgentRunCards.vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -30,6 +32,7 @@ const props = defineProps<{
   statusText?: string
   streamContent?: string
   activeToolCalls?: ToolCallRecord[]
+  agentRuns?: AgentRun[]
   approvals?: ToolApprovalRequest[]
   resolvingApprovalIds?: string[]
   userInputRequests?: UserInputRequest[]
@@ -58,6 +61,34 @@ const latestUserMessageId = computed(
 const latestAssistantMessageId = computed(() =>
   props.messages.at(-1)?.role === 'assistant' ? props.messages.at(-1)?.id : null
 )
+const activeSubAgentRuns = computed(() => {
+  const primaryRun = [...(props.agentRuns ?? [])]
+    .filter(
+      (run) =>
+        run.kind === 'primary' &&
+        !run.responseMessageId &&
+        !['completed', 'failed', 'canceled'].includes(run.status)
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+  return primaryRun ? subAgentRunsForParent(primaryRun.id) : []
+})
+
+function subAgentRunsForParent(parentRunId: string): AgentRun[] {
+  return (props.agentRuns ?? [])
+    .filter((run) => run.kind === 'subtask' && run.parentRunId === parentRunId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+function subAgentRunsForMessage(messageId: string): AgentRun[] {
+  const parentRun = (props.agentRuns ?? []).find(
+    (run) => run.kind === 'primary' && run.responseMessageId === messageId
+  )
+  return parentRun ? subAgentRunsForParent(parentRun.id) : []
+}
+
+function visibleToolCalls(calls: ToolCallRecord[] | undefined): ToolCallRecord[] {
+  return (calls ?? []).filter((call) => call.name !== 'delegate_tasks')
+}
 
 async function startEditing(message: Message): Promise<void> {
   editingMessageId.value = message.id
@@ -88,7 +119,8 @@ watch(
     props.streamContent,
     props.approvals?.length,
     props.userInputRequests?.length,
-    props.compressing
+    props.compressing,
+    props.agentRuns?.map((run) => `${run.id}:${run.status}`).join('|')
   ],
   async () => {
     await nextTick()
@@ -160,7 +192,11 @@ watch(
             </template>
           </template>
           <template v-else>
-            <ToolCallCards v-if="showToolCallDetails" :calls="message.toolCalls ?? []" />
+            <SubAgentRunCards :runs="subAgentRunsForMessage(message.id)" />
+            <ToolCallCards
+              v-if="showToolCallDetails"
+              :calls="visibleToolCalls(message.toolCalls)"
+            />
             <GeneratedFileLinks :calls="message.toolCalls ?? []" />
             <DownloadCards :calls="message.toolCalls ?? []" />
             <FileInspectionCards :calls="message.toolCalls ?? []" />
@@ -197,7 +233,8 @@ watch(
         <div class="message-avatar"><Sparkles :size="16" /></div>
         <div class="message-body">
           <strong>Lepus</strong>
-          <ToolCallCards v-if="showToolCallDetails" :calls="activeToolCalls ?? []" />
+          <SubAgentRunCards :runs="activeSubAgentRuns" />
+          <ToolCallCards v-if="showToolCallDetails" :calls="visibleToolCalls(activeToolCalls)" />
           <GeneratedFileLinks :calls="activeToolCalls ?? []" />
           <DownloadCards
             :calls="activeToolCalls ?? []"

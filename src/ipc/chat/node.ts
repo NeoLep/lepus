@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { lstat, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
+  AgentRun,
   AttachmentImportRequest,
   AttachmentDiscardRequest,
   AttachmentPreviewRequest,
@@ -32,6 +33,7 @@ import { estimateMessageTokens } from '@/shared/agent/history-compression'
 import { getChatRepository } from './repository'
 import { HISTORY_COMPRESSION } from '@/shared/agent/history-compression'
 import { PromptBuilder } from '@/main/lib/agent/prompt-builder'
+import { SubtaskScheduler } from '@/main/lib/agent/subtask-scheduler'
 import {
   getAttachmentPreview,
   discardAttachment,
@@ -144,6 +146,9 @@ You are operating in task mode.
 - Use concise, verifiable steps. Keep at most one step in_progress.
 - Update the plan when a step starts, completes, is skipped, or the approach materially changes.
 - Mark all finished steps completed before the final response. Do not create a plan for a trivial one-step answer.
+- When two or more read-only investigations are genuinely independent, use delegate_tasks once to run them in parallel. Give each subtask a self-contained goal and only the context it needs.
+- If the user explicitly requests multiple agents, sub-agents, or parallel delegation, delegate before answering and never claim that the delegate_tasks tool is unavailable.
+- Do not delegate trivial work, sequentially dependent steps, user interaction, or file modifications. Review and synthesize sub-agent results yourself.
 </task_mode>`)
     const currentPlan = repository.getTaskPlan(sessionId)
     if (currentPlan?.items.length) {
@@ -290,8 +295,24 @@ export default () => {
     if (typeof query !== 'string') throw new Error('搜索关键词必须是字符串')
     return getChatRepository().searchSessions(query)
   })
-  ipcMain.handle(CHAT_CHANNELS.TASK_PLAN_QUERY, (_event, sessionId: string) =>
-    getChatRepository().getTaskPlan(sessionId)
+  ipcMain.handle(CHAT_CHANNELS.TASK_PLAN_QUERY, (_event, sessionId: string) => {
+    const repository = getChatRepository()
+    const plan = repository.getTaskPlan(sessionId)
+    if (!plan || plan.items.every((item) => ['completed', 'skipped'].includes(item.status))) {
+      return plan
+    }
+    const primaryRuns = repository.queryAgentRuns(sessionId).filter((run) => run.kind === 'primary')
+    const hasActiveRun = primaryRuns.some(
+      (run) => !['completed', 'failed', 'canceled'].includes(run.status)
+    )
+    const latestCompletedRun = primaryRuns.find((run) => run.status === 'completed')
+    const completedAfterPlanUpdate =
+      latestCompletedRun?.finishedAt &&
+      Date.parse(latestCompletedRun.finishedAt) >= Date.parse(plan.updatedAt)
+    return !hasActiveRun && completedAfterPlanUpdate ? repository.finalizeTaskPlan(sessionId) : plan
+  })
+  ipcMain.handle(CHAT_CHANNELS.AGENT_RUN_QUERY, (_event, sessionId: string) =>
+    getChatRepository().queryAgentRuns(sessionId)
   )
   ipcMain.handle(CHAT_CHANNELS.SESSION_EXPORT, async (event, request: SessionExportRequest) => {
     const repository = getChatRepository()
@@ -476,7 +497,7 @@ export default () => {
     CHAT_CHANNELS.COMPRESSION_STATUS_QUERY,
     (_event, request: CompressionStatusQuery) => {
       const repository = getChatRepository()
-      const modelConfig = repository.getModelConfig(request.modelConfigId)
+      const modelConfig = repository.getModelConfigMetadata(request.modelConfigId)
       if (!modelConfig) throw new Error('所选模型配置不存在')
       const compressor = new HistoryCompressor(
         repository,
@@ -505,8 +526,40 @@ export default () => {
     const controller = new AbortController()
     activeChatControllers.set(request.conversationId, controller)
     let streamedContent = ''
+    const repository = getChatRepository()
+    let agentRun: AgentRun | null = null
+    const observedToolCallIds = new Set<string>()
+    const waitingRunStates = new Map<string, 'waiting_approval' | 'waiting_input'>()
+    const emitAgentRun = (run: AgentRun): void => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(CHAT_CHANNELS.AGENT_RUN_CHANGED, {
+          sessionId: request.conversationId,
+          run
+        })
+      }
+    }
+    const publishAgentRun = (nextRun: AgentRun): AgentRun => {
+      agentRun = repository.saveAgentRun(nextRun)
+      emitAgentRun(agentRun)
+      return agentRun
+    }
+    const updateAgentRun = (changes: Partial<AgentRun>): AgentRun | null => {
+      if (!agentRun) return null
+      return publishAgentRun({ ...agentRun, ...changes })
+    }
+    const refreshWaitingRunStatus = (): void => {
+      if (!agentRun || controller.signal.aborted) return
+      if (['completed', 'failed', 'canceled'].includes(agentRun.status)) return
+      const states = [...waitingRunStates.values()]
+      updateAgentRun({
+        status: states.includes('waiting_approval')
+          ? 'waiting_approval'
+          : states.includes('waiting_input')
+            ? 'waiting_input'
+            : 'running'
+      })
+    }
     try {
-      const repository = getChatRepository()
       const modelConfig = repository.getModelConfig(request.modelConfigId)
       if (!modelConfig) throw new Error('所选模型配置不存在')
       const publishCompressionRecord = (record: CompressionRecord): CompressionRecord => {
@@ -562,24 +615,37 @@ export default () => {
         requestMessages,
         repository.getTaskPlan(request.conversationId)
       )
+      const latestUserMessage = [...requestMessages]
+        .reverse()
+        .find((message) => message.role === 'user')
+      const createdAt = new Date().toISOString()
+      const parentRun = publishAgentRun({
+        id: crypto.randomUUID(),
+        sessionId: request.conversationId,
+        kind: 'primary',
+        goal: latestUserMessage?.content.trim() || '继续当前会话',
+        status: 'queued',
+        modelConfigId: modelConfig.id,
+        taskModeActive: taskRoute.active,
+        ...(latestUserMessage ? { requestMessageId: latestUserMessage.id } : {}),
+        toolCallCount: 0,
+        createdAt
+      })
       if (!event.sender.isDestroyed()) {
         event.sender.send(CHAT_CHANNELS.TASK_MODE_ROUTED, {
           sessionId: request.conversationId,
           ...taskRoute
         })
       }
-      const agent = new Agent(
-        modelConfig,
-        repository.getSearchProviderConfigs(),
-        repository.getPermissionSettings(request.conversationId),
-        taskRoute.active
-      )
       const systemPrompt = buildSystemPrompt(
         repository,
         request.conversationId,
         request.locale,
         taskRoute
       )
+      const searchConfigs = repository.getSearchProviderConfigs()
+      const permissionSettings = repository.getPermissionSettings(request.conversationId)
+      updateAgentRun({ status: 'running', startedAt: new Date().toISOString() })
       const showToolCallDetails = repository.getPromptSettings().showToolCallDetails
       const onContentUpdate = (content: string): void => {
         if (!content || event.sender.isDestroyed()) return
@@ -590,6 +656,10 @@ export default () => {
         })
       }
       const onToolActivity = (call: import('./constants').ToolCallRecord): void => {
+        if (!observedToolCallIds.has(call.id)) {
+          observedToolCallIds.add(call.id)
+          updateAgentRun({ toolCallCount: observedToolCallIds.size })
+        }
         if (call.name === 'update_plan' || call.name === 'request_user_input') return
         if ((!showToolCallDetails && call.name !== 'download_file') || event.sender.isDestroyed())
           return
@@ -599,7 +669,8 @@ export default () => {
         })
       }
       const onToolApproval = (
-        approvalRequest: Omit<ToolApprovalRequest, 'sessionId'>
+        approvalRequest: Omit<ToolApprovalRequest, 'sessionId'>,
+        approvalSignal?: AbortSignal
       ): Promise<ToolApprovalDecision['decision']> => {
         if (
           approvalRequest.allowSession &&
@@ -609,6 +680,9 @@ export default () => {
         }
         return new Promise((resolve) => {
           const approvalId = crypto.randomUUID()
+          const abortSignal = approvalSignal
+            ? AbortSignal.any([controller.signal, approvalSignal])
+            : controller.signal
           const payload: ToolApprovalRequest = {
             ...approvalRequest,
             id: approvalId,
@@ -616,8 +690,10 @@ export default () => {
           }
           const finish = (decision: ToolApprovalDecision['decision']): void => {
             pendingToolApprovals.delete(approvalId)
-            controller.signal.removeEventListener('abort', rejectOnAbort)
+            waitingRunStates.delete(approvalId)
+            abortSignal.removeEventListener('abort', rejectOnAbort)
             event.sender.removeListener('destroyed', rejectOnDestroyed)
+            refreshWaitingRunStatus()
             resolve(decision)
           }
           const rejectOnAbort = (): void => finish('reject')
@@ -629,9 +705,11 @@ export default () => {
             allowSession: approvalRequest.allowSession,
             resolve: finish
           })
-          controller.signal.addEventListener('abort', rejectOnAbort, { once: true })
+          waitingRunStates.set(approvalId, 'waiting_approval')
+          refreshWaitingRunStatus()
+          abortSignal.addEventListener('abort', rejectOnAbort, { once: true })
           event.sender.once('destroyed', rejectOnDestroyed)
-          if (controller.signal.aborted || event.sender.isDestroyed()) finish('reject')
+          if (abortSignal.aborted || event.sender.isDestroyed()) finish('reject')
           else event.sender.send(CHAT_CHANNELS.TOOL_APPROVAL_REQUESTED, payload)
         })
       }
@@ -649,6 +727,23 @@ export default () => {
           })
         }
       }
+      const finalizeTaskPlan = (): void => {
+        if (!taskRoute.active) return
+        const currentPlan = repository.getTaskPlan(request.conversationId)
+        if (
+          !currentPlan ||
+          currentPlan.items.every((item) => ['completed', 'skipped'].includes(item.status))
+        ) {
+          return
+        }
+        const plan = repository.finalizeTaskPlan(request.conversationId)
+        if (plan && !event.sender.isDestroyed()) {
+          event.sender.send(CHAT_CHANNELS.TASK_PLAN_CHANGED, {
+            sessionId: request.conversationId,
+            plan
+          })
+        }
+      }
       const onUserInput = (
         prompt: UserInputPrompt,
         toolCallId: string
@@ -659,8 +754,10 @@ export default () => {
             answer: Pick<UserInputAnswer, 'answer' | 'selectedOptionId' | 'canceled'>
           ): void => {
             pendingUserInputs.delete(requestId)
+            waitingRunStates.delete(requestId)
             controller.signal.removeEventListener('abort', cancelOnAbort)
             event.sender.removeListener('destroyed', cancelOnDestroyed)
+            refreshWaitingRunStatus()
             resolve(answer)
           }
           const cancelOnAbort = (): void => finish({ answer: '', canceled: true })
@@ -670,6 +767,8 @@ export default () => {
             prompt,
             resolve: finish
           })
+          waitingRunStates.set(requestId, 'waiting_input')
+          refreshWaitingRunStatus()
           controller.signal.addEventListener('abort', cancelOnAbort, { once: true })
           event.sender.once('destroyed', cancelOnDestroyed)
           if (controller.signal.aborted || event.sender.isDestroyed()) cancelOnAbort()
@@ -683,6 +782,29 @@ export default () => {
           }
         })
       }
+      const subtaskScheduler = taskRoute.active
+        ? new SubtaskScheduler({
+            repository,
+            sessionId: request.conversationId,
+            parentRunId: parentRun.id,
+            modelConfig,
+            searchConfigs,
+            permissionSettings,
+            systemPrompt: new PromptBuilder().build({
+              settings: repository.getPromptSettings(),
+              locale: request.locale
+            }),
+            onRunChanged: emitAgentRun,
+            onToolApproval
+          })
+        : null
+      const agent = new Agent(modelConfig, searchConfigs, permissionSettings, taskRoute.active, {
+        ...(subtaskScheduler
+          ? {
+              delegateTasks: (tasks, signal) => subtaskScheduler.execute(tasks, signal)
+            }
+          : {})
+      })
       const compressor = new HistoryCompressor(repository, modelConfig, agent, systemPrompt)
       const buildStoppedResponse = () => {
         const partialContent = streamedContent.trim()
@@ -698,10 +820,21 @@ export default () => {
         const partialHistory = partialMessage
           ? [...requestMessages, partialMessage]
           : requestMessages
+        const finishedAt = new Date().toISOString()
+        const stoppedRun = updateAgentRun({
+          status: 'canceled',
+          ...(partialMessage ? { responseMessageId: partialMessage.id } : {}),
+          ...(partialContent ? { result: partialContent } : {}),
+          errorName: 'CanceledError',
+          errorMessage: '用户取消了 Agent Run',
+          toolCallCount: observedToolCallIds.size,
+          finishedAt
+        })
         return {
           message: partialMessage,
           compression: compressor.getStatus(request.conversationId, partialHistory),
-          stopped: true
+          stopped: true,
+          runId: stoppedRun!.id
         }
       }
       let context: AgentInputMessage[] = compressor.buildUncompressedContext(
@@ -853,8 +986,19 @@ export default () => {
       const result = {
         message,
         compression: status,
-        stopped: false
+        stopped: false,
+        runId: agentRun!.id
       }
+
+      finalizeTaskPlan()
+      updateAgentRun({
+        status: 'completed',
+        responseMessageId: message.id,
+        result: content,
+        ...(response.promptTokens ? { promptTokens: response.promptTokens } : {}),
+        toolCallCount: response.toolCalls.length,
+        finishedAt: new Date().toISOString()
+      })
 
       if (
         status.estimatedTokens >= status.softThresholdTokens &&
@@ -954,6 +1098,21 @@ export default () => {
 
       return result
     } catch (error) {
+      const failedRun = agentRun as AgentRun | null
+      if (failedRun && !['completed', 'failed', 'canceled'].includes(failedRun.status)) {
+        const canceled = controller.signal.aborted
+        updateAgentRun({
+          status: canceled ? 'canceled' : 'failed',
+          errorName: canceled
+            ? 'CanceledError'
+            : error instanceof Error
+              ? error.name || 'Error'
+              : 'UnknownError',
+          errorMessage: (error instanceof Error ? error.message : String(error)).slice(0, 2_000),
+          toolCallCount: observedToolCallIds.size,
+          finishedAt: new Date().toISOString()
+        })
+      }
       console.error('sendChatMessage error - ipcMain.handle', error)
       throw error
     } finally {
