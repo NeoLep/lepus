@@ -216,7 +216,7 @@ onBeforeUnmount(() => {
   border: 1px solid #dfe3e8;
   border-radius: 16px;
   outline: none;
-  background: #ffffff;
+  background: var(--app-surface);
   box-shadow: 0 24px 70px rgb(16 24 40 / 24%);
   transform: translate(-50%, -50%);
 }
@@ -226,18 +226,18 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   justify-content: space-between;
   padding: 20px 22px 17px;
-  border-bottom: 1px solid #eaecf0;
+  border-bottom: 1px solid var(--app-border-subtle);
 }
 
 .dialog-title {
-  color: #101828;
+  color: var(--app-text);
   font-size: 18px;
   font-weight: 650;
 }
 
 .dialog-description {
   margin-top: 5px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 12px;
 }
 
@@ -249,12 +249,12 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
   cursor: pointer;
 }
 
 .dialog-close:hover {
-  background: #f2f4f7;
+  background: var(--app-surface-muted);
 }
 
 .dialog-body {
@@ -276,13 +276,13 @@ onBeforeUnmount(() => {
 }
 
 .settings-panel {
-  border-right: 1px solid #eaecf0;
+  border-right: 1px solid var(--app-border-subtle);
 }
 
 .instructions-field > span,
 fieldset legend,
 .preview-heading > span {
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 12px;
   font-weight: 650;
 }
@@ -293,10 +293,10 @@ fieldset legend,
   margin-top: 7px;
   padding: 10px 11px;
   resize: vertical;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 9px;
   outline: none;
-  color: #182230;
+  color: var(--app-text);
   font: inherit;
   font-size: 13px;
   line-height: 1.55;
@@ -327,7 +327,7 @@ fieldset legend,
 .instructions-field small {
   display: block;
   margin-top: 6px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
   line-height: 1.5;
 }
@@ -348,26 +348,26 @@ fieldset label {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #475467;
+  color: var(--app-text-tertiary);
   font-size: 12px;
 }
 
 fieldset input {
   width: 15px;
   height: 15px;
-  accent-color: #182230;
+  accent-color: var(--app-text);
 }
 
 .advanced-settings {
   margin-top: 16px;
   padding: 12px 13px;
-  border: 1px solid #eaecf0;
+  border: 1px solid var(--app-border-subtle);
   border-radius: 9px;
-  background: #f9fafb;
+  background: var(--app-surface-subtle);
 }
 
 .advanced-settings summary {
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
@@ -383,7 +383,7 @@ fieldset input {
 
 .advanced-toggle input {
   margin-top: 2px;
-  accent-color: #182230;
+  accent-color: var(--app-text);
 }
 
 .advanced-toggle > span {
@@ -393,12 +393,12 @@ fieldset input {
 }
 
 .advanced-toggle strong {
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 12px;
 }
 
 .advanced-toggle small {
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -407,7 +407,7 @@ fieldset input {
   display: flex;
   min-height: 350px;
   flex-direction: column;
-  background: #f9fafb;
+  background: var(--app-surface-subtle);
 }
 
 .preview-heading {
@@ -419,7 +419,7 @@ fieldset input {
 }
 
 .preview-heading small {
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
 }
 
@@ -432,7 +432,7 @@ fieldset input {
   border: 1px solid #344054;
   border-radius: 10px;
   background: #182230;
-  color: #e4e7ec;
+  color: var(--app-border);
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 11px;
   line-height: 1.6;
@@ -445,7 +445,7 @@ fieldset input {
   padding: 9px 22px;
   border-top: 1px solid #fecdca;
   background: #fffbfa;
-  color: #d92d20;
+  color: var(--app-danger);
   font-size: 12px;
 }
 
@@ -454,7 +454,7 @@ fieldset input {
   align-items: center;
   gap: 9px;
   padding: 14px 20px;
-  border-top: 1px solid #eaecf0;
+  border-top: 1px solid var(--app-border-subtle);
 }
 
 .dialog-actions > span {
@@ -479,13 +479,13 @@ fieldset input {
 .reset-button {
   border: 0;
   background: transparent;
-  color: #475467;
+  color: var(--app-text-tertiary);
 }
 
 .secondary-button {
-  border: 1px solid #d0d5dd;
-  background: #ffffff;
-  color: #344054;
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
 }
 
 .primary-button {
@@ -508,7 +508,7 @@ fieldset input {
 
   .settings-panel {
     border-right: 0;
-    border-bottom: 1px solid #eaecf0;
+    border-bottom: 1px solid var(--app-border-subtle);
   }
 }
 </style>

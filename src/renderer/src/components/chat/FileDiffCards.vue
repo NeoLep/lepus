@@ -100,9 +100,9 @@ function lineClass(line: string): string {
 
 .diff-card {
   overflow: hidden;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 9px;
-  background: #fff;
+  background: var(--app-surface);
 }
 
 .diff-card summary {
@@ -111,8 +111,8 @@ function lineClass(line: string): string {
   align-items: center;
   gap: 7px;
   padding: 0 10px;
-  background: #f9fafb;
-  color: #475467;
+  background: var(--app-surface-subtle);
+  color: var(--app-text-tertiary);
   cursor: pointer;
   list-style: none;
 }
@@ -125,7 +125,7 @@ function lineClass(line: string): string {
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  color: #344054;
+  color: var(--app-text-secondary);
   font-family: ui-monospace, monospace;
   font-size: 11px;
   font-weight: 650;
@@ -134,7 +134,7 @@ function lineClass(line: string): string {
 }
 
 .diff-card summary small {
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 9px;
 }
 
@@ -146,18 +146,18 @@ function lineClass(line: string): string {
 }
 
 .additions {
-  color: #067647;
+  color: var(--app-success);
 }
 
 .deletions {
-  color: #b42318;
+  color: var(--app-danger);
 }
 
 .diff-content {
   max-height: 360px;
   padding: 7px 0;
   overflow: auto;
-  border-top: 1px solid #eaecf0;
+  border-top: 1px solid var(--app-border-subtle);
   background: #101828;
 }
 
@@ -165,7 +165,7 @@ function lineClass(line: string): string {
   display: block;
   min-width: max-content;
   padding: 1px 11px;
-  color: #d0d5dd;
+  color: var(--app-border-strong);
   font-family: ui-monospace, monospace;
   font-size: 10px;
   line-height: 1.55;
@@ -187,15 +187,15 @@ function lineClass(line: string): string {
 }
 
 .diff-content .file-header {
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-weight: 650;
 }
 
 .truncated {
   margin: 0;
   padding: 6px 10px;
-  border-top: 1px solid #eaecf0;
-  color: #b54708;
+  border-top: 1px solid var(--app-border-subtle);
+  color: var(--app-warning);
   font-size: 9px;
 }
 </style>

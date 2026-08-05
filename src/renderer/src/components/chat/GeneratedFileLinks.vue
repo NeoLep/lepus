@@ -90,17 +90,17 @@ async function openFile(file: GeneratedFile): Promise<void> {
   align-items: center;
   gap: 7px;
   padding: 0 9px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 8px;
-  background: #fff;
-  color: #344054;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
   cursor: pointer;
 }
 
 .generated-file-row button:hover,
 .generated-file-row button:focus-visible {
-  border-color: #98a2b3;
-  background: #f9fafb;
+  border-color: var(--app-text-muted);
+  background: var(--app-surface-subtle);
 }
 
 .generated-file-row button span {
@@ -113,14 +113,14 @@ async function openFile(file: GeneratedFile): Promise<void> {
 
 .generated-file-row button > svg:last-child {
   flex: 0 0 auto;
-  color: #667085;
+  color: var(--app-text-tertiary);
 }
 
 .generated-file-row small {
   display: block;
   max-width: 320px;
   margin-top: 4px;
-  color: #b42318;
+  color: var(--app-danger);
   font-size: 9px;
 }
 

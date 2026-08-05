@@ -3,12 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle, TooltipProvider } from 'reka-ui'
 import AppSidebar from './components/layout/AppSidebar.vue'
 import AppTopbar from './components/layout/AppTopbar.vue'
+import SessionRenameDialog from './components/layout/SessionRenameDialog.vue'
 import ChatView from './components/chat/ChatView.vue'
 import ModelManagerDialog from './components/model/ModelManagerDialog.vue'
 import PromptSettingsDialog from './components/settings/PromptSettingsDialog.vue'
 import SearchProviderDialog from './components/settings/SearchProviderDialog.vue'
 import type { ModelConfig, Session, TaskModePreference } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
+import { useAppTheme } from './theme'
 
 type SplitterPanelInstance = {
   collapse: () => void
@@ -30,8 +32,11 @@ const modelError = ref('')
 const modelManagerOpen = ref(false)
 const promptSettingsOpen = ref(false)
 const searchSettingsOpen = ref(false)
+const renameDialogOpen = ref(false)
+const renameTarget = ref<Session | null>(null)
 const promptSettingsVersion = ref(0)
 const { t } = useI18n({ useScope: 'local' })
+const { theme, toggleTheme } = useAppTheme()
 const defaultSessionTitles = new Set(['新对话', 'New chat'])
 
 const activeSession = computed(
@@ -123,10 +128,14 @@ async function persistSession(id: string): Promise<boolean> {
   }
 }
 
-async function renameSession(session: Session): Promise<void> {
-  const title = window.prompt(t('renamePrompt'), session.title)?.trim()
-  if (!title || title === session.title) return
+function openRenameSession(session: Session): void {
+  renameTarget.value = session
+  renameDialogOpen.value = true
+}
 
+async function renameSession(session: Session, requestedTitle: string): Promise<void> {
+  const title = requestedTitle.trim()
+  if (!title || title === session.title) return
   sessionError.value = ''
   if (persistingSessionIds.value.has(session.id)) return
   if (pendingSessionIds.value.has(session.id)) {
@@ -147,7 +156,9 @@ async function renameSession(session: Session): Promise<void> {
     if (index !== -1) sessions.value[index] = updated
     sortSessions()
   } catch (error) {
-    sessionError.value = error instanceof Error ? error.message : t('errors.renameSession')
+    const message = error instanceof Error ? error.message : t('errors.renameSession')
+    sessionError.value = message
+    throw error instanceof Error ? error : new Error(message)
   }
 }
 
@@ -380,7 +391,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
           @close="closeSidebar"
           @create="startNewSession"
           @select="selectSession"
-          @rename="renameSession"
+          @rename="openRenameSession"
           @delete="deleteSession"
           @toggle-pin="togglePin"
           @toggle-archive="toggleArchive"
@@ -405,14 +416,16 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
             :model-configs="modelConfigs"
             :active-model-config="activeModelConfig"
             :models-loading="modelsLoading"
+            :theme="theme"
             @open-sidebar="openSidebar"
-            @rename="activeSession && renameSession(activeSession)"
+            @rename="activeSession && openRenameSession(activeSession)"
             @delete="activeSession && deleteSession(activeSession)"
             @toggle-archive="activeSession && toggleArchive(activeSession)"
             @export-markdown="activeSession && exportSession(activeSession, 'markdown')"
             @export-json="activeSession && exportSession(activeSession, 'json')"
             @select-model="selectModelConfig"
             @manage-models="modelManagerOpen = true"
+            @toggle-theme="toggleTheme"
           />
           <ChatView
             :session-id="activeSessionId"
@@ -442,6 +455,11 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
     />
     <PromptSettingsDialog v-model:open="promptSettingsOpen" @saved="promptSettingsVersion += 1" />
     <SearchProviderDialog v-model:open="searchSettingsOpen" />
+    <SessionRenameDialog
+      v-model:open="renameDialogOpen"
+      :session="renameTarget"
+      :save-title="renameSession"
+    />
   </TooltipProvider>
 </template>
 
@@ -514,12 +532,10 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
 <i18n lang="yaml">
 zh-CN:
   newConversation: 新对话
-  renamePrompt: 重命名对话
   deleteConfirm: 确定删除“{title}”吗？
   configureModelFirst: 请先配置模型
 en:
   newConversation: New chat
-  renamePrompt: Rename chat
   deleteConfirm: Delete “{title}”?
   configureModelFirst: Configure a model first
 </i18n>

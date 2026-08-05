@@ -221,7 +221,7 @@ watch(open, (isOpen) => {
   border: 1px solid #dfe3e8;
   border-radius: 16px;
   outline: none;
-  background: #fff;
+  background: var(--app-surface);
   box-shadow: 0 24px 70px rgb(16 24 40 / 24%);
   transform: translate(-50%, -50%);
 }
@@ -237,18 +237,18 @@ watch(open, (isOpen) => {
 .dialog-header {
   align-items: flex-start;
   justify-content: space-between;
-  border-bottom: 1px solid #eaecf0;
+  border-bottom: 1px solid var(--app-border-subtle);
 }
 
 .dialog-title {
   margin: 0;
-  color: #101828;
+  color: var(--app-text);
   font-size: 18px;
   font-weight: 650;
 }
 .dialog-description {
   margin: 5px 0 0;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 12px;
 }
 .dialog-close {
@@ -259,11 +259,11 @@ watch(open, (isOpen) => {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
   cursor: pointer;
 }
 .dialog-close:hover {
-  background: #f2f4f7;
+  background: var(--app-surface-muted);
 }
 
 .provider-grid {
@@ -280,12 +280,12 @@ watch(open, (isOpen) => {
 }
 .provider-card {
   padding: 15px;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--app-border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--app-surface);
 }
 .provider-card.enabled {
-  border-color: #98a2b3;
+  border-color: var(--app-text-muted);
   box-shadow: 0 0 0 2px rgb(152 162 179 / 12%);
 }
 .provider-heading {
@@ -300,8 +300,8 @@ watch(open, (isOpen) => {
   height: 34px;
   place-items: center;
   border-radius: 9px;
-  background: #f2f4f7;
-  color: #344054;
+  background: var(--app-surface-muted);
+  color: var(--app-text-secondary);
 }
 .provider-brave {
   background: #fff1eb;
@@ -312,8 +312,8 @@ watch(open, (isOpen) => {
   color: #4f46e5;
 }
 .provider-exa {
-  background: #f2f4f7;
-  color: #101828;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
 }
 .provider-perplexity {
   background: #e8f7f7;
@@ -328,12 +328,12 @@ watch(open, (isOpen) => {
   color: #3050ff;
 }
 .provider-heading strong {
-  color: #101828;
+  color: var(--app-text);
   font-size: 13px;
 }
 .provider-heading p {
   margin: 4px 0 0;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -354,16 +354,16 @@ watch(open, (isOpen) => {
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 6px;
   color: white;
 }
 .enable-control input:checked + span {
-  border-color: #182230;
+  border-color: var(--app-text);
   background: #182230;
 }
 .enable-control small {
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
 }
 .credential-field {
@@ -373,7 +373,7 @@ watch(open, (isOpen) => {
 .credential-field > span {
   display: block;
   margin-bottom: 5px;
-  color: #475467;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   font-weight: 600;
 }
@@ -381,7 +381,7 @@ watch(open, (isOpen) => {
   width: 100%;
   height: 36px;
   padding: 0 10px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 8px;
   outline: none;
   font: inherit;
@@ -408,28 +408,28 @@ watch(open, (isOpen) => {
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
   cursor: pointer;
 }
 .secret-input button:hover {
-  background: #f2f4f7;
+  background: var(--app-surface-muted);
 }
 .stored-secret-note {
   display: block;
   margin-top: 5px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
 }
 .form-error {
   margin: 0 22px 4px;
-  color: #d92d20;
+  color: var(--app-danger);
   font-size: 12px;
 }
 .dialog-actions {
-  border-top: 1px solid #eaecf0;
+  border-top: 1px solid var(--app-border-subtle);
 }
 .dialog-actions > small {
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
 }
 .dialog-actions > span {
@@ -450,9 +450,9 @@ watch(open, (isOpen) => {
   color: #fff;
 }
 .secondary-button {
-  border: 1px solid #d0d5dd;
-  background: #fff;
-  color: #344054;
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
 }
 
 @media (max-width: 720px) {

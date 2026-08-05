@@ -111,9 +111,10 @@ watch(
   align-items: center;
   gap: 9px;
   padding: 8px;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--app-border);
   border-radius: 11px;
-  background: #f8fafc;
+  background: var(--app-surface-subtle);
+  color: var(--app-text-secondary);
   text-align: left;
 }
 
@@ -131,8 +132,8 @@ watch(
   place-items: center;
   overflow: hidden;
   border-radius: 8px;
-  background: #eef2f6;
-  color: #667085;
+  background: var(--app-surface-muted);
+  color: var(--app-text-tertiary);
 }
 
 .image-preview img {
@@ -144,6 +145,8 @@ watch(
 .attachment-copy {
   min-width: 0;
   flex: 1;
+  color: var(--app-text-secondary);
+  text-align: left;
 }
 
 .attachment-copy strong,
@@ -155,15 +158,17 @@ watch(
 }
 
 .attachment-copy strong {
-  color: #344054;
+  color: var(--app-text);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .attachment-copy small {
   margin-top: 3px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
+  line-height: 1.35;
 }
 
 .remove-attachment {
@@ -174,15 +179,16 @@ watch(
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 50%;
-  background: white;
-  color: #667085;
+  background: var(--app-surface);
+  color: var(--app-text-tertiary);
   cursor: pointer;
 }
 
 .remove-attachment:hover {
-  color: #b42318;
+  background: var(--app-hover);
+  color: var(--app-danger);
 }
 </style>
 

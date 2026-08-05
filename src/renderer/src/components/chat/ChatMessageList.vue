@@ -294,14 +294,14 @@ watch(
   height: 46px;
   margin-bottom: 4px;
   place-items: center;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--app-border);
   border-radius: 14px;
   box-shadow: 0 4px 12px rgb(16 24 40 / 6%);
 }
 
 .welcome-state h1 {
   margin: 0;
-  color: #1d2939;
+  color: var(--app-text);
   font-size: clamp(21px, 3vw, 27px);
   font-weight: 620;
   letter-spacing: -0.025em;
@@ -309,7 +309,7 @@ watch(
 
 .welcome-state p {
   margin: 0;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 13px;
 }
 
@@ -340,14 +340,14 @@ watch(
   width: 30px;
   height: 30px;
   place-items: center;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--app-border);
   border-radius: 9px;
-  background: #ffffff;
-  color: #475467;
+  background: var(--app-surface);
+  color: var(--app-text-tertiary);
 }
 
 .message.assistant .message-avatar {
-  border-color: #182230;
+  border-color: var(--app-text);
   background: #182230;
   color: #ffffff;
 }
@@ -361,14 +361,14 @@ watch(
 .message-body strong {
   display: block;
   margin-bottom: 6px;
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 12px;
   font-weight: 650;
 }
 
 .plain-content {
   margin: 0;
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 14px;
   line-height: 1.75;
   overflow-wrap: anywhere;
@@ -390,15 +390,15 @@ watch(
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   cursor: pointer;
 }
 
 .message-actions button:hover,
 .message-actions button:focus-visible {
-  background: #f2f4f7;
-  color: #344054;
+  background: var(--app-surface-muted);
+  color: var(--app-text-secondary);
 }
 
 .message-actions button:disabled {
@@ -420,8 +420,8 @@ watch(
   border: 1px solid #98a2b3;
   border-radius: 10px;
   outline: none;
-  background: #ffffff;
-  color: #182230;
+  background: var(--app-surface);
+  color: var(--app-text);
   font: inherit;
   font-size: 14px;
   line-height: 1.6;
@@ -429,7 +429,7 @@ watch(
 }
 
 .message-editor textarea:focus {
-  border-color: #667085;
+  border-color: var(--app-text-tertiary);
   box-shadow: 0 0 0 3px rgb(152 162 179 / 16%);
 }
 
@@ -453,9 +453,9 @@ watch(
 }
 
 .cancel-edit-button {
-  border: 1px solid #d0d5dd;
-  background: #ffffff;
-  color: #475467;
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-surface);
+  color: var(--app-text-tertiary);
 }
 
 .submit-edit-button {
@@ -465,9 +465,9 @@ watch(
 }
 
 .submit-edit-button:disabled {
-  border-color: #eaecf0;
-  background: #eaecf0;
-  color: #98a2b3;
+  border-color: var(--app-border-subtle);
+  background: var(--app-border-subtle);
+  color: var(--app-text-muted);
   cursor: default;
 }
 
@@ -475,7 +475,7 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 13px;
 }
 
@@ -489,12 +489,12 @@ watch(
   align-items: center;
   gap: 12px;
   margin: 4px 0 14px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
 }
 
 .compression-divider > span {
   height: 1px;
-  background: #eaecf0;
+  background: var(--app-border-subtle);
 }
 
 .compression-divider strong {

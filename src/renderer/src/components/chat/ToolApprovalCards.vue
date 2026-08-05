@@ -99,7 +99,7 @@ function pretty(value: string): string {
   place-items: center;
   border-radius: 8px;
   background: #fef0c7;
-  color: #b54708;
+  color: var(--app-warning);
 }
 
 .approval-heading > span:nth-child(2) {
@@ -112,12 +112,12 @@ function pretty(value: string): string {
 
 .approval-heading strong {
   margin: 0;
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 12px;
 }
 
 .approval-heading small {
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-family: ui-monospace, monospace;
   font-size: 10px;
 }
@@ -126,7 +126,7 @@ function pretty(value: string): string {
   padding: 2px 6px;
   border-radius: 999px;
   background: #fef0c7;
-  color: #b54708;
+  color: var(--app-warning);
   font-size: 9px;
   font-style: normal;
   font-weight: 650;
@@ -134,12 +134,12 @@ function pretty(value: string): string {
 
 .approval-heading em.high {
   background: #fee4e2;
-  color: #b42318;
+  color: var(--app-danger);
 }
 
 .approval-card p {
   margin: 10px 0;
-  color: #475467;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -149,7 +149,7 @@ function pretty(value: string): string {
 }
 
 .approval-card summary {
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
   cursor: pointer;
 }
@@ -160,8 +160,8 @@ function pretty(value: string): string {
   padding: 8px;
   overflow: auto;
   border-radius: 6px;
-  background: #fff;
-  color: #344054;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
   font-size: 10px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -191,9 +191,9 @@ function pretty(value: string): string {
 }
 
 .reject-button {
-  border: 1px solid #d0d5dd;
-  background: #fff;
-  color: #475467;
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-surface);
+  color: var(--app-text-tertiary);
 }
 
 .allow-button {

@@ -73,9 +73,9 @@ function imageDimensions(value: unknown): string {
 }
 .inspection-card {
   overflow: hidden;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 10px;
-  background: #fff;
+  background: var(--app-surface);
 }
 header {
   display: flex;
@@ -90,7 +90,7 @@ header > span {
   place-items: center;
   border-radius: 8px;
   background: #ecfdf3;
-  color: #067647;
+  color: var(--app-success);
 }
 header > div {
   min-width: 0;
@@ -104,12 +104,12 @@ small {
   white-space: nowrap;
 }
 strong {
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 12px;
 }
 small {
   margin-top: 2px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
 }
 .safe {
@@ -128,7 +128,7 @@ small {
   align-items: flex-start;
   gap: 5px;
   margin: 3px 0;
-  color: #b54708;
+  color: var(--app-warning);
   font-size: 10px;
 }
 .warnings svg {
@@ -141,17 +141,17 @@ dl {
   gap: 5px 8px;
   margin: 0;
   padding: 8px 10px;
-  border-top: 1px solid #eaecf0;
-  background: #f9fafb;
+  border-top: 1px solid var(--app-border-subtle);
+  background: var(--app-surface-subtle);
   font-size: 9px;
 }
 dt {
-  color: #667085;
+  color: var(--app-text-tertiary);
 }
 dd {
   overflow: hidden;
   margin: 0;
-  color: #475467;
+  color: var(--app-text-tertiary);
   font-family: ui-monospace, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;

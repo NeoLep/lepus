@@ -309,7 +309,7 @@ onBeforeUnmount(() => {
   height: 100%;
   min-width: 0;
   flex-direction: column;
-  background: #f7f8fa;
+  background: var(--app-sidebar-bg);
 }
 
 .sidebar-header {
@@ -331,8 +331,8 @@ onBeforeUnmount(() => {
   height: 30px;
   place-items: center;
   border-radius: 9px;
-  background: #111827;
-  color: white;
+  background: var(--app-inverse-bg);
+  color: var(--app-inverse-text);
 }
 
 .sidebar-header-actions {
@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
   width: 100%;
   align-items: center;
   border: 0;
-  color: #344054;
+  color: var(--app-text-secondary);
   text-align: left;
   cursor: pointer;
 }
@@ -377,7 +377,7 @@ onBeforeUnmount(() => {
 .sidebar-action:hover,
 .conversation-item:hover,
 .settings-button:hover {
-  background: #eceef1;
+  background: var(--app-hover);
 }
 
 .sidebar-action span {
@@ -385,7 +385,7 @@ onBeforeUnmount(() => {
 }
 
 kbd {
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-family: inherit;
   font-size: 11px;
 }
@@ -396,7 +396,7 @@ kbd {
 
 .section-label {
   margin: 0 10px 7px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.04em;
@@ -408,7 +408,7 @@ kbd {
   margin: 0 5px 7px;
   padding: 3px;
   border-radius: 9px;
-  background: #eceef1;
+  background: var(--app-surface-muted);
 }
 
 .conversation-tabs button {
@@ -417,14 +417,14 @@ kbd {
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   cursor: pointer;
 }
 
 .conversation-tabs button.active {
-  background: #ffffff;
-  color: #344054;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
   box-shadow: 0 1px 2px rgb(16 24 40 / 8%);
   font-weight: 600;
 }
@@ -445,8 +445,8 @@ kbd {
 }
 
 .conversation-item.active {
-  background: #e9ebef;
-  color: #101828;
+  background: var(--app-active);
+  color: var(--app-text);
 }
 
 .conversation-copy {
@@ -464,13 +464,13 @@ kbd {
 
 .conversation-copy small {
   margin-top: 3px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
 }
 
 .pin-indicator {
   flex: 0 0 auto;
-  color: #667085;
+  color: var(--app-text-tertiary);
 }
 
 .conversation-more {
@@ -496,22 +496,22 @@ kbd {
 }
 
 .conversation-more:hover {
-  background: #dfe3e8;
+  background: var(--app-hover);
 }
 
 .conversation-item:focus-visible {
-  outline: 2px solid #98a2b3;
+  outline: 2px solid var(--app-text-muted);
   outline-offset: -2px;
 }
 
 .conversation-status {
   margin: 4px 10px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 12px;
 }
 
 .conversation-status.error {
-  color: #d92d20;
+  color: var(--app-danger);
 }
 
 .loading-status {
@@ -536,10 +536,10 @@ kbd {
   align-items: center;
   gap: 8px;
   padding: 0 8px 0 10px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 9px;
-  background: #ffffff;
-  color: #667085;
+  background: var(--app-surface);
+  color: var(--app-text-tertiary);
 }
 
 .search-box input {
@@ -548,7 +548,7 @@ kbd {
   border: 0;
   outline: 0;
   background: transparent;
-  color: #344054;
+  color: var(--app-text-secondary);
   font: inherit;
   font-size: 13px;
 }
@@ -561,7 +561,7 @@ kbd {
   padding: 3px;
   border: 0;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   cursor: pointer;
 }

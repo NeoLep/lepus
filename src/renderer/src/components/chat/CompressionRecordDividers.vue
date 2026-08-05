@@ -80,7 +80,7 @@ function detail(record: CompressionRecord): string {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 12px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   cursor: help;
 }
 
@@ -103,11 +103,11 @@ function detail(record: CompressionRecord): string {
 }
 
 .compression-record.fallback {
-  color: #b54708;
+  color: var(--app-warning);
 }
 
 .compression-record.failed {
-  color: #d92d20;
+  color: var(--app-danger);
 }
 
 .spin {

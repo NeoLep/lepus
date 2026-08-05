@@ -351,7 +351,7 @@ watch(model, async () => {
   padding: 13px 14px 10px;
   border: 1px solid #dfe3e8;
   border-radius: 20px;
-  background: #ffffff;
+  background: var(--app-surface);
   box-shadow:
     0 1px 2px rgb(16 24 40 / 4%),
     0 8px 24px rgb(16 24 40 / 6%);
@@ -396,14 +396,14 @@ textarea {
   border: 0;
   outline: 0;
   background: transparent;
-  color: #182230;
+  color: var(--app-text);
   font: inherit;
   font-size: 15px;
   line-height: 1.65;
 }
 
 textarea::placeholder {
-  color: #98a2b3;
+  color: var(--app-text-muted);
 }
 
 .composer-actions {
@@ -428,7 +428,7 @@ textarea::placeholder {
   height: 32px;
   border-radius: 9px;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
 }
 
 .task-mode-auto-badge {
@@ -450,19 +450,19 @@ textarea::placeholder {
 }
 
 .composer-icon:hover {
-  background: #f2f4f7;
-  color: #344054;
+  background: var(--app-surface-muted);
+  color: var(--app-text-secondary);
 }
 
 .composer-icon.active {
-  background: #f4f3ff;
-  color: #6941c6;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
 }
 
 .composer-icon.auto {
   background: #f8f9fc;
-  color: #475467;
-  box-shadow: inset 0 0 0 1px #e4e7ec;
+  color: var(--app-text-tertiary);
+  box-shadow: inset 0 0 0 1px var(--app-border);
 }
 
 .composer-icon:disabled {
@@ -476,7 +476,7 @@ textarea::placeholder {
 
 .attachment-error {
   margin: 6px 8px 0;
-  color: #b42318;
+  color: var(--app-danger);
   font-size: 11px;
 }
 
@@ -488,7 +488,7 @@ textarea::placeholder {
 
 .composer-hint {
   flex: 1;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 11px;
   text-align: right;
 }
@@ -503,14 +503,14 @@ textarea::placeholder {
   gap: 6px;
   padding: 0 3px;
   border-radius: 8px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   cursor: help;
   outline: none;
 }
 
 .token-meter:hover,
 .token-meter:focus-visible {
-  background: #f2f4f7;
+  background: var(--app-surface-muted);
 }
 
 .token-meter:focus-visible {
@@ -531,7 +531,7 @@ textarea::placeholder {
 }
 
 .token-ring-track {
-  stroke: #eaecf0;
+  stroke: var(--app-border-subtle);
 }
 
 .token-ring-progress {
@@ -572,7 +572,7 @@ textarea::placeholder {
 }
 
 :global(.tooltip-content span) {
-  color: #d0d5dd;
+  color: var(--app-border-strong);
 }
 
 .token-meter.compressing .token-ring-progress {
@@ -581,7 +581,7 @@ textarea::placeholder {
 }
 
 .compression-label {
-  color: #6941c6;
+  color: var(--app-accent);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -595,8 +595,8 @@ textarea::placeholder {
 }
 
 .send-button:disabled {
-  background: #eaecf0;
-  color: #98a2b3;
+  background: var(--app-border-subtle);
+  color: var(--app-text-muted);
   cursor: default;
 }
 
@@ -610,7 +610,7 @@ textarea::placeholder {
 
 .disclaimer {
   margin: 7px 0 0;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
   text-align: center;
 }
@@ -630,10 +630,10 @@ textarea::placeholder {
   left: 50%;
   width: min(460px, calc(100vw - 32px));
   padding: 20px;
-  border: 1px solid #eaecf0;
+  border: 1px solid var(--app-border-subtle);
   border-radius: 18px;
   outline: none;
-  background: #ffffff;
+  background: var(--app-surface);
   box-shadow: 0 24px 64px rgb(16 24 40 / 22%);
   transform: translate(-50%, -50%);
 }
@@ -652,8 +652,8 @@ textarea::placeholder {
   align-items: center;
   justify-content: center;
   border-radius: 11px;
-  background: #f4f3ff;
-  color: #6941c6;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
 }
 
 .task-mode-dialog-heading {
@@ -662,7 +662,7 @@ textarea::placeholder {
 }
 
 .task-mode-dialog-title {
-  color: #182230;
+  color: var(--app-text);
   font-size: 16px;
   font-weight: 650;
   line-height: 1.4;
@@ -670,7 +670,7 @@ textarea::placeholder {
 
 .task-mode-dialog-description {
   margin-top: 3px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 12px;
   line-height: 1.55;
 }
@@ -685,13 +685,13 @@ textarea::placeholder {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
   cursor: pointer;
 }
 
 .task-mode-dialog-close:hover {
-  background: #f2f4f7;
-  color: #344054;
+  background: var(--app-surface-muted);
+  color: var(--app-text-secondary);
 }
 
 .task-mode-options {
@@ -706,10 +706,10 @@ textarea::placeholder {
   align-items: center;
   gap: 14px;
   padding: 13px 14px;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--app-border);
   border-radius: 12px;
-  background: #ffffff;
-  color: #344054;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
   text-align: left;
   cursor: pointer;
   transition:
@@ -720,7 +720,7 @@ textarea::placeholder {
 
 .task-mode-option:hover {
   border-color: #c7cdd5;
-  background: #f9fafb;
+  background: var(--app-surface-subtle);
 }
 
 .task-mode-option.selected {
@@ -737,13 +737,13 @@ textarea::placeholder {
 }
 
 .task-mode-option-copy strong {
-  color: #182230;
+  color: var(--app-text);
   font-size: 13px;
   font-weight: 650;
 }
 
 .task-mode-option-copy span {
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -755,14 +755,14 @@ textarea::placeholder {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 50%;
-  color: #6941c6;
+  color: var(--app-accent);
 }
 
 .task-mode-option.selected .task-mode-option-check {
   border-color: #9b8afb;
-  background: #f4f3ff;
+  background: var(--app-accent-soft);
 }
 
 @media (max-width: 720px) {

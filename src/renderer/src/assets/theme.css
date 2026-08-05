@@ -1,0 +1,614 @@
+:root {
+  color-scheme: light;
+  --app-bg: #ffffff;
+  --app-sidebar-bg: #f7f8fa;
+  --app-surface: #ffffff;
+  --app-surface-subtle: #f9fafb;
+  --app-surface-muted: #f2f4f7;
+  --app-hover: #eceef1;
+  --app-active: #e9ebef;
+  --app-border: #e4e7ec;
+  --app-border-subtle: #eaecf0;
+  --app-border-strong: #d0d5dd;
+  --app-text: #182230;
+  --app-text-secondary: #344054;
+  --app-text-tertiary: #667085;
+  --app-text-muted: #98a2b3;
+  --app-inverse-bg: #182230;
+  --app-inverse-text: #f2f4f7;
+  --app-link: #175cd3;
+  --app-link-hover: #1849a9;
+  --app-link-soft: #eff4ff;
+  --app-link-soft-hover: #dbe7ff;
+  --app-code-bg: #182230;
+  --app-code-text: #f2f4f7;
+  --app-code-panel-bg: #f2f4f7;
+  --app-code-panel-text: #344054;
+  --app-inline-code-bg: #f9fafb;
+  --app-inline-code-text: #b42318;
+  --app-blockquote-bg: #f9fafb;
+  --app-table-head-bg: #f2f4f7;
+  --app-success: #067647;
+  --app-warning: #b54708;
+  --app-danger: #b42318;
+  --app-accent: #6941c6;
+  --app-accent-strong: #7f56d9;
+  --app-accent-soft: #f4f3ff;
+  --app-agent-bg: #fbfaff;
+  --app-agent-header-bg: #f7f5ff;
+  --app-agent-card-bg: #ffffff;
+  --app-agent-details-bg: #fdfcff;
+  --app-agent-border: #d9d6fe;
+  --app-agent-border-subtle: #eeecff;
+  --app-agent-icon-bg: #ebe9fe;
+  --app-agent-index-bg: #f4f3ff;
+  --app-agent-accent: #6941c6;
+  --app-agent-heading: #42307d;
+  --app-error-bg: #fef3f2;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --dark-bg: #1e1e1e;
+  --dark-sidebar: #262626;
+  --dark-surface: #262626;
+  --dark-surface-raised: #2b2b2b;
+  --dark-surface-muted: #303030;
+  --dark-border: #3a3a3a;
+  --dark-border-strong: #4a4a4a;
+  --dark-text: #f2f2f2;
+  --dark-text-secondary: #c7c7c7;
+  --dark-text-muted: #929292;
+  --dark-hover: #343434;
+  --dark-purple: #b8a5ff;
+  --app-bg: #1e1e1e;
+  --app-sidebar-bg: #262626;
+  --app-surface: #262626;
+  --app-surface-subtle: #2b2b2b;
+  --app-surface-muted: #303030;
+  --app-hover: #343434;
+  --app-active: #3a3a3a;
+  --app-border: #3a3a3a;
+  --app-border-subtle: #343434;
+  --app-border-strong: #4a4a4a;
+  --app-text: #f2f2f2;
+  --app-text-secondary: #c7c7c7;
+  --app-text-tertiary: #a8a8a8;
+  --app-text-muted: #929292;
+  --app-inverse-bg: #eeeeee;
+  --app-inverse-text: #1e1e1e;
+  --app-link: #8bb8ff;
+  --app-link-hover: #b6d2ff;
+  --app-link-soft: #2a3442;
+  --app-link-soft-hover: #35445a;
+  --app-code-bg: #181818;
+  --app-code-text: #dedede;
+  --app-code-panel-bg: #191919;
+  --app-code-panel-text: #d6d6d6;
+  --app-inline-code-bg: #292929;
+  --app-inline-code-text: #ffaaa4;
+  --app-blockquote-bg: #262626;
+  --app-table-head-bg: #303030;
+  --app-success: #6ce9a6;
+  --app-warning: #fdb022;
+  --app-danger: #fda29b;
+  --app-accent: #c5b5ff;
+  --app-accent-strong: #b8a5ff;
+  --app-accent-soft: #373044;
+  --app-agent-bg: #262626;
+  --app-agent-header-bg: #2b2b2b;
+  --app-agent-card-bg: #262626;
+  --app-agent-details-bg: #222222;
+  --app-agent-border: #3a3a3a;
+  --app-agent-border-subtle: #343434;
+  --app-agent-icon-bg: #373044;
+  --app-agent-index-bg: #373044;
+  --app-agent-accent: #c5b5ff;
+  --app-agent-heading: #d8ccff;
+  --app-error-bg: #3a2424;
+  background: var(--dark-bg);
+}
+
+html[data-theme='dark'] body,
+html[data-theme='dark'] #app,
+html[data-theme='dark'] .app-shell,
+html[data-theme='dark'] .workspace,
+html[data-theme='dark'] .chat-view,
+html[data-theme='dark'] .message-scroll {
+  background: var(--dark-bg);
+  color: var(--dark-text);
+}
+
+html[data-theme='dark'] .sidebar {
+  background: var(--dark-sidebar);
+}
+
+html[data-theme='dark'] .topbar {
+  border-color: var(--dark-border);
+  background: rgb(30 30 30 / 96%);
+}
+
+html[data-theme='dark'] .splitter-handle::before {
+  background: var(--dark-border);
+}
+
+html[data-theme='dark'] .splitter-handle:hover::before,
+html[data-theme='dark'] .splitter-handle[data-state='drag']::before,
+html[data-theme='dark'] .splitter-handle:focus-visible::before {
+  background: #657286;
+}
+
+html[data-theme='dark']
+  :where(
+    .icon-button,
+    .text-button,
+    .model-trigger,
+    .sidebar-action,
+    .conversation-item,
+    .settings-button,
+    .conversation-more,
+    .composer-icon,
+    .task-mode-dialog-close,
+    .rename-dialog-close,
+    .dialog-close
+  ) {
+  color: var(--dark-text-secondary);
+}
+
+html[data-theme='dark']
+  :where(
+    .icon-button,
+    .text-button,
+    .model-trigger,
+    .sidebar-action,
+    .conversation-item,
+    .settings-button,
+    .conversation-more,
+    .composer-icon,
+    .task-mode-dialog-close,
+    .rename-dialog-close,
+    .dialog-close
+  ):hover {
+  background: var(--dark-hover);
+  color: var(--dark-text);
+}
+
+html[data-theme='dark'] .conversation-tabs {
+  background: #2d2d2d;
+}
+
+html[data-theme='dark'] .conversation-tabs button {
+  color: var(--dark-text-muted);
+}
+
+html[data-theme='dark'] .conversation-tabs button.active,
+html[data-theme='dark'] .conversation-item.active {
+  background: #3a3a3a;
+  color: var(--dark-text);
+  box-shadow: none;
+}
+
+html[data-theme='dark']
+  :where(
+    .section-label,
+    .conversation-copy small,
+    .conversation-status,
+    .pin-indicator,
+    kbd,
+    .empty-models,
+    .composer-hint,
+    .disclaimer
+  ) {
+  color: var(--dark-text-muted);
+}
+
+html[data-theme='dark'] :where(.menu-content, .search-box) {
+  border-color: var(--dark-border);
+  background: var(--dark-surface-raised);
+  color: var(--dark-text-secondary);
+  box-shadow: 0 16px 36px rgb(0 0 0 / 36%);
+}
+
+html[data-theme='dark'] .menu-item[data-highlighted] {
+  background: var(--dark-hover);
+  color: var(--dark-text);
+}
+
+html[data-theme='dark'] :where(.menu-label, .model-item small) {
+  color: var(--dark-text-muted);
+}
+
+html[data-theme='dark'] :where(.topbar, .sidebar) :where(strong, span) {
+  color: inherit;
+}
+
+html[data-theme='dark'] .menu-separator {
+  background: var(--dark-border);
+}
+
+html[data-theme='dark'] .search-box input {
+  color: var(--dark-text);
+}
+
+html[data-theme='dark'] .composer {
+  border-color: var(--dark-border);
+  background: var(--dark-surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 22%);
+}
+
+html[data-theme='dark'] .composer:focus-within {
+  border-color: var(--dark-border-strong);
+  box-shadow: 0 12px 34px rgb(0 0 0 / 28%);
+}
+
+html[data-theme='dark'] .composer textarea,
+html[data-theme='dark'] .message-editor textarea {
+  color: var(--dark-text);
+}
+
+html[data-theme='dark'] :where(.composer textarea, .message-editor textarea)::placeholder {
+  color: var(--dark-text-muted);
+}
+
+html[data-theme='dark'] .composer-icon.auto {
+  background: #303030;
+  color: var(--dark-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--dark-border);
+}
+
+html[data-theme='dark'] .composer-icon.active {
+  background: #2c2548;
+  color: var(--dark-purple);
+}
+
+html[data-theme='dark'] .task-mode-auto-badge {
+  border-color: var(--dark-surface);
+  background: #a3a3a3;
+  color: #1e1e1e;
+}
+
+html[data-theme='dark'] .token-ring-track {
+  stroke: var(--dark-border);
+}
+
+html[data-theme='dark'] .token-ring-progress {
+  stroke: var(--dark-text-secondary);
+}
+
+html[data-theme='dark'] .send-button {
+  background: #eeeeee;
+  color: #1e1e1e;
+}
+
+html[data-theme='dark'] .send-button:disabled {
+  background: #3a3a3a;
+  color: #777777;
+}
+
+html[data-theme='dark'] :where(.welcome-state h1, .message-body > strong, .plain-content) {
+  color: var(--dark-text);
+}
+
+html[data-theme='dark'] .welcome-state p,
+html[data-theme='dark'] .thinking {
+  color: var(--dark-text-muted);
+}
+
+html[data-theme='dark'] .welcome-mark,
+html[data-theme='dark'] .message-avatar {
+  border-color: var(--dark-border);
+  background: var(--dark-surface);
+  color: var(--dark-text-secondary);
+}
+
+html[data-theme='dark'] .message.assistant .message-avatar {
+  border-color: #eeeeee;
+  background: #eeeeee;
+  color: #1e1e1e;
+}
+
+html[data-theme='dark'] .compression-divider > span,
+html[data-theme='dark'] .compression-record::before {
+  background: var(--dark-border);
+}
+
+html[data-theme='dark'] .markdown-body {
+  color: var(--app-text-secondary);
+}
+
+html[data-theme='dark'] .markdown-body :where(h1, h2, h3, h4, strong) {
+  color: var(--app-text);
+}
+
+html[data-theme='dark'] .markdown-body :where(code, pre, blockquote) {
+  border-color: var(--app-border);
+}
+
+html[data-theme='dark'] .markdown-body a {
+  color: var(--app-link);
+}
+
+html[data-theme='dark']
+  :where(
+    .tool-card,
+    .download-card,
+    .inspection-card,
+    .diff-card,
+    .approval-card,
+    .input-card,
+    .attachment-card,
+    .task-plan,
+    .sub-agent-panel,
+    .model-dialog-content,
+    .permission-dialog-content,
+    .prompt-dialog-content,
+    .search-dialog-content,
+    .rename-dialog-content,
+    .task-mode-dialog-content
+  )
+  :where(p, span, small, label) {
+  color: var(--dark-text-secondary);
+}
+
+html[data-theme='dark']
+  :where(
+    .tool-card,
+    .download-card,
+    .inspection-card,
+    .diff-card,
+    .approval-card,
+    .input-card,
+    .attachment-card,
+    .task-plan,
+    .sub-agent-panel,
+    .model-dialog-content,
+    .permission-dialog-content,
+    .prompt-dialog-content,
+    .search-dialog-content,
+    .rename-dialog-content,
+    .task-mode-dialog-content
+  )
+  :where(strong, h2, h3) {
+  color: var(--dark-text);
+}
+
+html[data-theme='dark']
+  :where(
+    .field-help,
+    .stored-secret-note,
+    .plan-explanation,
+    .plan-count,
+    .sub-agent-meta,
+    .sub-agent-waiting,
+    .rename-input-meta,
+    .dialog-description,
+    .task-mode-dialog-description
+  ) {
+  color: var(--dark-text-muted);
+}
+
+html[data-theme='dark']
+  :where(
+    .tool-card,
+    .download-card,
+    .inspection-card,
+    .diff-card,
+    .approval-card,
+    .input-card,
+    .attachment-card,
+    .task-plan,
+    .sub-agent-panel,
+    .provider-card,
+    .config-item,
+    .advanced-settings,
+    .preview-panel,
+    .mode-list label
+  ) {
+  border-color: var(--dark-border);
+  background: var(--dark-surface);
+  color: var(--dark-text-secondary);
+}
+
+html[data-theme='dark']
+  :where(
+    .tool-card summary,
+    .tool-details,
+    .download-card,
+    .inspection-card,
+    .diff-content,
+    .approval-card,
+    .input-card,
+    .attachment-card,
+    .plan-body,
+    .sub-agent-card,
+    .sub-agent-details
+  ) {
+  border-color: var(--dark-border);
+  background: var(--dark-surface);
+}
+
+html[data-theme='dark']
+  :where(
+    .tool-card strong,
+    .download-heading strong,
+    .inspection-card strong,
+    .approval-heading strong,
+    .question-heading strong,
+    .attachment-copy strong,
+    .plan-header strong,
+    .plan-items strong,
+    .sub-agent-main strong
+  ) {
+  color: var(--dark-text);
+}
+
+html[data-theme='dark'] :where(.tool-icon, .download-icon, .file-icon, .approval-icon) {
+  background: var(--dark-surface-muted);
+  color: var(--dark-text-secondary);
+}
+
+html[data-theme='dark'] :where(.tool-details pre, .sub-agent-details pre, .diff-content pre) {
+  background: #191919;
+  color: #d6d6d6;
+}
+
+html[data-theme='dark'] .sub-agent-panel {
+  border-color: var(--app-agent-border);
+  background: var(--app-agent-bg);
+}
+
+html[data-theme='dark'] .sub-agent-panel-header {
+  border-color: var(--app-agent-border);
+  background: var(--app-agent-header-bg);
+}
+
+html[data-theme='dark'] .sub-agent-panel-header strong,
+html[data-theme='dark'] .sub-agent-name {
+  color: var(--app-agent-accent);
+}
+
+html[data-theme='dark'] .sub-agent-panel-icon,
+html[data-theme='dark'] .sub-agent-index {
+  background: var(--app-agent-icon-bg);
+  color: var(--app-agent-accent);
+}
+
+html[data-theme='dark'] :where(.sub-agent-card + .sub-agent-card, .sub-agent-details) {
+  border-color: var(--app-agent-border-subtle);
+}
+
+html[data-theme='dark'] .task-plan {
+  border-color: var(--dark-border);
+  background: var(--dark-sidebar);
+}
+
+html[data-theme='dark'] .plan-header {
+  border-color: var(--dark-border);
+  background: var(--dark-surface);
+}
+
+html[data-theme='dark'] :where(.plan-explanation, .empty-plan, .sub-agent-waiting) {
+  color: var(--dark-text-muted);
+}
+
+html[data-theme='dark']
+  :where(
+    .model-dialog-content,
+    .permission-dialog-content,
+    .prompt-dialog-content,
+    .search-dialog-content,
+    .rename-dialog-content,
+    .task-mode-dialog-content
+  ) {
+  border-color: var(--dark-border);
+  background: var(--dark-surface-raised);
+  color: var(--dark-text-secondary);
+  box-shadow: 0 28px 76px rgb(0 0 0 / 48%);
+}
+
+html[data-theme='dark']
+  :where(
+    .dialog-title,
+    .rename-dialog-title,
+    .task-mode-dialog-title,
+    .section-heading strong,
+    .preview-heading strong,
+    .provider-heading strong,
+    .config-form label,
+    .rename-form label,
+    .task-mode-option-copy strong
+  ) {
+  color: var(--dark-text);
+}
+
+html[data-theme='dark']
+  :where(
+    .dialog-description,
+    .rename-dialog-description,
+    .task-mode-dialog-description,
+    .section-heading small,
+    .field-help,
+    .task-mode-option-copy span
+  ) {
+  color: var(--dark-text-muted);
+}
+
+html[data-theme='dark']
+  :where(
+    .config-form input,
+    .config-form textarea,
+    .config-form select,
+    .rename-form input,
+    .secret-input,
+    .instructions-field,
+    .folder-path
+  ) {
+  border-color: var(--dark-border-strong);
+  background: #1a1a1a;
+  color: var(--dark-text);
+}
+
+html[data-theme='dark'] :where(.secondary-button, .clear-button, .reset-button) {
+  border-color: var(--dark-border-strong);
+  background: var(--dark-surface);
+  color: var(--dark-text-secondary);
+}
+
+html[data-theme='dark'] :where(.primary-button, .submit-edit-button, .new-config-button) {
+  border-color: #eeeeee;
+  background: #eeeeee;
+  color: #1e1e1e;
+}
+
+html[data-theme='dark'] .task-mode-option {
+  border-color: var(--dark-border);
+  background: var(--dark-surface);
+  color: var(--dark-text-secondary);
+}
+
+html[data-theme='dark'] .task-mode-option:hover {
+  border-color: var(--dark-border-strong);
+  background: var(--dark-hover);
+}
+
+html[data-theme='dark']
+  :where(
+    .mode-list label,
+    .provider-card,
+    .config-item,
+    .option-check,
+    .generated-file-row,
+    .message-actions button
+  ):hover {
+  background: var(--dark-hover);
+}
+
+html[data-theme='dark'] .task-mode-option.selected {
+  border-color: #7765bd;
+  background: #29223e;
+}
+
+html[data-theme='dark'] .task-mode-option-check {
+  border-color: var(--dark-border-strong);
+}
+
+html[data-theme='dark'] .task-mode-option.selected .task-mode-option-check {
+  border-color: #8c78d9;
+  background: #382d55;
+  color: #c5b5ff;
+}
+
+html[data-theme='dark'] :where(.progress-track, .token-ring-track) {
+  background: var(--dark-border);
+}
+
+html[data-theme='dark'] :where(.tooltip-content) {
+  border: 1px solid var(--dark-border-strong);
+  background: #343434;
+  color: var(--dark-text);
+}
+
+html[data-theme='dark'] ::selection {
+  background: #51458a;
+  color: #ffffff;
+}

@@ -123,7 +123,7 @@ function submit(request: UserInputRequest): void {
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  color: #6941c6;
+  color: var(--app-accent);
 }
 
 .question-heading > svg {
@@ -138,7 +138,7 @@ function submit(request: UserInputRequest): void {
 
 .question-heading p {
   margin: 3px 0 0;
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -154,10 +154,10 @@ function submit(request: UserInputRequest): void {
   align-items: flex-start;
   gap: 9px;
   padding: 9px 10px;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--app-border);
   border-radius: 9px;
-  background: #ffffff;
-  color: #344054;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
   text-align: left;
   cursor: pointer;
 }
@@ -165,7 +165,7 @@ function submit(request: UserInputRequest): void {
 .options button:hover,
 .options button.selected {
   border-color: #9b8afb;
-  background: #f4f3ff;
+  background: var(--app-accent-soft);
 }
 
 .option-check {
@@ -174,13 +174,13 @@ function submit(request: UserInputRequest): void {
   height: 17px;
   flex: 0 0 17px;
   place-items: center;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 50%;
   color: #ffffff;
 }
 
 .selected .option-check {
-  border-color: #7f56d9;
+  border-color: var(--app-accent-strong);
   background: #7f56d9;
 }
 
@@ -199,7 +199,7 @@ function submit(request: UserInputRequest): void {
 
 .options small {
   margin-top: 2px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
   line-height: 1.45;
 }
@@ -211,19 +211,19 @@ function submit(request: UserInputRequest): void {
 .freeform > span {
   display: block;
   margin-bottom: 5px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
 }
 
 .freeform textarea {
   width: 100%;
   resize: vertical;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 9px;
   outline: none;
   padding: 8px 9px;
-  background: #ffffff;
-  color: #344054;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
   font: inherit;
   font-size: 12px;
   line-height: 1.5;
@@ -243,7 +243,7 @@ function submit(request: UserInputRequest): void {
 
 .answer-actions > span {
   flex: 1;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
 }
 
@@ -262,8 +262,8 @@ function submit(request: UserInputRequest): void {
 }
 
 .answer-actions button:disabled {
-  background: #e4e7ec;
-  color: #98a2b3;
+  background: var(--app-border);
+  color: var(--app-text-muted);
   cursor: default;
 }
 

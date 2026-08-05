@@ -71,7 +71,7 @@ function statusLabel(status: TaskPlanItemStatus): string {
   width: min(760px, calc(100% - 32px));
   margin: 8px auto 0;
   overflow: hidden;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--app-border);
   border-radius: 13px;
   background: #fcfcfd;
   box-shadow: 0 2px 8px rgb(16 24 40 / 4%);
@@ -86,7 +86,7 @@ function statusLabel(status: TaskPlanItemStatus): string {
   padding: 0 12px;
   border: 0;
   background: transparent;
-  color: #344054;
+  color: var(--app-text-secondary);
   cursor: pointer;
 }
 
@@ -108,7 +108,7 @@ function statusLabel(status: TaskPlanItemStatus): string {
 .plan-state {
   min-width: 0;
   flex: 1;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   text-align: right;
 }
@@ -125,7 +125,7 @@ function statusLabel(status: TaskPlanItemStatus): string {
   overflow: hidden;
   margin-bottom: 10px;
   border-radius: 2px;
-  background: #eaecf0;
+  background: var(--app-border-subtle);
 }
 
 .progress-track span {
@@ -139,14 +139,14 @@ function statusLabel(status: TaskPlanItemStatus): string {
 .plan-explanation,
 .empty-plan {
   margin: 0 0 8px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 11px;
   line-height: 1.5;
 }
 
 .empty-plan {
   margin: 2px 0 0;
-  color: #98a2b3;
+  color: var(--app-text-muted);
 }
 
 .plan-items {
@@ -162,12 +162,12 @@ function statusLabel(status: TaskPlanItemStatus): string {
   min-width: 0;
   align-items: center;
   gap: 8px;
-  color: #475467;
+  color: var(--app-text-tertiary);
 }
 
 .plan-items li > svg {
   flex: 0 0 auto;
-  color: #98a2b3;
+  color: var(--app-text-muted);
 }
 
 .plan-items li span {
@@ -177,7 +177,7 @@ function statusLabel(status: TaskPlanItemStatus): string {
 }
 
 .plan-items li small {
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
 }
 
@@ -187,12 +187,12 @@ function statusLabel(status: TaskPlanItemStatus): string {
 
 .plan-items li.completed span,
 .plan-items li.skipped span {
-  color: #98a2b3;
+  color: var(--app-text-muted);
   text-decoration: line-through;
 }
 
 .plan-items li.in_progress > svg {
-  color: #7f56d9;
+  color: var(--app-accent-strong);
 }
 
 .spin {

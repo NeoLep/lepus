@@ -81,9 +81,9 @@ function shortId(run: AgentRun): string {
 .sub-agent-panel {
   margin: 8px 0 12px;
   overflow: hidden;
-  border: 1px solid #d9d6fe;
+  border: 1px solid var(--app-agent-border);
   border-radius: 12px;
-  background: #fbfaff;
+  background: var(--app-agent-bg);
 }
 
 .sub-agent-panel-header {
@@ -91,8 +91,8 @@ function shortId(run: AgentRun): string {
   align-items: center;
   gap: 9px;
   padding: 10px 12px;
-  border-bottom: 1px solid #e9e7fd;
-  background: #f7f5ff;
+  border-bottom: 1px solid var(--app-agent-border);
+  background: var(--app-agent-header-bg);
 }
 
 .sub-agent-panel-icon {
@@ -103,8 +103,8 @@ function shortId(run: AgentRun): string {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: #ebe9fe;
-  color: #6941c6;
+  background: var(--app-agent-icon-bg);
+  color: var(--app-agent-accent);
 }
 
 .sub-agent-panel-header div {
@@ -117,12 +117,12 @@ function shortId(run: AgentRun): string {
 
 .sub-agent-panel-header strong {
   margin: 0;
-  color: #42307d;
+  color: var(--app-agent-heading);
   font-size: 12px;
 }
 
 .sub-agent-panel-header span:last-child {
-  color: #7f56d9;
+  color: var(--app-agent-accent);
   font-size: 10px;
 }
 
@@ -132,11 +132,11 @@ function shortId(run: AgentRun): string {
 }
 
 .sub-agent-card {
-  background: #ffffff;
+  background: var(--app-agent-card-bg);
 }
 
 .sub-agent-card + .sub-agent-card {
-  border-top: 1px solid #eeecff;
+  border-top: 1px solid var(--app-agent-border-subtle);
 }
 
 .sub-agent-card summary {
@@ -161,8 +161,8 @@ function shortId(run: AgentRun): string {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: #f4f3ff;
-  color: #6941c6;
+  background: var(--app-agent-index-bg);
+  color: var(--app-agent-accent);
   font-size: 10px;
   font-weight: 700;
 }
@@ -178,13 +178,13 @@ function shortId(run: AgentRun): string {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: #6941c6;
+  color: var(--app-agent-accent);
   font-size: 10px;
   font-weight: 650;
 }
 
 .sub-agent-name small {
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-family: ui-monospace, monospace;
   font-size: 9px;
   font-weight: 500;
@@ -194,7 +194,7 @@ function shortId(run: AgentRun): string {
   display: -webkit-box;
   margin: 0;
   overflow: hidden;
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 11px;
   font-weight: 600;
   line-height: 1.4;
@@ -207,14 +207,14 @@ function shortId(run: AgentRun): string {
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
 }
 
 .sub-agent-status.running,
 .sub-agent-status.waiting_approval,
 .sub-agent-status.waiting_input {
-  color: #b54708;
+  color: var(--app-warning);
 }
 
 .sub-agent-status.running svg,
@@ -223,17 +223,17 @@ function shortId(run: AgentRun): string {
 }
 
 .sub-agent-status.completed {
-  color: #067647;
+  color: var(--app-success);
 }
 
 .sub-agent-status.failed,
 .sub-agent-status.canceled {
-  color: #b42318;
+  color: var(--app-danger);
 }
 
 .sub-agent-chevron {
   flex: 0 0 auto;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   transition: transform 140ms ease;
 }
 
@@ -243,14 +243,14 @@ function shortId(run: AgentRun): string {
 
 .sub-agent-details {
   padding: 10px 12px 12px 43px;
-  border-top: 1px solid #f0efff;
-  background: #fdfcff;
+  border-top: 1px solid var(--app-agent-border-subtle);
+  background: var(--app-agent-details-bg);
 }
 
 .sub-agent-meta {
   display: flex;
   margin-bottom: 8px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
 }
 
@@ -263,7 +263,7 @@ function shortId(run: AgentRun): string {
 .sub-agent-details label {
   display: block;
   margin-bottom: 4px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
   font-weight: 650;
 }
@@ -274,8 +274,8 @@ function shortId(run: AgentRun): string {
   padding: 9px;
   overflow: auto;
   border-radius: 7px;
-  background: #f2f4f7;
-  color: #344054;
+  background: var(--app-code-panel-bg);
+  color: var(--app-code-panel-text);
   font-family: inherit;
   font-size: 11px;
   line-height: 1.55;
@@ -283,13 +283,13 @@ function shortId(run: AgentRun): string {
 }
 
 .sub-agent-details pre.error-result {
-  background: #fef3f2;
-  color: #b42318;
+  background: var(--app-error-bg);
+  color: var(--app-danger);
 }
 
 .sub-agent-waiting {
   margin: 0;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 11px;
 }
 

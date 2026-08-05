@@ -18,11 +18,14 @@ import {
   Ellipsis,
   FileJson,
   Languages,
+  Moon,
   PanelLeft,
   Settings2,
-  Share2
+  Share2,
+  Sun
 } from '@lucide/vue'
 import type { ModelConfig, Session } from '@ipc/chat/constants'
+import type { AppTheme } from '../../theme'
 import { useI18n } from 'vue-i18n'
 import { setAppLocale, type AppLocale } from '../../i18n'
 
@@ -33,6 +36,7 @@ defineProps<{
   modelConfigs: ModelConfig[]
   activeModelConfig: ModelConfig | null
   modelsLoading: boolean
+  theme: AppTheme
 }>()
 
 const emit = defineEmits<{
@@ -44,6 +48,7 @@ const emit = defineEmits<{
   exportJson: []
   selectModel: [id: string]
   manageModels: []
+  toggleTheme: []
 }>()
 
 const { t, locale } = useI18n({ useScope: 'local' })
@@ -123,6 +128,25 @@ function changeLocale(nextLocale: AppLocale): void {
     <div class="topbar-drag-space" aria-hidden="true"></div>
 
     <div class="topbar-actions no-drag">
+      <TooltipRoot>
+        <TooltipTrigger as-child>
+          <button
+            class="icon-button"
+            type="button"
+            :aria-label="theme === 'dark' ? t('useLightTheme') : t('useDarkTheme')"
+            @click="emit('toggleTheme')"
+          >
+            <Sun v-if="theme === 'dark'" :size="17" />
+            <Moon v-else :size="17" />
+          </button>
+        </TooltipTrigger>
+        <TooltipPortal>
+          <TooltipContent class="tooltip-content" side="bottom" :side-offset="7">
+            {{ theme === 'dark' ? t('useLightTheme') : t('useDarkTheme') }}
+          </TooltipContent>
+        </TooltipPortal>
+      </TooltipRoot>
+
       <DropdownMenuRoot>
         <DropdownMenuTrigger as-child>
           <button class="text-button" type="button" :aria-label="t('locale.language')">
@@ -240,7 +264,7 @@ function changeLocale(nextLocale: AppLocale): void {
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: #1d2939;
+  color: var(--app-text);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -256,7 +280,7 @@ function changeLocale(nextLocale: AppLocale): void {
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: #475467;
+  color: var(--app-text-tertiary);
   font-size: 13px;
   font-weight: 550;
   cursor: pointer;
@@ -269,8 +293,8 @@ function changeLocale(nextLocale: AppLocale): void {
 
 .model-trigger:hover,
 .text-button:hover {
-  background: #eef0f3;
-  color: #101828;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
 }
 
 .model-trigger:focus-visible,
@@ -280,7 +304,7 @@ function changeLocale(nextLocale: AppLocale): void {
 }
 
 .model-check {
-  color: #101828;
+  color: var(--app-text);
   opacity: 0;
 }
 
@@ -294,7 +318,7 @@ function changeLocale(nextLocale: AppLocale): void {
 
 .empty-models {
   margin: 4px 9px 7px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 12px;
 }
 
@@ -312,6 +336,8 @@ zh-CN:
   selectModelConfig: 选择模型配置
   noModelConfigs: 还没有模型配置
   manageModels: 管理模型
+  useDarkTheme: 切换到夜间模式
+  useLightTheme: 切换到日间模式
   archiveChat: 归档对话
   restoreChat: 恢复对话
   exportJson: 导出 JSON
@@ -322,6 +348,8 @@ en:
   selectModelConfig: Select model configuration
   noModelConfigs: No model configurations yet
   manageModels: Manage models
+  useDarkTheme: Switch to dark mode
+  useLightTheme: Switch to light mode
   archiveChat: Archive chat
   restoreChat: Restore chat
   exportJson: Export JSON

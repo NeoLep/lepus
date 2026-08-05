@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import './base.css';
 @import './app-ui.css';
+@import './theme.css';
 
 #app {
   height: 100vh;

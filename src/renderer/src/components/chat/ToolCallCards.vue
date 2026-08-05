@@ -59,9 +59,9 @@ function pretty(value?: string): string {
 }
 .tool-card {
   overflow: hidden;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--app-border);
   border-radius: 9px;
-  background: #f9fafb;
+  background: var(--app-surface-subtle);
 }
 .tool-card summary {
   display: flex;
@@ -81,13 +81,13 @@ function pretty(value?: string): string {
   height: 24px;
   place-items: center;
   border-radius: 6px;
-  background: #eef0f3;
-  color: #475467;
+  background: var(--app-surface-muted);
+  color: var(--app-text-tertiary);
 }
 .tool-card strong {
   flex: 1;
   margin: 0;
-  color: #344054;
+  color: var(--app-text-secondary);
   font-family: ui-monospace, monospace;
   font-size: 11px;
 }
@@ -95,33 +95,33 @@ function pretty(value?: string): string {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
 }
 .tool-status.running svg {
   animation: spin 900ms linear infinite;
 }
 .tool-status.awaiting_approval {
-  color: #b54708;
+  color: var(--app-warning);
 }
 .tool-status.completed {
-  color: #067647;
+  color: var(--app-success);
 }
 .tool-status.error {
-  color: #b42318;
+  color: var(--app-danger);
 }
 .tool-status.rejected {
-  color: #667085;
+  color: var(--app-text-tertiary);
 }
 .tool-details {
   padding: 9px 10px 10px;
-  border-top: 1px solid #eaecf0;
-  background: #fff;
+  border-top: 1px solid var(--app-border-subtle);
+  background: var(--app-surface);
 }
 .tool-details label {
   display: block;
   margin: 0 0 4px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
   font-weight: 650;
 }
@@ -134,8 +134,8 @@ function pretty(value?: string): string {
   padding: 8px;
   overflow: auto;
   border-radius: 6px;
-  background: #f2f4f7;
-  color: #344054;
+  background: var(--app-code-panel-bg);
+  color: var(--app-code-panel-text);
   font-size: 10px;
   line-height: 1.5;
   white-space: pre-wrap;

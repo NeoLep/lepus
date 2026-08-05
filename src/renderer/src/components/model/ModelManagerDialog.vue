@@ -352,7 +352,7 @@ watch(
   border: 1px solid #dfe3e8;
   border-radius: 16px;
   outline: none;
-  background: #ffffff;
+  background: var(--app-surface);
   box-shadow: 0 24px 70px rgb(16 24 40 / 24%);
   transform: translate(-50%, -50%);
   animation: dialog-in 160ms ease-out;
@@ -363,19 +363,19 @@ watch(
   align-items: flex-start;
   justify-content: space-between;
   padding: 20px 22px 17px;
-  border-bottom: 1px solid #eaecf0;
+  border-bottom: 1px solid var(--app-border-subtle);
 }
 
 .dialog-title {
   margin: 0;
-  color: #101828;
+  color: var(--app-text);
   font-size: 18px;
   font-weight: 650;
 }
 
 .dialog-description {
   margin: 5px 0 0;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 12px;
 }
 
@@ -387,12 +387,12 @@ watch(
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
   cursor: pointer;
 }
 
 .dialog-close:hover {
-  background: #f2f4f7;
+  background: var(--app-surface-muted);
 }
 
 .dialog-body {
@@ -405,8 +405,8 @@ watch(
 .config-list {
   min-height: 0;
   padding: 14px 10px;
-  border-right: 1px solid #eaecf0;
-  background: #f9fafb;
+  border-right: 1px solid var(--app-border-subtle);
+  background: var(--app-surface-subtle);
 }
 
 .new-config-button,
@@ -417,7 +417,7 @@ watch(
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #344054;
+  color: var(--app-text-secondary);
   text-align: left;
   cursor: pointer;
 }
@@ -432,7 +432,7 @@ watch(
 
 .new-config-button:hover,
 .config-item:hover {
-  background: #eef0f3;
+  background: var(--app-surface-muted);
 }
 
 .config-items {
@@ -450,8 +450,8 @@ watch(
 }
 
 .config-item.selected {
-  background: #e9ebef;
-  color: #101828;
+  background: var(--app-active);
+  color: var(--app-text);
 }
 
 .config-item > span {
@@ -474,7 +474,7 @@ watch(
 
 .config-item small {
   margin-top: 2px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 11px;
 }
 
@@ -490,7 +490,7 @@ watch(
 .config-form label > span {
   display: block;
   margin-bottom: 6px;
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 12px;
   font-weight: 600;
 }
@@ -499,11 +499,11 @@ watch(
   width: 100%;
   height: 38px;
   padding: 0 11px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 8px;
   outline: none;
-  background: #ffffff;
-  color: #182230;
+  background: var(--app-surface);
+  color: var(--app-text);
   font: inherit;
   font-size: 13px;
 }
@@ -515,13 +515,13 @@ watch(
 
 .advanced-settings {
   padding: 11px 12px;
-  border: 1px solid #eaecf0;
+  border: 1px solid var(--app-border-subtle);
   border-radius: 9px;
-  background: #f9fafb;
+  background: var(--app-surface-subtle);
 }
 
 .advanced-settings summary {
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -529,7 +529,7 @@ watch(
 
 .context-detection {
   margin: 10px 0 12px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 11px;
 }
 
@@ -542,7 +542,7 @@ watch(
 .advanced-fields label small {
   display: block;
   margin-top: 5px;
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
   line-height: 1.4;
 }
@@ -566,24 +566,24 @@ watch(
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: #667085;
+  color: var(--app-text-tertiary);
   cursor: pointer;
 }
 
 .secret-input button:hover {
-  background: #f2f4f7;
+  background: var(--app-surface-muted);
 }
 
 .stored-secret-note {
   display: block;
   margin-top: 5px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
 }
 
 .form-error {
   margin: -4px 0 0;
-  color: #d92d20;
+  color: var(--app-danger);
   font-size: 12px;
 }
 
@@ -621,15 +621,15 @@ watch(
 }
 
 .secondary-button {
-  border: 1px solid #d0d5dd;
-  background: #ffffff;
-  color: #344054;
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
 }
 
 .delete-config-button {
   border: 0;
   background: transparent;
-  color: #d92d20;
+  color: var(--app-danger);
 }
 
 .primary-button:disabled,
@@ -643,7 +643,7 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #475467;
+  color: var(--app-text-tertiary);
   font-size: 12px;
 }
 

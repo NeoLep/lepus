@@ -120,9 +120,9 @@ async function openFile(filePath: unknown): Promise<void> {
 }
 .download-card {
   overflow: hidden;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 10px;
-  background: #fff;
+  background: var(--app-surface);
 }
 .download-heading {
   display: flex;
@@ -151,19 +151,19 @@ small {
   white-space: nowrap;
 }
 strong {
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 12px;
 }
 small {
   margin-top: 2px;
-  color: #667085;
+  color: var(--app-text-tertiary);
   font-size: 10px;
 }
 small.error {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: #b42318;
+  color: var(--app-danger);
 }
 button {
   display: inline-flex;
@@ -171,17 +171,17 @@ button {
   align-items: center;
   gap: 5px;
   padding: 0 8px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   border-radius: 7px;
-  background: #fff;
-  color: #475467;
+  background: var(--app-surface);
+  color: var(--app-text-tertiary);
   cursor: pointer;
   font-size: 10px;
 }
 .progress-track {
   height: 3px;
   overflow: hidden;
-  background: #eaecf0;
+  background: var(--app-border-subtle);
 }
 .progress-track span {
   display: block;
@@ -199,23 +199,23 @@ dl {
   gap: 5px 8px;
   margin: 0;
   padding: 8px 10px;
-  border-top: 1px solid #eaecf0;
-  background: #f9fafb;
+  border-top: 1px solid var(--app-border-subtle);
+  background: var(--app-surface-subtle);
   font-size: 9px;
 }
 dt {
-  color: #667085;
+  color: var(--app-text-tertiary);
 }
 dd {
   overflow: hidden;
   margin: 0;
-  color: #475467;
+  color: var(--app-text-tertiary);
   font-family: ui-monospace, monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .warning {
-  color: #b54708;
+  color: var(--app-warning);
   white-space: normal;
   font-family: inherit;
 }

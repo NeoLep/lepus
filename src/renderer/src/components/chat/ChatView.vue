@@ -779,7 +779,7 @@ watch(
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  background: #ffffff;
+  background: var(--app-surface);
 }
 </style>
 

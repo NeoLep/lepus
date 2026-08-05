@@ -142,7 +142,7 @@ function hideCitationTooltip(event: Event): void {
 <style scoped>
 .markdown-body {
   min-width: 0;
-  color: #344054;
+  color: var(--app-text-secondary);
   font-size: 14px;
   line-height: 1.75;
   overflow-wrap: anywhere;
@@ -170,7 +170,7 @@ function hideCitationTooltip(event: Event): void {
 .markdown-body :deep(h3),
 .markdown-body :deep(h4) {
   margin: 20px 0 9px;
-  color: #182230;
+  color: var(--app-text);
   line-height: 1.35;
 }
 
@@ -180,7 +180,7 @@ function hideCitationTooltip(event: Event): void {
 
 .markdown-body :deep(h2) {
   padding-bottom: 5px;
-  border-bottom: 1px solid #eaecf0;
+  border-bottom: 1px solid var(--app-border-subtle);
   font-size: 18px;
 }
 
@@ -202,9 +202,11 @@ function hideCitationTooltip(event: Event): void {
 }
 
 .markdown-body :deep(blockquote) {
-  padding: 2px 0 2px 13px;
-  border-left: 3px solid #d0d5dd;
-  color: #667085;
+  padding: 8px 12px;
+  border-left: 3px solid var(--app-border-strong);
+  border-radius: 0 7px 7px 0;
+  background: var(--app-blockquote-bg);
+  color: var(--app-text-tertiary);
 }
 
 .markdown-body :deep(blockquote > :last-child) {
@@ -212,14 +214,14 @@ function hideCitationTooltip(event: Event): void {
 }
 
 .markdown-body :deep(a) {
-  color: #175cd3;
+  color: var(--app-link);
   text-decoration: underline;
-  text-decoration-color: rgb(23 92 211 / 35%);
+  text-decoration-color: color-mix(in srgb, var(--app-link) 35%, transparent);
   text-underline-offset: 2px;
 }
 
 .markdown-body :deep(a:hover) {
-  color: #1849a9;
+  color: var(--app-link-hover);
   text-decoration-color: currentcolor;
 }
 
@@ -229,8 +231,8 @@ function hideCitationTooltip(event: Event): void {
   margin: 0 1px;
   padding: 0 4px;
   border-radius: 4px;
-  background: #eff4ff;
-  color: #175cd3;
+  background: var(--app-link-soft);
+  color: var(--app-link);
   font-size: 0.78em;
   font-weight: 700;
   line-height: 1.55;
@@ -240,16 +242,16 @@ function hideCitationTooltip(event: Event): void {
 
 .markdown-body :deep(.search-citation:hover),
 .markdown-body :deep(.search-citation:focus-visible) {
-  background: #dbe7ff;
+  background: var(--app-link-soft-hover);
   outline: none;
 }
 
 .markdown-body :deep(code) {
   padding: 2px 5px;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--app-border);
   border-radius: 5px;
-  background: #f9fafb;
-  color: #b42318;
+  background: var(--app-inline-code-bg);
+  color: var(--app-inline-code-text);
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
   font-size: 0.88em;
 }
@@ -258,16 +260,16 @@ function hideCitationTooltip(event: Event): void {
   max-width: 100%;
   padding: 13px 15px;
   overflow-x: auto;
-  border: 1px solid #344054;
+  border: 1px solid var(--app-border-strong);
   border-radius: 10px;
-  background: #182230;
+  background: var(--app-code-bg);
 }
 
 .markdown-body :deep(pre code) {
   padding: 0;
   border: 0;
   background: transparent;
-  color: #f2f4f7;
+  color: var(--app-code-text);
   font-size: 12px;
   line-height: 1.65;
   white-space: pre;
@@ -284,21 +286,21 @@ function hideCitationTooltip(event: Event): void {
 .markdown-body :deep(th),
 .markdown-body :deep(td) {
   padding: 7px 10px;
-  border: 1px solid #d0d5dd;
+  border: 1px solid var(--app-border-strong);
   text-align: left;
   white-space: nowrap;
 }
 
 .markdown-body :deep(th) {
-  background: #f2f4f7;
-  color: #182230;
+  background: var(--app-table-head-bg);
+  color: var(--app-text);
   font-weight: 650;
 }
 
 .markdown-body :deep(hr) {
   margin: 18px 0;
   border: 0;
-  border-top: 1px solid #eaecf0;
+  border-top: 1px solid var(--app-border-subtle);
 }
 
 .markdown-body :deep(img) {
@@ -310,7 +312,7 @@ function hideCitationTooltip(event: Event): void {
 }
 
 .markdown-body :deep(strong) {
-  color: #182230;
+  color: var(--app-text);
   font-weight: 650;
 }
 
@@ -325,8 +327,8 @@ function hideCitationTooltip(event: Event): void {
   flex-direction: column;
   gap: 3px;
   border-radius: 7px;
-  background: #101828;
-  color: #fff;
+  background: var(--app-inverse-bg);
+  color: var(--app-inverse-text);
   box-shadow: 0 6px 18px rgb(16 24 40 / 20%);
   pointer-events: none;
 }
@@ -341,7 +343,7 @@ function hideCitationTooltip(event: Event): void {
 }
 
 .citation-tooltip span {
-  color: #98a2b3;
+  color: var(--app-text-muted);
   font-size: 10px;
 }
 </style>
