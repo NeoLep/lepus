@@ -192,7 +192,7 @@ function changeLocale(nextLocale: AppLocale): void {
   </header>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .topbar {
   display: flex;
   height: 52px;
@@ -203,6 +203,9 @@ function changeLocale(nextLocale: AppLocale): void {
   border-bottom: 1px solid #edf0f2;
   padding: 0 10px 0 12px;
   background: rgb(255 255 255 / 94%);
+  &.right-window-controls {
+    border-bottom: none !important;
+  }
 }
 
 .topbar.mac-without-sidebar {
