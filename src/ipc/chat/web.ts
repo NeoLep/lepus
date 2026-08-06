@@ -27,6 +27,12 @@ import {
   SessionExportRequest,
   SessionExportResult,
   SessionSearchResult,
+  SkillDefinition,
+  SkillCatalogEntry,
+  SkillCatalogId,
+  SkillGithubImportRequest,
+  SkillImportResult,
+  SkillRoutedEvent,
   TaskPlan,
   TaskPlanChangedEvent,
   TaskModeRoutedEvent,
@@ -113,6 +119,26 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.PROMPT_SETTINGS_UPDATE, request),
   previewPrompt: (request: PromptPreviewRequest): Promise<string> =>
     ipcRenderer.invoke(CHAT_CHANNELS.PROMPT_PREVIEW, request),
+  querySkills: (): Promise<SkillDefinition[]> => ipcRenderer.invoke(CHAT_CHANNELS.SKILL_QUERY),
+  createSkill: (request: SkillDefinition): Promise<SkillDefinition> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SKILL_CREATE, request),
+  updateSkill: (request: SkillDefinition): Promise<SkillDefinition> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SKILL_UPDATE, request),
+  deleteSkill: (id: string): Promise<void> => ipcRenderer.invoke(CHAT_CHANNELS.SKILL_DELETE, id),
+  importSkillFolder: (): Promise<SkillImportResult> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SKILL_IMPORT_FOLDER),
+  importSkillZip: (): Promise<SkillImportResult> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SKILL_IMPORT_ZIP),
+  importSkillGithub: (request: SkillGithubImportRequest): Promise<SkillImportResult> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SKILL_IMPORT_GITHUB, request),
+  querySkillCatalog: (catalogId: SkillCatalogId): Promise<SkillCatalogEntry[]> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.SKILL_CATALOG_QUERY, catalogId),
+  onSkillRouted: (listener: (event: SkillRoutedEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: SkillRoutedEvent): void =>
+      listener(payload)
+    ipcRenderer.on(CHAT_CHANNELS.SKILL_ROUTED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.SKILL_ROUTED, handler)
+  },
   querySearchProviderConfigs: (): Promise<SearchProviderConfig[]> =>
     ipcRenderer.invoke(CHAT_CHANNELS.SEARCH_CONFIG_QUERY),
   updateSearchProviderConfigs: (request: SearchProviderConfig[]): Promise<SearchProviderConfig[]> =>

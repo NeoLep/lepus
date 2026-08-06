@@ -13,6 +13,8 @@ import type {
   Message,
   MessageAttachment,
   ModelConfig,
+  SkillDefinition,
+  SkillSummary,
   TaskPlan,
   TaskModePreference,
   ToolApprovalRequest,
@@ -60,6 +62,9 @@ const taskPlanLoadingBySession = ref<Record<string, boolean>>({})
 const routedTaskModeBySession = ref<Record<string, boolean>>({})
 const resolvingApprovalIds = ref<string[]>([])
 const userInputRequestsBySession = ref<Record<string, UserInputRequest[]>>({})
+const activeSkillsBySession = ref<Record<string, SkillSummary[]>>({})
+const availableSkills = ref<SkillDefinition[]>([])
+const selectedSkillsBySession = ref<Record<string, SkillSummary[]>>({})
 const resolvingUserInputIds = ref<string[]>([])
 const permissionSettingsOpen = ref(false)
 const openingPermissionSettings = ref(false)
@@ -125,6 +130,12 @@ const taskModeActive = computed(() => {
 const activeUserInputRequests = computed(() =>
   props.sessionId ? (userInputRequestsBySession.value[props.sessionId] ?? []) : []
 )
+const activeSkills = computed(() =>
+  props.sessionId ? (activeSkillsBySession.value[props.sessionId] ?? []) : []
+)
+const selectedSkills = computed(() =>
+  props.sessionId ? (selectedSkillsBySession.value[props.sessionId] ?? []) : []
+)
 
 let removeCompressionListener: (() => void) | null = null
 let removeCompressionRecordListener: (() => void) | null = null
@@ -135,9 +146,11 @@ let removeToolApprovalListener: (() => void) | null = null
 let removeTaskPlanListener: (() => void) | null = null
 let removeTaskModeRoutedListener: (() => void) | null = null
 let removeUserInputListener: (() => void) | null = null
+let removeSkillRoutedListener: (() => void) | null = null
 
 onMounted(() => {
   void refreshToolCallDetailSetting()
+  void refreshSkills()
   removeCompressionListener = window.api.chat.onCompressionStatusChanged((event) => {
     compressionEventVersionBySession.value[event.sessionId] =
       (compressionEventVersionBySession.value[event.sessionId] ?? 0) + 1
@@ -191,7 +204,34 @@ onMounted(() => {
     else requests[index] = request
     userInputRequestsBySession.value[request.sessionId] = requests
   })
+  removeSkillRoutedListener = window.api.chat.onSkillRouted((event) => {
+    activeSkillsBySession.value[event.sessionId] = event.skills
+  })
 })
+
+async function refreshSkills(): Promise<void> {
+  try {
+    availableSkills.value = (await window.api.chat.querySkills()).filter((skill) => skill.enabled)
+  } catch (error) {
+    console.error('Failed to load Skills for composer', error)
+  }
+}
+
+function selectSkill(skill: SkillSummary): void {
+  const sessionId = props.sessionId
+  if (!sessionId) return
+  const selected = selectedSkillsBySession.value[sessionId] ?? []
+  if (selected.some((item) => item.id === skill.id) || selected.length >= 3) return
+  selectedSkillsBySession.value[sessionId] = [...selected, skill]
+}
+
+function removeSelectedSkill(skillId: string): void {
+  const sessionId = props.sessionId
+  if (!sessionId) return
+  selectedSkillsBySession.value[sessionId] = (selectedSkillsBySession.value[sessionId] ?? []).filter(
+    (skill) => skill.id !== skillId
+  )
+}
 
 async function refreshToolCallDetailSetting(): Promise<void> {
   try {
@@ -212,6 +252,7 @@ onUnmounted(() => {
   removeTaskPlanListener?.()
   removeTaskModeRoutedListener?.()
   removeUserInputListener?.()
+  removeSkillRoutedListener?.()
 })
 
 function emptyCompressionStatus(): CompressionStatus {
@@ -270,6 +311,7 @@ async function sendMessage(): Promise<void> {
   const attachments = draftAttachments.value.map((attachment) => ({ ...attachment }))
   const sessionId = props.sessionId
   const modelConfigId = props.modelConfig?.id ?? null
+  const skillIds = selectedSkills.value.map((skill) => skill.id)
   if (
     (!content && !attachments.length) ||
     sending.value ||
@@ -285,6 +327,7 @@ async function sendMessage(): Promise<void> {
   toolActivitiesBySession.value[sessionId] = []
   toolApprovalsBySession.value[sessionId] = []
   userInputRequestsBySession.value[sessionId] = []
+  activeSkillsBySession.value[sessionId] = []
   const sessionReady = await props.ensureSession(sessionId)
   if (!sessionReady) {
     sendingBySession.value[sessionId] = false
@@ -297,6 +340,7 @@ async function sendMessage(): Promise<void> {
   sessionMessages.push(userMessage)
   draft.value = ''
   draftAttachmentsBySession.value[sessionId] = []
+  selectedSkillsBySession.value[sessionId] = []
 
   const projectedTokens =
     compressionStatus.value.estimatedTokens +
@@ -317,7 +361,7 @@ async function sendMessage(): Promise<void> {
     sessionId,
     content || t('attachmentOnlyTitle', { name: attachments[0]?.name ?? t('addAttachment') })
   )
-  await requestAssistant(sessionId, modelConfigId, sessionMessages)
+  await requestAssistant(sessionId, modelConfigId, sessionMessages, skillIds)
 }
 
 async function reviseAndResend(message: Message, revisedContent: string): Promise<void> {
@@ -418,7 +462,8 @@ function createSendErrorMessage(error: unknown): Message {
 async function requestAssistant(
   sessionId: string,
   modelConfigId: string,
-  sessionMessages: Message[]
+  sessionMessages: Message[],
+  skillIds: string[] = []
 ): Promise<void> {
   const compressionEventVersion = compressionEventVersionBySession.value[sessionId] ?? 0
 
@@ -427,7 +472,8 @@ async function requestAssistant(
       conversationId: sessionId,
       modelConfigId,
       locale: locale.value as ChatLocale,
-      messages: sessionMessages.map(toIpcMessage)
+      messages: sessionMessages.map(toIpcMessage),
+      ...(skillIds.length ? { skillIds } : {})
     })
 
     if (response.message) sessionMessages.push(response.message)
@@ -730,6 +776,7 @@ watch(
       :stream-content="streamedContent"
       :active-tool-calls="activeToolCalls"
       :agent-runs="agentRuns"
+      :active-skills="activeSkills"
       :approvals="activeToolApprovals"
       :resolving-approval-ids="resolvingApprovalIds"
       :user-input-requests="activeUserInputRequests"
@@ -761,12 +808,17 @@ watch(
       :adding-attachments="addingAttachments"
       :attachment-error="attachmentError"
       :task-mode="taskMode"
+      :available-skills="availableSkills"
+      :selected-skills="selectedSkills"
       @submit="sendMessage"
       @stop="stopGeneration"
       @permissions="openPermissionSettings"
       @add-attachments="addAttachments"
       @drop-attachments="dropAttachments"
       @remove-attachment="removeAttachment"
+      @select-skill="selectSkill"
+      @remove-skill="removeSelectedSkill"
+      @refresh-skills="refreshSkills"
       @toggle-task-mode="(preference) => emit('taskModeChange', preference)"
     />
   </main>

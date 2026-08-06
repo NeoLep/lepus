@@ -179,7 +179,7 @@ export class Agent {
           const toolSignal = options?.signal
             ? AbortSignal.any([options.signal, toolController.signal])
             : toolController.signal
-          if (toolCall.function.name === 'download_file') {
+          if (['download_file', 'run_skill_script'].includes(toolCall.function.name)) {
             options?.onToolCancellable?.(toolCall.id, () => toolController.abort())
           }
           let result: string
@@ -279,6 +279,36 @@ export class Agent {
                 ok: false,
                 error: error instanceof Error ? error.message : '无法获取用户回答'
               })
+            }
+          }
+          if (toolCall.function.name === 'run_skill_script') {
+            try {
+              const payload = JSON.parse(result) as {
+                ok?: boolean
+                data?: {
+                  exitCode?: number | null
+                  timedOut?: boolean
+                  outputLimitExceeded?: boolean
+                }
+                error?: string
+              }
+              if (
+                payload.ok &&
+                payload.data &&
+                (payload.data.exitCode !== 0 ||
+                  payload.data.timedOut ||
+                  payload.data.outputLimitExceeded)
+              ) {
+                payload.ok = false
+                payload.error = payload.data.timedOut
+                  ? 'Skill 脚本执行超时'
+                  : payload.data.outputLimitExceeded
+                    ? 'Skill 脚本输出超过限制，进程已终止'
+                    : `Skill 脚本退出码为 ${payload.data.exitCode}`
+                result = JSON.stringify(payload)
+              }
+            } catch {
+              // Keep the original result when script output metadata is unavailable.
             }
           }
           let succeeded = false

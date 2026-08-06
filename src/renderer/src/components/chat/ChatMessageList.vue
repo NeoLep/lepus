@@ -5,6 +5,7 @@ import type {
   AgentRun,
   CompressionRecord,
   Message,
+  SkillSummary,
   ToolApprovalRequest,
   ToolCallRecord,
   UserInputRequest
@@ -33,6 +34,7 @@ const props = defineProps<{
   streamContent?: string
   activeToolCalls?: ToolCallRecord[]
   agentRuns?: AgentRun[]
+  activeSkills?: SkillSummary[]
   approvals?: ToolApprovalRequest[]
   resolvingApprovalIds?: string[]
   userInputRequests?: UserInputRequest[]
@@ -233,8 +235,20 @@ watch(
         <div class="message-avatar"><Sparkles :size="16" /></div>
         <div class="message-body">
           <strong>Lepus</strong>
+          <div v-if="activeSkills?.length" class="active-skills" role="status">
+            <Sparkles :size="14" />
+            <span>{{ t('activeSkills') }}</span>
+            <strong v-for="skill in activeSkills" :key="skill.id" :title="skill.description">
+              {{ skill.name }}
+            </strong>
+          </div>
           <SubAgentRunCards :runs="activeSubAgentRuns" />
-          <ToolCallCards v-if="showToolCallDetails" :calls="visibleToolCalls(activeToolCalls)" />
+          <ToolCallCards
+            v-if="showToolCallDetails"
+            :calls="visibleToolCalls(activeToolCalls)"
+            active
+            @cancel="(toolCallId) => emit('cancelDownload', toolCallId)"
+          />
           <GeneratedFileLinks :calls="activeToolCalls ?? []" />
           <DownloadCards
             :calls="activeToolCalls ?? []"
@@ -483,6 +497,27 @@ watch(
   animation: spin 900ms linear infinite;
 }
 
+.active-skills {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 9px;
+  padding: 6px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+  font-size: 10px;
+}
+
+.active-skills > strong {
+  margin: 0;
+  color: var(--app-accent);
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+}
+
 .compression-divider {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -531,6 +566,7 @@ zh-CN:
   editAndResend: 编辑并重新发送
   regenerate: 重新生成
   send: 发送
+  activeSkills: 已启用 Skill
 en:
   welcomeTitle: How can I help?
   welcomeDescription: Send a message to start a new conversation.
@@ -541,4 +577,5 @@ en:
   editAndResend: Edit and resend
   regenerate: Regenerate
   send: Send
+  activeSkills: Active Skills
 </i18n>

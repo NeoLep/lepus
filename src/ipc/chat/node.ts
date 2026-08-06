@@ -19,6 +19,10 @@ import {
   Session,
   SessionExportRequest,
   SessionPermissionSettings,
+  SkillCatalogId,
+  SkillDefinition,
+  SkillGithubImportRequest,
+  SkillImportResult,
   ToolApprovalDecision,
   ToolApprovalRequest,
   ToolCancelRequest,
@@ -34,6 +38,18 @@ import { getChatRepository } from './repository'
 import { HISTORY_COMPRESSION } from '@/shared/agent/history-compression'
 import { PromptBuilder } from '@/main/lib/agent/prompt-builder'
 import { SubtaskScheduler } from '@/main/lib/agent/subtask-scheduler'
+import {
+  buildExplicitSkillInvocationPrompt,
+  buildSkillPrompt,
+  matchSkills
+} from '@/main/lib/agent/skill-router'
+import {
+  importSkillFolder,
+  importSkillGithub,
+  importSkillZip,
+  queryOfficialSkillCatalog,
+  removeInstalledSkill
+} from '@/main/lib/agent/skill-installer'
 import {
   getAttachmentPreview,
   discardAttachment,
@@ -126,14 +142,65 @@ function isContextLengthError(error: unknown): boolean {
   return /context.{0,20}(length|window|token)|maximum context|too many tokens/i.test(message)
 }
 
+function normalizeSkill(request: SkillDefinition, existing?: SkillDefinition): SkillDefinition {
+  if (!request || typeof request !== 'object') throw new Error('Skill 数据无效')
+  const id = request.id.trim().toLocaleLowerCase()
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) {
+    throw new Error('Skill ID 只能包含小写字母、数字和连字符，最长 64 个字符')
+  }
+  const name = request.name.trim()
+  const description = request.description.trim()
+  const instructions = request.instructions.trim()
+  if (!name || name.length > 80) throw new Error('Skill 名称长度必须为 1 到 80 个字符')
+  if (description.length > 1_024) throw new Error('Skill 描述不能超过 1024 个字符')
+  if (!instructions || instructions.length > 100_000) {
+    throw new Error('Skill 指令长度必须为 1 到 100000 个字符')
+  }
+  if (!Array.isArray(request.triggers)) throw new Error('Skill 触发词必须是数组')
+  const triggers = [...new Set(request.triggers.map((trigger) => trigger.trim()).filter(Boolean))]
+  if (triggers.length > 20 || triggers.some((trigger) => trigger.length > 100)) {
+    throw new Error('Skill 最多包含 20 个触发词，每个不能超过 100 个字符')
+  }
+  const now = new Date().toISOString()
+  return {
+    id,
+    name,
+    description,
+    instructions,
+    triggers,
+    enabled: request.enabled === true,
+    sourceType: existing?.sourceType ?? request.sourceType ?? 'manual',
+    sourceUrl: existing?.sourceUrl ?? request.sourceUrl ?? '',
+    contentHash: existing?.contentHash ?? request.contentHash ?? '',
+    rootPath: existing?.rootPath ?? request.rootPath ?? '',
+    license: existing?.license ?? request.license ?? '',
+    compatibility: existing?.compatibility ?? request.compatibility ?? '',
+    allowedTools: existing?.allowedTools ?? request.allowedTools ?? [],
+    files: existing?.files ?? request.files ?? [],
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now
+  }
+}
+
 function buildSystemPrompt(
   repository: ReturnType<typeof getChatRepository>,
   sessionId: string,
   locale: ChatMessage['locale'],
-  taskRoute: TaskRoute
+  taskRoute: TaskRoute,
+  activeSkills: SkillDefinition[] = [],
+  selectedSkillIds: string[] = [],
+  latestUserContent = ''
 ): string {
   const prompt = new PromptBuilder().build({ settings: repository.getPromptSettings(), locale })
   const sections = [prompt]
+  const skillPrompt = buildSkillPrompt(activeSkills)
+  if (skillPrompt) sections.push(skillPrompt)
+  const explicitSkillPrompt = buildExplicitSkillInvocationPrompt(
+    activeSkills,
+    selectedSkillIds,
+    latestUserContent
+  )
+  if (explicitSkillPrompt) sections.push(explicitSkillPrompt)
   if (taskRoute.active) {
     sections.push(`<task_mode>
 You are operating in task mode.
@@ -234,6 +301,26 @@ function sessionMarkdown(
 }
 
 export default () => {
+  const persistImportedSkills = async (result: SkillImportResult): Promise<SkillImportResult> => {
+    const repository = getChatRepository()
+    const skills: SkillDefinition[] = []
+    const errors = [...result.errors]
+    for (const skill of result.skills) {
+      if (repository.getSkill(skill.id)) {
+        await removeInstalledSkill(skill)
+        errors.push(`Skill 已存在：${skill.id}`)
+        continue
+      }
+      try {
+        skills.push(repository.createSkill(skill))
+      } catch (error) {
+        await removeInstalledSkill(skill)
+        errors.push(error instanceof Error ? error.message : String(error))
+      }
+    }
+    return { skills, errors }
+  }
+
   ipcMain.handle(CHAT_CHANNELS.CHAT_CANCEL, (_event, sessionId: string) => {
     activeChatControllers.get(sessionId)?.abort()
   })
@@ -274,6 +361,79 @@ export default () => {
     })
   })
   ipcMain.handle(CHAT_CHANNELS.SESSION_QUERY, () => getChatRepository().querySessions())
+  ipcMain.handle(CHAT_CHANNELS.SKILL_QUERY, () => getChatRepository().querySkills())
+  ipcMain.handle(CHAT_CHANNELS.SKILL_CREATE, (_event, request: SkillDefinition) => {
+    const repository = getChatRepository()
+    const skill = normalizeSkill(request)
+    if (repository.querySkills().some((item) => item.id === skill.id)) {
+      throw new Error(`Skill ID 已存在：${skill.id}`)
+    }
+    return repository.createSkill(skill)
+  })
+  ipcMain.handle(CHAT_CHANNELS.SKILL_UPDATE, (_event, request: SkillDefinition) => {
+    const repository = getChatRepository()
+    const existing = repository.querySkills().find((item) => item.id === request.id)
+    if (!existing) throw new Error(`Skill 不存在：${request.id}`)
+    return repository.updateSkill(normalizeSkill(request, existing))
+  })
+  ipcMain.handle(CHAT_CHANNELS.SKILL_DELETE, async (_event, id: string) => {
+    if (typeof id !== 'string' || !id.trim()) throw new Error('Skill ID 不能为空')
+    const repository = getChatRepository()
+    const skill = repository.getSkill(id.trim())
+    if (!skill) return
+    await removeInstalledSkill(skill)
+    repository.deleteSkill(skill.id)
+  })
+  ipcMain.handle(CHAT_CHANNELS.SKILL_IMPORT_FOLDER, async (event) => {
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = {
+      title: '选择 Skill 文件夹',
+      properties: ['openDirectory']
+    }
+    const result = owner
+      ? await dialog.showOpenDialog(owner, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths[0]) return { skills: [], errors: [] }
+    return persistImportedSkills(await importSkillFolder(result.filePaths[0]))
+  })
+  ipcMain.handle(CHAT_CHANNELS.SKILL_IMPORT_ZIP, async (event) => {
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = {
+      title: '选择 Skill ZIP',
+      properties: ['openFile'],
+      filters: [{ name: 'ZIP archive', extensions: ['zip'] }]
+    }
+    const result = owner
+      ? await dialog.showOpenDialog(owner, options)
+      : await dialog.showOpenDialog(options)
+    if (result.canceled || !result.filePaths[0]) return { skills: [], errors: [] }
+    return persistImportedSkills(await importSkillZip(result.filePaths[0]))
+  })
+  ipcMain.handle(
+    CHAT_CHANNELS.SKILL_IMPORT_GITHUB,
+    async (_event, request: SkillGithubImportRequest) => {
+      if (!request || typeof request.url !== 'string') throw new Error('GitHub URL 不能为空')
+      const sourceType = request.sourceType ?? 'github'
+      if (
+        ![
+          'github',
+          'official-openai',
+          'official-anthropic',
+          'official-minimax',
+          'official-modelscope'
+        ].includes(sourceType)
+      ) {
+        throw new Error('Skill 来源类型无效')
+      }
+      return persistImportedSkills(await importSkillGithub(request.url, sourceType))
+    }
+  )
+  ipcMain.handle(CHAT_CHANNELS.SKILL_CATALOG_QUERY, (_event, catalogId: SkillCatalogId) => {
+    if (!['openai', 'anthropic', 'minimax', 'modelscope'].includes(catalogId)) {
+      throw new Error('官方 Skill 目录无效')
+    }
+    return queryOfficialSkillCatalog(catalogId)
+  })
   ipcMain.handle(CHAT_CHANNELS.SESSION_CREATE, (_event, request: Session) =>
     getChatRepository().createSession(request)
   )
@@ -618,6 +778,18 @@ export default () => {
       const latestUserMessage = [...requestMessages]
         .reverse()
         .find((message) => message.role === 'user')
+      const selectedSkillIds = Array.isArray(request.skillIds)
+        ? request.skillIds
+            .filter((id): id is string => typeof id === 'string')
+            .map((id) => id.trim())
+            .filter(Boolean)
+            .slice(0, 3)
+        : []
+      const activeSkills = matchSkills(
+        repository.querySkills(),
+        latestUserMessage?.content ?? '',
+        selectedSkillIds
+      )
       const createdAt = new Date().toISOString()
       const parentRun = publishAgentRun({
         id: crypto.randomUUID(),
@@ -636,12 +808,19 @@ export default () => {
           sessionId: request.conversationId,
           ...taskRoute
         })
+        event.sender.send(CHAT_CHANNELS.SKILL_ROUTED, {
+          sessionId: request.conversationId,
+          skills: activeSkills.map(({ id, name, description }) => ({ id, name, description }))
+        })
       }
       const systemPrompt = buildSystemPrompt(
         repository,
         request.conversationId,
         request.locale,
-        taskRoute
+        taskRoute,
+        activeSkills,
+        selectedSkillIds,
+        latestUserMessage?.content ?? ''
       )
       const searchConfigs = repository.getSearchProviderConfigs()
       const permissionSettings = repository.getPermissionSettings(request.conversationId)
@@ -790,15 +969,22 @@ export default () => {
             modelConfig,
             searchConfigs,
             permissionSettings,
-            systemPrompt: new PromptBuilder().build({
-              settings: repository.getPromptSettings(),
-              locale: request.locale
-            }),
+            systemPrompt: [
+              new PromptBuilder().build({
+                settings: repository.getPromptSettings(),
+                locale: request.locale
+              }),
+              buildSkillPrompt(activeSkills)
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
+            activeSkills,
             onRunChanged: emitAgentRun,
             onToolApproval
           })
         : null
       const agent = new Agent(modelConfig, searchConfigs, permissionSettings, taskRoute.active, {
+        activeSkills,
         ...(subtaskScheduler
           ? {
               delegateTasks: (tasks, signal) => subtaskScheduler.execute(tasks, signal)

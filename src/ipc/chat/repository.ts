@@ -13,6 +13,7 @@ import type {
   SearchProviderId,
   Session,
   SessionSearchResult,
+  SkillDefinition,
   TaskPlan,
   TaskPlanItem
 } from './constants'
@@ -109,6 +110,25 @@ type AgentRunRow = {
   created_at: string
   started_at: string | null
   finished_at: string | null
+}
+
+type SkillRow = {
+  id: string
+  name: string
+  description: string
+  instructions: string
+  triggers_json: string
+  enabled: number
+  source_type: SkillDefinition['sourceType']
+  source_url: string
+  content_hash: string
+  root_path: string
+  license: string
+  compatibility: string
+  allowed_tools_json: string
+  files_json: string
+  created_at: string
+  updated_at: string
 }
 
 const ENCRYPTED_API_KEY_PREFIX = 'safe-storage:v1:'
@@ -272,6 +292,27 @@ function toAgentRun(row: AgentRunRow): AgentRun {
   }
 }
 
+function toSkill(row: SkillRow): SkillDefinition {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    instructions: row.instructions,
+    triggers: JSON.parse(row.triggers_json || '[]') as string[],
+    enabled: row.enabled === 1,
+    sourceType: row.source_type ?? 'manual',
+    sourceUrl: row.source_url ?? '',
+    contentHash: row.content_hash ?? '',
+    rootPath: row.root_path ?? '',
+    license: row.license ?? '',
+    compatibility: row.compatibility ?? '',
+    allowedTools: JSON.parse(row.allowed_tools_json || '[]') as string[],
+    files: JSON.parse(row.files_json || '[]') as SkillDefinition['files'],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
+
 function isSession(value: unknown): value is Session {
   if (!value || typeof value !== 'object') return false
   const session = value as Record<string, unknown>
@@ -379,6 +420,81 @@ export class ChatRepository {
       )
       .get(id) as SessionRow | undefined
     return row ? toSession(row) : null
+  }
+
+  querySkills(): SkillDefinition[] {
+    return (
+      this.database
+        .prepare(
+          `SELECT id, name, description, instructions, triggers_json, enabled,
+                  source_type, source_url, content_hash, root_path, license, compatibility,
+                  allowed_tools_json, files_json, created_at, updated_at
+           FROM skills
+           ORDER BY enabled DESC, name COLLATE NOCASE ASC, created_at ASC`
+        )
+        .all() as SkillRow[]
+    ).map(toSkill)
+  }
+
+  createSkill(skill: SkillDefinition): SkillDefinition {
+    this.database
+      .prepare(
+        `INSERT INTO skills
+           (id, name, description, instructions, triggers_json, enabled,
+            source_type, source_url, content_hash, root_path, license, compatibility,
+            allowed_tools_json, files_json, created_at, updated_at)
+         VALUES
+           (@id, @name, @description, @instructions, @triggersJson, @enabled,
+            @sourceType, @sourceUrl, @contentHash, @rootPath, @license, @compatibility,
+            @allowedToolsJson, @filesJson, @createdAt, @updatedAt)`
+      )
+      .run({
+        ...skill,
+        triggersJson: JSON.stringify(skill.triggers),
+        allowedToolsJson: JSON.stringify(skill.allowedTools),
+        filesJson: JSON.stringify(skill.files),
+        enabled: skill.enabled ? 1 : 0
+      })
+    return this.getSkill(skill.id)!
+  }
+
+  updateSkill(skill: SkillDefinition): SkillDefinition {
+    const result = this.database
+      .prepare(
+        `UPDATE skills
+         SET name = @name, description = @description, instructions = @instructions,
+             triggers_json = @triggersJson, enabled = @enabled,
+             source_type = @sourceType, source_url = @sourceUrl,
+             content_hash = @contentHash, root_path = @rootPath, license = @license,
+             compatibility = @compatibility, allowed_tools_json = @allowedToolsJson,
+             files_json = @filesJson, updated_at = @updatedAt
+         WHERE id = @id`
+      )
+      .run({
+        ...skill,
+        triggersJson: JSON.stringify(skill.triggers),
+        allowedToolsJson: JSON.stringify(skill.allowedTools),
+        filesJson: JSON.stringify(skill.files),
+        enabled: skill.enabled ? 1 : 0
+      })
+    if (result.changes === 0) throw new Error(`Skill not found: ${skill.id}`)
+    return this.getSkill(skill.id)!
+  }
+
+  deleteSkill(id: string): void {
+    this.database.prepare('DELETE FROM skills WHERE id = ?').run(id)
+  }
+
+  getSkill(id: string): SkillDefinition | null {
+    const row = this.database
+      .prepare(
+        `SELECT id, name, description, instructions, triggers_json, enabled,
+                source_type, source_url, content_hash, root_path, license, compatibility,
+                allowed_tools_json, files_json, created_at, updated_at
+         FROM skills WHERE id = ?`
+      )
+      .get(id) as SkillRow | undefined
+    return row ? toSkill(row) : null
   }
 
   getTaskPlan(sessionId: string): TaskPlan | null {
@@ -1413,6 +1529,41 @@ export class ChatRepository {
           CREATE INDEX idx_agent_runs_parent_created
             ON agent_runs(parent_run_id, created_at ASC);
           PRAGMA user_version = 16;
+        `)
+      })()
+    }
+
+    if (version < 17) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE skills (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            instructions TEXT NOT NULL,
+            triggers_json TEXT NOT NULL DEFAULT '[]',
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          CREATE INDEX idx_skills_enabled_name ON skills(enabled DESC, name ASC);
+          PRAGMA user_version = 17;
+        `)
+      })()
+    }
+
+    if (version < 18) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE skills ADD COLUMN source_type TEXT NOT NULL DEFAULT 'manual';
+          ALTER TABLE skills ADD COLUMN source_url TEXT NOT NULL DEFAULT '';
+          ALTER TABLE skills ADD COLUMN content_hash TEXT NOT NULL DEFAULT '';
+          ALTER TABLE skills ADD COLUMN root_path TEXT NOT NULL DEFAULT '';
+          ALTER TABLE skills ADD COLUMN license TEXT NOT NULL DEFAULT '';
+          ALTER TABLE skills ADD COLUMN compatibility TEXT NOT NULL DEFAULT '';
+          ALTER TABLE skills ADD COLUMN allowed_tools_json TEXT NOT NULL DEFAULT '[]';
+          ALTER TABLE skills ADD COLUMN files_json TEXT NOT NULL DEFAULT '[]';
+          PRAGMA user_version = 18;
         `)
       })()
     }

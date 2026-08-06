@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { Ban, CheckCircle2, CircleAlert, LoaderCircle, ShieldAlert, Wrench } from '@lucide/vue'
+import {
+  Ban,
+  CheckCircle2,
+  CircleAlert,
+  LoaderCircle,
+  ShieldAlert,
+  Square,
+  Wrench
+} from '@lucide/vue'
 import type { ToolCallRecord } from '@ipc/chat/constants'
 
-defineProps<{ calls: ToolCallRecord[] }>()
+defineProps<{ calls: ToolCallRecord[]; active?: boolean }>()
+const emit = defineEmits<{ cancel: [toolCallId: string] }>()
 
 function pretty(value?: string): string {
   if (!value) return ''
@@ -38,6 +47,15 @@ function pretty(value?: string): string {
                     : '失败'
           }}
         </span>
+        <button
+          v-if="active && call.name === 'run_skill_script' && call.status === 'running'"
+          class="cancel-tool-button"
+          type="button"
+          title="取消脚本"
+          @click.stop="emit('cancel', call.id)"
+        >
+          <Square :size="11" /> 取消
+        </button>
       </summary>
       <div class="tool-details">
         <label>参数</label>
@@ -112,6 +130,22 @@ function pretty(value?: string): string {
 }
 .tool-status.rejected {
   color: var(--app-text-tertiary);
+}
+.cancel-tool-button {
+  display: inline-flex;
+  height: 25px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  background: var(--app-surface);
+  color: var(--app-danger);
+  font-size: 9px;
+  cursor: pointer;
+}
+.cancel-tool-button:hover {
+  background: var(--app-hover);
 }
 .tool-details {
   padding: 9px 10px 10px;

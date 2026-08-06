@@ -23,6 +23,7 @@ import {
   Pin,
   PinOff,
   Search,
+  Sparkles,
   Globe2,
   SlidersHorizontal,
   Settings2,
@@ -51,6 +52,7 @@ const emit = defineEmits<{
   manageModels: []
   managePrompts: []
   manageSearch: []
+  manageSkills: []
 }>()
 
 const searchOpen = ref(false)
@@ -286,6 +288,10 @@ onBeforeUnmount(() => {
     </nav>
 
     <div class="settings-actions">
+      <button class="settings-button" type="button" @click="emit('manageSkills')">
+        <Sparkles :size="17" />
+        <span>{{ t('skills') }}</span>
+      </button>
       <button class="settings-button" type="button" @click="emit('manageSearch')">
         <Globe2 :size="17" />
         <span>{{ t('webSearch') }}</span>
@@ -608,6 +614,7 @@ zh-CN:
   noChats: 还没有对话
   moreActions: '{title} 更多操作'
   modelManagement: 模型管理
+  skills: Skill 管理
   promptSettings: 提示词设置
   webSearch: 互联网搜索
 en:
@@ -629,6 +636,7 @@ en:
   noChats: No chats yet
   moreActions: More actions for {title}
   modelManagement: Model management
+  skills: Skill management
   promptSettings: Prompt settings
   webSearch: Web search
 </i18n>

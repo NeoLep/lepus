@@ -8,6 +8,7 @@ import ChatView from './components/chat/ChatView.vue'
 import ModelManagerDialog from './components/model/ModelManagerDialog.vue'
 import PromptSettingsDialog from './components/settings/PromptSettingsDialog.vue'
 import SearchProviderDialog from './components/settings/SearchProviderDialog.vue'
+import SkillManagerDialog from './components/settings/SkillManagerDialog.vue'
 import type { ModelConfig, Session, TaskModePreference } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import { useAppTheme } from './theme'
@@ -32,6 +33,7 @@ const modelError = ref('')
 const modelManagerOpen = ref(false)
 const promptSettingsOpen = ref(false)
 const searchSettingsOpen = ref(false)
+const skillManagerOpen = ref(false)
 const renameDialogOpen = ref(false)
 const renameTarget = ref<Session | null>(null)
 const promptSettingsVersion = ref(0)
@@ -398,6 +400,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
           @manage-models="modelManagerOpen = true"
           @manage-prompts="promptSettingsOpen = true"
           @manage-search="searchSettingsOpen = true"
+          @manage-skills="skillManagerOpen = true"
         />
       </SplitterPanel>
 
@@ -455,6 +458,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
     />
     <PromptSettingsDialog v-model:open="promptSettingsOpen" @saved="promptSettingsVersion += 1" />
     <SearchProviderDialog v-model:open="searchSettingsOpen" />
+    <SkillManagerDialog v-model:open="skillManagerOpen" />
     <SessionRenameDialog
       v-model:open="renameDialogOpen"
       :session="renameTarget"

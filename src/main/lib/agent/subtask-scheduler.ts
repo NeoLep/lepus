@@ -4,6 +4,7 @@ import type {
   PermissionSettings,
   SearchCitation,
   SearchProviderConfig,
+  SkillDefinition,
   ToolApprovalRequest,
   ToolCallRecord
 } from '@/ipc/chat/constants'
@@ -33,6 +34,7 @@ export type SubtaskSchedulerOptions = {
   searchConfigs: SearchProviderConfig[]
   permissionSettings: PermissionSettings
   systemPrompt: string
+  activeSkills?: SkillDefinition[]
   onRunChanged?: (run: AgentRun) => void
   onToolApproval?: (
     request: Omit<ToolApprovalRequest, 'sessionId'>,
@@ -113,7 +115,11 @@ export class SubtaskScheduler {
       this.options.searchConfigs,
       this.options.permissionSettings,
       false,
-      { readOnly: true, maxToolRounds: MAX_SUBTASK_TOOL_ROUNDS }
+      {
+        readOnly: true,
+        maxToolRounds: MAX_SUBTASK_TOOL_ROUNDS,
+        activeSkills: this.options.activeSkills
+      }
     )
     const onToolActivity = (call: ToolCallRecord): void => {
       if (observedToolCallIds.has(call.id)) return

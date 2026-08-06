@@ -7,6 +7,7 @@ import {
   ListTodo,
   LoaderCircle,
   Paperclip,
+  Sparkles,
   Square,
   Users,
   X
@@ -24,7 +25,13 @@ import {
   TooltipRoot,
   TooltipTrigger
 } from 'reka-ui'
-import type { CompressionStatus, MessageAttachment, TaskModePreference } from '@ipc/chat/constants'
+import type {
+  CompressionStatus,
+  MessageAttachment,
+  SkillDefinition,
+  SkillSummary,
+  TaskModePreference
+} from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import MessageAttachments from './MessageAttachments.vue'
 
@@ -39,6 +46,8 @@ const props = defineProps<{
   addingAttachments: boolean
   attachmentError?: string
   taskMode: TaskModePreference
+  availableSkills: SkillDefinition[]
+  selectedSkills: SkillSummary[]
 }>()
 
 const emit = defineEmits<{
@@ -49,6 +58,9 @@ const emit = defineEmits<{
   dropAttachments: [files: File[]]
   removeAttachment: [attachmentId: string]
   toggleTaskMode: [preference: TaskModePreference]
+  selectSkill: [skill: SkillSummary]
+  removeSkill: [skillId: string]
+  refreshSkills: []
 }>()
 
 const { t, locale } = useI18n({ useScope: 'local' })
@@ -58,7 +70,25 @@ const model = defineModel<string>({ required: true })
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const draggingFiles = ref(false)
 const taskModeDialogOpen = ref(false)
+const slashCommand = ref<{ start: number; end: number; query: string } | null>(null)
+const highlightedSkillIndex = ref(0)
 const taskModes: TaskModePreference[] = ['auto', 'on', 'off']
+const matchingSkills = computed(() => {
+  const command = slashCommand.value
+  if (!command) return []
+  const query = command.query.trim().toLocaleLowerCase()
+  const selectedIds = new Set(props.selectedSkills.map((skill) => skill.id))
+  return props.availableSkills
+    .filter((skill) => skill.enabled && !selectedIds.has(skill.id))
+    .filter(
+      (skill) =>
+        !query ||
+        skill.name.toLocaleLowerCase().includes(query) ||
+        skill.id.toLocaleLowerCase().includes(query)
+    )
+    .slice(0, 8)
+})
+const skillMenuOpen = computed(() => Boolean(slashCommand.value && matchingSkills.value.length))
 const ringProgress = computed(() => Math.min(Math.max(props.compressionStatus.usageRatio, 0), 1))
 const ringOffset = computed(() => 100 - ringProgress.value * 100)
 const tokenLabel = computed(() => {
@@ -114,7 +144,68 @@ function selectTaskMode(mode: TaskModePreference): void {
   taskModeDialogOpen.value = false
 }
 
+function updateSlashCommand(): void {
+  const element = textarea.value
+  if (!element || element.selectionStart !== element.selectionEnd || props.selectedSkills.length >= 3) {
+    slashCommand.value = null
+    return
+  }
+  const cursor = element.selectionStart
+  const beforeCursor = model.value.slice(0, cursor)
+  const match = beforeCursor.match(/(?:^|\s)\/([^\s/]*)$/)
+  if (!match) {
+    slashCommand.value = null
+    return
+  }
+  const shouldRefresh = !slashCommand.value
+  slashCommand.value = {
+    start: beforeCursor.lastIndexOf('/'),
+    end: cursor,
+    query: match[1]
+  }
+  highlightedSkillIndex.value = 0
+  if (shouldRefresh) emit('refreshSkills')
+}
+
+async function handleCursorChange(): Promise<void> {
+  await nextTick()
+  updateSlashCommand()
+}
+
+async function selectSlashSkill(skill: SkillSummary): Promise<void> {
+  const command = slashCommand.value
+  if (!command) return
+  model.value = `${model.value.slice(0, command.start)}${model.value.slice(command.end)}`
+  slashCommand.value = null
+  emit('selectSkill', skill)
+  await nextTick()
+  textarea.value?.focus()
+  textarea.value?.setSelectionRange(command.start, command.start)
+  resizeTextarea()
+}
+
 function handleKeydown(event: KeyboardEvent): void {
+  if (skillMenuOpen.value) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const direction = event.key === 'ArrowDown' ? 1 : -1
+      highlightedSkillIndex.value =
+        (highlightedSkillIndex.value + direction + matchingSkills.value.length) %
+        matchingSkills.value.length
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      slashCommand.value = null
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault()
+      const skill = matchingSkills.value[highlightedSkillIndex.value]
+      if (skill) void selectSlashSkill(skill)
+      return
+    }
+  }
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
   event.preventDefault()
   submit()
@@ -146,6 +237,57 @@ watch(model, async () => {
         removable
         @remove="(id) => emit('removeAttachment', id)"
       />
+      <div v-if="selectedSkills.length" class="selected-skills-preview" aria-live="polite">
+        <div class="selected-skills-heading">
+          <Sparkles :size="13" />
+          <span>{{ t('skillPreview.title') }}</span>
+          <small>{{ t('skillPreview.count', { count: selectedSkills.length }) }}</small>
+        </div>
+        <div class="selected-skills-list">
+          <div
+            v-for="skill in selectedSkills"
+            :key="skill.id"
+            class="selected-skill"
+            :title="skill.description"
+          >
+            <span class="selected-skill-icon"><Sparkles :size="13" /></span>
+            <span class="selected-skill-copy">
+              <strong>{{ skill.name }}</strong>
+              <small v-if="skill.description">{{ skill.description }}</small>
+            </span>
+            <button
+              type="button"
+              :aria-label="t('skillPreview.remove', { name: skill.name })"
+              :disabled="sending"
+              @click="emit('removeSkill', skill.id)"
+            >
+              <X :size="14" />
+            </button>
+          </div>
+        </div>
+      </div>
+      <div v-if="skillMenuOpen" class="skill-command-menu" role="listbox">
+        <header>
+          <span><Sparkles :size="14" /> {{ t('skillMenu.title') }}</span>
+          <small>{{ t('skillMenu.hint') }}</small>
+        </header>
+        <button
+          v-for="(skill, index) in matchingSkills"
+          :key="skill.id"
+          type="button"
+          role="option"
+          :aria-selected="highlightedSkillIndex === index"
+          :class="{ highlighted: highlightedSkillIndex === index }"
+          @mouseenter="highlightedSkillIndex = index"
+          @mousedown.prevent="selectSlashSkill(skill)"
+        >
+          <span class="skill-command-icon"><Sparkles :size="15" /></span>
+          <span class="skill-command-copy">
+            <strong>{{ skill.name }}</strong>
+            <small>{{ skill.description || t('skillMenu.noDescription') }}</small>
+          </span>
+        </button>
+      </div>
       <textarea
         ref="textarea"
         v-model="model"
@@ -154,6 +296,9 @@ watch(model, async () => {
         :aria-label="t('chatMessage')"
         :disabled="disabled"
         @keydown="handleKeydown"
+        @input="handleCursorChange"
+        @click="handleCursorChange"
+        @keyup="handleCursorChange"
       ></textarea>
 
       <div class="composer-actions">
@@ -377,6 +522,162 @@ watch(model, async () => {
   font-size: 13px;
   font-weight: 600;
   pointer-events: none;
+}
+
+.selected-skills-preview {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--app-border-subtle);
+}
+
+.selected-skills-heading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--app-accent);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.selected-skills-heading small {
+  margin-left: auto;
+  color: var(--app-text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.selected-skills-list {
+  display: grid;
+  gap: 5px;
+}
+
+.selected-skill {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface-subtle);
+}
+
+.selected-skill-icon,
+.skill-command-icon {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+}
+
+.selected-skill-copy,
+.skill-command-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.selected-skill-copy strong,
+.skill-command-copy strong {
+  overflow: hidden;
+  color: var(--app-text);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-skill-copy small,
+.skill-command-copy small {
+  overflow: hidden;
+  color: var(--app-text-tertiary);
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-skill > button {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.selected-skill > button:hover {
+  background: var(--app-hover);
+  color: var(--app-text-secondary);
+}
+
+.skill-command-menu {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--app-border);
+  border-radius: 14px;
+  background: var(--app-surface);
+  box-shadow: 0 16px 40px rgb(16 24 40 / 18%);
+}
+
+.skill-command-menu header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 7px;
+  color: var(--app-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.skill-command-menu header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.skill-command-menu header small {
+  color: var(--app-text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.skill-command-menu > button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.skill-command-menu > button:hover,
+.skill-command-menu > button.highlighted {
+  background: var(--app-hover);
 }
 
 .composer:focus-within {
@@ -799,6 +1100,14 @@ zh-CN:
   multiAgent: 使用子 Agent
   multiAgentHint: 插入并行委派提示，并自动开启任务模式
   multiAgentTemplate: 请使用子 Agent 并行处理以下任务：
+  skillMenu:
+    title: 选择 Skill
+    hint: 按名称搜索 · 最多 3 个
+    noDescription: 暂无说明
+  skillPreview:
+    title: 发送后将执行以下 Skill
+    count: 已选择 {count}/3
+    remove: 移除 Skill“{name}”
   taskMode:
     auto: 任务模式：自动判断
     on: 任务模式：强制开启
@@ -843,6 +1152,14 @@ en:
   multiAgent: Use sub-agents
   multiAgentHint: Insert a delegation prompt and enable task mode
   multiAgentTemplate: 'Use sub-agents to handle these tasks in parallel:'
+  skillMenu:
+    title: Choose a Skill
+    hint: Search by name · up to 3
+    noDescription: No description
+  skillPreview:
+    title: These Skills will run after sending
+    count: '{count}/3 selected'
+    remove: 'Remove Skill “{name}”'
   taskMode:
     auto: 'Task mode: Auto'
     on: 'Task mode: Always on'

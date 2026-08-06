@@ -29,6 +29,15 @@ export const CHAT_CHANNELS = {
   PROMPT_SETTINGS_QUERY: 'prompt-settings:query',
   PROMPT_SETTINGS_UPDATE: 'prompt-settings:update',
   PROMPT_PREVIEW: 'prompt:preview',
+  SKILL_QUERY: 'skill:query',
+  SKILL_CREATE: 'skill:create',
+  SKILL_UPDATE: 'skill:update',
+  SKILL_DELETE: 'skill:delete',
+  SKILL_IMPORT_FOLDER: 'skill:import-folder',
+  SKILL_IMPORT_ZIP: 'skill:import-zip',
+  SKILL_IMPORT_GITHUB: 'skill:import-github',
+  SKILL_CATALOG_QUERY: 'skill:catalog-query',
+  SKILL_ROUTED: 'skill:routed',
   SEARCH_CONFIG_QUERY: 'search-config:query',
   SEARCH_CONFIG_UPDATE: 'search-config:update',
   PERMISSION_SETTINGS_QUERY: 'permission-settings:query',
@@ -50,6 +59,77 @@ export const CHAT_CHANNELS = {
 }
 
 export type TaskModePreference = 'auto' | 'on' | 'off'
+
+export type SkillSourceType =
+  | 'manual'
+  | 'folder'
+  | 'zip'
+  | 'github'
+  | 'official-openai'
+  | 'official-anthropic'
+  | 'official-minimax'
+  | 'official-modelscope'
+
+export type OfficialSkillSourceType = Extract<
+  SkillSourceType,
+  'official-openai' | 'official-anthropic' | 'official-minimax' | 'official-modelscope'
+>
+
+export type SkillFileKind = 'instruction' | 'script' | 'reference' | 'asset' | 'other'
+
+export type SkillFile = {
+  path: string
+  size: number
+  kind: SkillFileKind
+}
+
+export type SkillDefinition = {
+  id: string
+  name: string
+  description: string
+  instructions: string
+  triggers: string[]
+  enabled: boolean
+  sourceType: SkillSourceType
+  sourceUrl: string
+  contentHash: string
+  rootPath: string
+  license: string
+  compatibility: string
+  allowedTools: string[]
+  files: SkillFile[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type SkillSummary = Pick<SkillDefinition, 'id' | 'name' | 'description'>
+
+export type SkillRoutedEvent = {
+  sessionId: string
+  skills: SkillSummary[]
+}
+
+export type SkillImportResult = {
+  skills: SkillDefinition[]
+  errors: string[]
+}
+
+export type SkillGithubImportRequest = {
+  url: string
+  sourceType?: 'github' | OfficialSkillSourceType
+}
+
+export type SkillCatalogId = 'openai' | 'anthropic' | 'minimax' | 'modelscope'
+
+export type SkillCatalogEntry = {
+  id: string
+  skillId: string
+  name: string
+  description: string
+  path: string
+  sourceUrl: string
+  sourceType: OfficialSkillSourceType
+}
 
 export type Session = {
   id: string
@@ -268,6 +348,7 @@ export type ChatMessage = {
   modelConfigId: string
   locale: ChatLocale
   messages: Message[]
+  skillIds?: string[]
 }
 
 export type MessageReviseRequest = {

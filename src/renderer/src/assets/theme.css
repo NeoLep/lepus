@@ -540,7 +540,6 @@ html[data-theme='dark']
     .config-form select,
     .rename-form input,
     .secret-input,
-    .instructions-field,
     .folder-path
   ) {
   border-color: var(--dark-border-strong);
