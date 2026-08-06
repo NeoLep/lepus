@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3f1eb" />
+    <meta
+      name="description"
+      content="Lepus 是一个本地优先的桌面 AI 工作台，让模型在可控权限下理解文件、搜索信息、规划任务并完成工作。"
+    />
+    <meta property="og:title" content="Lepus — 让 AI 真正进入你的工作流" />
+    <meta
+      property="og:description"
+      content="可配置模型、安全工具执行、任务规划、子 Agent、Skills 与多源搜索，全部集中在一个本地桌面工作台。"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://neolep.github.io/lepus/" />
+    <title>Lepus — 本地优先的桌面 AI 工作台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Lepus 首页">
+        <span class="brand-mark">L</span>
+        <span>Lepus</span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+        <span></span><span></span>
+        <span class="sr-only">打开导航</span>
+      </button>
+      <nav id="site-nav" class="site-nav" aria-label="主导航">
+        <a href="#features">功能</a>
+        <a href="#workflow">工作方式</a>
+        <a href="#safety">安全</a>
+        <a class="nav-github" href="https://github.com/NeoLep/lepus">GitHub ↗</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> LOCAL-FIRST AI WORKSPACE</p>
+          <h1>让 AI 不只回答，<br /><em>而是真正开始工作。</em></h1>
+          <p class="hero-lead">
+            Lepus 把模型、文件、网页搜索与专业技能放进一个可控的桌面工作台。你给出目标，它理解上下文、制定计划，并在每一步保持透明。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="https://github.com/NeoLep/lepus">查看 GitHub <span>↗</span></a>
+            <a class="button quiet" href="#features">探索功能 <span>↓</span></a>
+          </div>
+          <div class="hero-notes" aria-label="产品特征">
+            <span>01 / 本地优先</span>
+            <span>02 / 模型自由</span>
+            <span>03 / 权限可控</span>
+          </div>
+        </div>
+
+        <div class="workspace-demo" aria-label="Lepus 产品界面示意图">
+          <div class="demo-topbar">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <span>产品发布准备</span>
+            <span class="model-pill">GPT-5 ▾</span>
+          </div>
+          <div class="demo-body">
+            <aside class="demo-sidebar">
+              <div class="mini-logo">L</div>
+              <div class="side-line active"></div>
+              <div class="side-line"></div>
+              <div class="side-line short"></div>
+              <div class="side-space"></div>
+              <div class="side-icon">⌘</div>
+              <div class="side-icon">◐</div>
+            </aside>
+            <div class="demo-chat">
+              <p class="demo-user">梳理项目功能，生成产品说明并准备发布页面。</p>
+              <div class="agent-row">
+                <div class="agent-avatar">L</div>
+                <div>
+                  <strong>LEPUS</strong>
+                  <p>我会先读取项目结构，再拆分为三个可验证步骤。</p>
+                </div>
+              </div>
+              <div class="plan-card">
+                <div class="plan-head"><span>执行计划</span><small>2 / 3</small></div>
+                <div class="plan-item done"><i>✓</i><span>分析产品能力与边界</span></div>
+                <div class="plan-item active"><i></i><span>生成说明文档与静态页面</span></div>
+                <div class="plan-item"><i></i><span>验证并发布到 GitHub</span></div>
+              </div>
+              <div class="tool-strip">
+                <span class="pulse"></span>
+                <span>正在调用工具 · search_text</span>
+                <small>运行中</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="proof-strip" aria-label="核心能力摘要">
+        <p>ONE DESKTOP. YOUR MODELS. REAL WORK.</p>
+        <div>
+          <span>OpenAI-compatible</span>
+          <span>6 search providers</span>
+          <span>Local SQLite</span>
+          <span>macOS · Windows · Linux</span>
+        </div>
+      </section>
+
+      <section id="features" class="section features-section">
+        <div class="section-intro reveal">
+          <p class="section-number">01 — 能力</p>
+          <h2>从一句目标，<br />到一套完整行动。</h2>
+          <p>不是把更多按钮塞进聊天窗口，而是把完成工作所需的上下文、工具和控制权组织在一起。</p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card feature-wide reveal">
+            <div class="feature-index">01</div>
+            <div class="feature-icon plan-icon"><span></span><span></span><span></span></div>
+            <h3>会规划，也会拆解</h3>
+            <p>自动识别复杂请求，生成实时计划，并把独立分析交给只读子 Agent 并行完成。</p>
+            <div class="feature-meta"><span>任务模式</span><span>受控委派</span><span>状态追踪</span></div>
+          </article>
+
+          <article class="feature-card reveal">
+            <div class="feature-index">02</div>
+            <div class="feature-icon tool-icon">⌁</div>
+            <h3>不止聊天，直接操作</h3>
+            <p>在工作目录中检索、读取、修改与组织文件；下载资源、检查文件并保留完整执行记录。</p>
+          </article>
+
+          <article class="feature-card dark-card reveal">
+            <div class="feature-index">03</div>
+            <div class="feature-icon skill-icon">✦</div>
+            <h3>Skills 随任务装配</h3>
+            <p>创建或导入专业工作流，通过斜杠命令按需启用，让通用模型获得稳定的领域方法。</p>
+            <div class="slash-demo"><kbd>/</kbd><span>research</span><i>↵</i></div>
+          </article>
+
+          <article class="feature-card reveal">
+            <div class="feature-index">04</div>
+            <div class="feature-icon search-icon">◎</div>
+            <h3>搜索带着来源回来</h3>
+            <p>接入六种搜索服务，将网页结果转成可点击引用，让事实与出处始终保持连接。</p>
+          </article>
+
+          <article class="feature-card feature-wide accent-card reveal">
+            <div class="feature-index">05</div>
+            <div class="feature-icon file-icon">▤</div>
+            <h3>把真实资料带进对话</h3>
+            <p>图片、PDF 与文本都能成为任务上下文。文件先在本地受管，再以适合模型理解的形式安全送入请求。</p>
+            <div class="file-chips"><span>PNG</span><span>PDF</span><span>TXT</span><span>WEBP</span></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="workflow" class="section workflow-section">
+        <div class="workflow-heading reveal">
+          <p class="section-number">02 — 工作方式</p>
+          <h2>目标清楚，<br />过程也清楚。</h2>
+        </div>
+        <div class="workflow-list">
+          <article class="workflow-step reveal">
+            <span class="step-no">01</span>
+            <div><h3>连接你的模型</h3><p>配置任意兼容 OpenAI API 的服务，自由切换模型与上下文策略。</p></div>
+            <span class="step-tag">CONFIGURE</span>
+          </article>
+          <article class="workflow-step reveal">
+            <span class="step-no">02</span>
+            <div><h3>给出上下文与目标</h3><p>选择工作目录，附加文件，按需装配 Skills，然后像交代工作一样描述结果。</p></div>
+            <span class="step-tag">CONTEXT</span>
+          </article>
+          <article class="workflow-step reveal">
+            <span class="step-no">03</span>
+            <div><h3>观察、确认、完成</h3><p>计划、工具、子任务和来源全程可见；敏感动作到你这里才会继续。</p></div>
+            <span class="step-tag">CONTROL</span>
+          </article>
+        </div>
+      </section>
+
+      <section id="safety" class="section safety-section">
+        <div class="safety-copy reveal">
+          <p class="section-number light">03 — 控制权</p>
+          <h2>能力越强，<br /><em>边界越要清晰。</em></h2>
+          <p>
+            Lepus 将工作范围限制在你选择的目录。涉及下载、删除、文件检查或第三方脚本时，风险与参数会在执行前清楚呈现。
+          </p>
+          <a href="https://github.com/NeoLep/lepus/blob/main/PRODUCT.md">阅读完整功能说明 ↗</a>
+        </div>
+        <div class="permission-panel reveal">
+          <div class="permission-head"><span>文件与权限</span><i>×</i></div>
+          <div class="path-box"><small>工作目录</small><strong>~/Projects/lepus</strong></div>
+          <div class="permission-options">
+            <div class="permission-option selected"><i></i><span><strong>每次询问</strong><small>敏感操作由你逐次确认</small></span><b>✓</b></div>
+            <div class="permission-option"><i></i><span><strong>自动批准</strong><small>减少重复确认</small></span></div>
+            <div class="permission-option"><i></i><span><strong>完全访问</strong><small>为高级用户保留</small></span></div>
+          </div>
+          <div class="safety-note"><span>⌁</span><p><strong>安全默认值</strong><br />路径校验、越界拦截与废纸篓删除始终生效。</p></div>
+        </div>
+      </section>
+
+      <section class="section final-cta reveal">
+        <p class="section-number">04 — 开始</p>
+        <h2>把下一项工作，<br />交给 Lepus。</h2>
+        <p>开源、本地优先，为真实任务而构建。</p>
+        <a class="button primary" href="https://github.com/NeoLep/lepus">在 GitHub 上查看 <span>↗</span></a>
+      </section>
+    </main>
+
+    <footer>
+      <a class="brand footer-brand" href="#top"><span class="brand-mark">L</span><span>Lepus</span></a>
+      <p>Local-first desktop AI workspace.</p>
+      <p>© <span id="year"></span> Lepus</p>
+    </footer>
+    <script src="./script.js"></script>
+  </body>
+</html>
