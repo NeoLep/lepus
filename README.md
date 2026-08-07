@@ -57,7 +57,7 @@ git tag v1.0.1
 git push origin v1.0.1
 ```
 
-工作流完成后会创建一个包含安装包和 `SHA256SUMS.txt` 的 Draft Release。检查无误后，在 GitHub Releases 页面手动点击发布。版本标签与 `package.json` 不一致时，工作流会拒绝构建。
+工作流完成后会自动发布一个包含安装包和 `SHA256SUMS.txt` 的 GitHub Release。版本标签与 `package.json` 不一致时，工作流会拒绝构建。
 
 当前安装包未配置 Apple/Windows 代码签名，首次打开时可能出现系统安全提示。正式分发前应配置签名与 macOS 公证。
 
