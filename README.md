@@ -40,6 +40,27 @@ pnpm build:mac
 pnpm build:linux
 ```
 
+## 发布 Release
+
+GitHub Actions 会在推送 `v*` 标签后自动构建以下安装包：
+
+- macOS Apple Silicon（arm64）：DMG、ZIP
+- macOS Intel（x64）：DMG、ZIP
+- Windows x64：NSIS 安装程序
+- Linux x64：AppImage、DEB
+
+发布前先更新 `package.json` 中的版本并提交，然后创建完全一致的标签：
+
+```bash
+# 例如 package.json 的版本为 1.0.1
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+工作流完成后会创建一个包含安装包和 `SHA256SUMS.txt` 的 Draft Release。检查无误后，在 GitHub Releases 页面手动点击发布。版本标签与 `package.json` 不一致时，工作流会拒绝构建。
+
+当前安装包未配置 Apple/Windows 代码签名，首次打开时可能出现系统安全提示。正式分发前应配置签名与 macOS 公证。
+
 ## 技术栈
 
 Electron · Vue 3 · TypeScript · SQLite · electron-vite

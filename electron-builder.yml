@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: lepus
+appId: com.neolep.lepus
+productName: Lepus
 directories:
   buildResources: build
 files:
@@ -14,12 +14,17 @@ asarUnpack:
   - node_modules/better-sqlite3/**
 win:
   executableName: lepus
+  target:
+    - nsis
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  artifactName: Lepus-${version}-${arch}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  target:
+    - dmg
+    - zip
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
@@ -28,19 +33,21 @@ mac:
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: Lepus-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage
-    - snap
     - deb
-  maintainer: electronjs.org
+  maintainer: NeoLep
   category: Utility
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: Lepus-${version}-${arch}.${ext}
+deb:
+  artifactName: Lepus-${version}-${arch}.${ext}
 npmRebuild: false
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: NeoLep
+  repo: lepus
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
