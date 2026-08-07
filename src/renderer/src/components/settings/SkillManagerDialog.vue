@@ -213,102 +213,105 @@ watch(open, (isOpen) => {
           </aside>
 
           <form v-if="draft" class="skill-form" @submit.prevent="save">
-            <div v-if="isImported" class="imported-skill-summary">
-              <div>
-                <span><Download :size="14" /></span>
-                <p>
-                  <strong>{{ t(`sourceTypes.${draft.sourceType}`) }}</strong>
-                  <small :title="draft.sourceUrl">{{ draft.sourceUrl }}</small>
-                </p>
+            <div class="skill-form-scroll">
+              <div v-if="isImported" class="imported-skill-summary">
+                <div>
+                  <span><Download :size="14" /></span>
+                  <p>
+                    <strong>{{ t(`sourceTypes.${draft.sourceType}`) }}</strong>
+                    <small :title="draft.sourceUrl">{{ draft.sourceUrl }}</small>
+                  </p>
+                </div>
+                <div class="skill-file-counts">
+                  <span
+                    ><FileCode2 :size="12" />
+                    {{ t('scriptsCount', { count: fileCounts.script }) }}</span
+                  >
+                  <span>{{ t('referencesCount', { count: fileCounts.reference }) }}</span>
+                  <span>{{ t('assetsCount', { count: fileCounts.asset }) }}</span>
+                </div>
+                <small>{{ t('importedReadonly') }}</small>
               </div>
-              <div class="skill-file-counts">
-                <span
-                  ><FileCode2 :size="12" />
-                  {{ t('scriptsCount', { count: fileCounts.script }) }}</span
-                >
-                <span>{{ t('referencesCount', { count: fileCounts.reference }) }}</span>
-                <span>{{ t('assetsCount', { count: fileCounts.asset }) }}</span>
-              </div>
-              <small>{{ t('importedReadonly') }}</small>
+              <label class="mt-5">
+                <span>{{ t('name') }}</span>
+                <input
+                  :value="draft.name"
+                  maxlength="80"
+                  :disabled="isImported"
+                  :placeholder="t('namePlaceholder')"
+                  @input="updateName(($event.target as HTMLInputElement).value)"
+                />
+              </label>
+              <label>
+                <span>{{ t('id') }}</span>
+                <input
+                  v-model="draft.id"
+                  maxlength="64"
+                  :disabled="!isNew"
+                  placeholder="weather-comparison"
+                  @blur="draft.id = normalizeId(draft.id)"
+                />
+                <small>{{ t('idHelp') }}</small>
+              </label>
+              <label>
+                <span>{{ t('skillDescription') }}</span>
+                <input
+                  v-model="draft.description"
+                  maxlength="1024"
+                  :disabled="isImported"
+                  :placeholder="t('descriptionPlaceholder')"
+                />
+              </label>
+              <label>
+                <span>{{ t('triggers') }}</span>
+                <textarea
+                  v-model="triggerText"
+                  rows="3"
+                  :disabled="isImported"
+                  :placeholder="t('triggersPlaceholder')"
+                ></textarea>
+                <small>{{ t('triggersHelp') }}</small>
+              </label>
+              <label class="instructions-field">
+                <span>{{ t('instructions') }}</span>
+                <textarea
+                  v-model="draft.instructions"
+                  rows="9"
+                  maxlength="100000"
+                  :disabled="isImported"
+                  :placeholder="t('instructionsPlaceholder')"
+                ></textarea>
+              </label>
+              <label class="enabled-field">
+                <input v-model="draft.enabled" type="checkbox" />
+                <span>{{ t('enabled') }}</span>
+              </label>
             </div>
-            <label>
-              <span>{{ t('name') }}</span>
-              <input
-                :value="draft.name"
-                maxlength="80"
-                :disabled="isImported"
-                :placeholder="t('namePlaceholder')"
-                @input="updateName(($event.target as HTMLInputElement).value)"
-              />
-            </label>
-            <label>
-              <span>{{ t('id') }}</span>
-              <input
-                v-model="draft.id"
-                maxlength="64"
-                :disabled="!isNew"
-                placeholder="weather-comparison"
-                @blur="draft.id = normalizeId(draft.id)"
-              />
-              <small>{{ t('idHelp') }}</small>
-            </label>
-            <label>
-              <span>{{ t('skillDescription') }}</span>
-              <input
-                v-model="draft.description"
-                maxlength="1024"
-                :disabled="isImported"
-                :placeholder="t('descriptionPlaceholder')"
-              />
-            </label>
-            <label>
-              <span>{{ t('triggers') }}</span>
-              <textarea
-                v-model="triggerText"
-                rows="3"
-                :disabled="isImported"
-                :placeholder="t('triggersPlaceholder')"
-              ></textarea>
-              <small>{{ t('triggersHelp') }}</small>
-            </label>
-            <label class="instructions-field">
-              <span>{{ t('instructions') }}</span>
-              <textarea
-                v-model="draft.instructions"
-                rows="9"
-                maxlength="100000"
-                :disabled="isImported"
-                :placeholder="t('instructionsPlaceholder')"
-              ></textarea>
-            </label>
-            <label class="enabled-field">
-              <input v-model="draft.enabled" type="checkbox" />
-              <span>{{ t('enabled') }}</span>
-            </label>
-
-            <p v-if="error" class="form-error">{{ error }}</p>
-            <div class="skill-form-actions">
-              <button
-                class="delete-skill-button"
-                type="button"
-                :disabled="isNew || saving"
-                @click="remove"
-              >
-                <Trash2 :size="14" /> {{ t('common.delete') }}
-              </button>
-              <span></span>
-              <DialogClose class="secondary-button" type="button">
-                {{ t('common.cancel') }}
-              </DialogClose>
-              <button
-                class="primary-button"
-                type="submit"
-                :disabled="
-                  saving || !draft.name.trim() || !draft.id.trim() || !draft.instructions.trim()
-                "
-              >
-                {{ saving ? t('saving') : t('save') }}
-              </button>
+            <div class="skill-form-footer">
+              <p v-if="error" class="form-error">{{ error }}</p>
+              <div class="skill-form-actions">
+                <button
+                  class="delete-skill-button"
+                  type="button"
+                  :disabled="isNew || saving"
+                  @click="remove"
+                >
+                  <Trash2 :size="14" /> {{ t('common.delete') }}
+                </button>
+                <span></span>
+                <DialogClose class="secondary-button" type="button">
+                  {{ t('common.cancel') }}
+                </DialogClose>
+                <button
+                  class="primary-button"
+                  type="submit"
+                  :disabled="
+                    saving || !draft.name.trim() || !draft.id.trim() || !draft.instructions.trim()
+                  "
+                >
+                  {{ saving ? t('saving') : t('save') }}
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -334,8 +337,9 @@ watch(open, (isOpen) => {
   z-index: 121;
   top: 50%;
   left: 50%;
+  display: grid;
   width: min(820px, calc(100vw - 40px));
-  max-height: min(760px, calc(100vh - 48px));
+  height: min(760px, calc(100vh - 48px));
   overflow: hidden;
   border: 1px solid var(--app-border);
   border-radius: 16px;
@@ -344,6 +348,7 @@ watch(open, (isOpen) => {
   box-shadow: 0 24px 70px rgb(0 0 0 / 28%);
   color: var(--app-text-secondary);
   transform: translate(-50%, -50%);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 .skill-dialog-header {
   display: flex;
@@ -378,10 +383,12 @@ watch(open, (isOpen) => {
 }
 .skill-dialog-body {
   display: grid;
-  min-height: 520px;
+  min-height: 0;
+  overflow: hidden;
   grid-template-columns: 220px 1fr;
 }
 .skill-list {
+  min-height: 0;
   padding: 12px;
   overflow-y: auto;
   border-right: 1px solid var(--app-border-subtle);
@@ -462,18 +469,31 @@ watch(open, (isOpen) => {
 }
 .skill-form {
   display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.skill-form-scroll {
+  display: grid;
+  min-height: 0;
   align-content: start;
   gap: 11px;
   padding: 18px 20px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 .imported-skill-summary {
+  position: sticky;
+  z-index: 2;
+  top: 0;
   display: grid;
   gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--app-border);
-  border-radius: 10px;
-  background: var(--app-surface-subtle);
+  margin: -18px -20px 0;
+  padding: 0 20px 14px;
+  border-bottom: 1px solid var(--app-border-subtle);
+  background: var(--app-surface);
 }
 .imported-skill-summary > div:first-child {
   display: flex;
@@ -568,14 +588,22 @@ watch(open, (isOpen) => {
   accent-color: var(--app-accent);
 }
 .form-error {
+  margin: 0;
+  padding: 10px 20px 0;
   color: var(--app-danger);
   font-size: 11px;
 }
+.skill-form-footer {
+  border-top: 1px solid var(--app-border-subtle);
+  background: var(--app-surface);
+  box-shadow: 0 -8px 20px rgb(0 0 0 / 4%);
+}
 .skill-form-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  margin-top: 4px;
+  padding: 12px 20px;
 }
 .skill-form-actions > span {
   flex: 1;
@@ -583,6 +611,7 @@ watch(open, (isOpen) => {
 .skill-form-actions button {
   display: inline-flex;
   height: 34px;
+  flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   padding: 0 12px;
