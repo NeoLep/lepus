@@ -77,9 +77,7 @@ function handleImported(result: SkillImportResult): void {
     if (index === -1) skills.value.push(skill)
     else skills.value[index] = skill
   }
-  skills.value.sort(
-    (a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name)
-  )
+  skills.value.sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name))
   if (result.skills[0]) selectSkill(result.skills[0])
 }
 
@@ -191,7 +189,11 @@ watch(open, (isOpen) => {
             <button class="new-skill-button" type="button" @click="createSkill">
               <Plus :size="15" /> {{ t('newSkill') }}
             </button>
-            <button class="new-skill-button import-skill-button" type="button" @click="importOpen = true">
+            <button
+              class="new-skill-button import-skill-button"
+              type="button"
+              @click="importOpen = true"
+            >
               <Download :size="15" /> {{ t('importSkill') }}
             </button>
             <p v-if="loading" class="skill-empty">{{ t('common.loading') }}</p>
@@ -220,7 +222,10 @@ watch(open, (isOpen) => {
                 </p>
               </div>
               <div class="skill-file-counts">
-                <span><FileCode2 :size="12" /> {{ t('scriptsCount', { count: fileCounts.script }) }}</span>
+                <span
+                  ><FileCode2 :size="12" />
+                  {{ t('scriptsCount', { count: fileCounts.script }) }}</span
+                >
                 <span>{{ t('referencesCount', { count: fileCounts.reference }) }}</span>
                 <span>{{ t('assetsCount', { count: fileCounts.asset }) }}</span>
               </div>
@@ -322,7 +327,7 @@ watch(open, (isOpen) => {
   position: fixed;
   z-index: 120;
   inset: 0;
-  background: rgb(16 24 40 / 38%);
+  background: var(--app-dialog-overlay);
 }
 .skill-dialog-content {
   position: fixed;

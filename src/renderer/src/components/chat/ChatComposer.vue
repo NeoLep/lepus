@@ -146,7 +146,11 @@ function selectTaskMode(mode: TaskModePreference): void {
 
 function updateSlashCommand(): void {
   const element = textarea.value
-  if (!element || element.selectionStart !== element.selectionEnd || props.selectedSkills.length >= 3) {
+  if (
+    !element ||
+    element.selectionStart !== element.selectionEnd ||
+    props.selectedSkills.length >= 3
+  ) {
     slashCommand.value = null
     return
   }
@@ -494,7 +498,7 @@ watch(model, async () => {
 .composer {
   position: relative;
   padding: 13px 14px 10px;
-  border: 1px solid #dfe3e8;
+  border: 1px solid var(--app-border-strong);
   border-radius: 20px;
   background: var(--app-surface);
   box-shadow:
@@ -891,8 +895,8 @@ textarea::placeholder {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: #182230;
-  color: #ffffff;
+  background: var(--app-inverse-bg);
+  color: var(--app-agent-card-bg);
 }
 
 .send-button:disabled {
@@ -920,7 +924,7 @@ textarea::placeholder {
   position: fixed;
   z-index: 110;
   inset: 0;
-  background: rgb(16 24 40 / 38%);
+  background: var(--app-dialog-overlay);
   backdrop-filter: blur(2px);
 }
 

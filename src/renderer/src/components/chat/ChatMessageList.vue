@@ -362,8 +362,8 @@ watch(
 
 .message.assistant .message-avatar {
   border-color: var(--app-text);
-  background: #182230;
-  color: #ffffff;
+  background: var(--app-inverse-bg);
+  color: var(--app-agent-card-bg);
 }
 
 .message-body {
@@ -473,9 +473,9 @@ watch(
 }
 
 .submit-edit-button {
-  border: 1px solid #182230;
-  background: #182230;
-  color: #ffffff;
+  border: 1px solid var(--app-inverse-bg);
+  background: var(--app-inverse-bg);
+  color: var(--app-agent-card-bg);
 }
 
 .submit-edit-button:disabled {

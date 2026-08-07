@@ -335,7 +335,7 @@ watch(
   position: fixed;
   z-index: 80;
   inset: 0;
-  background: rgb(16 24 40 / 36%);
+  background: var(--app-dialog-overlay);
   animation: overlay-in 140ms ease-out;
 }
 
@@ -349,7 +349,7 @@ watch(
   height: min(560px, calc(100vh - 60px));
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #dfe3e8;
+  border: 1px solid var(--app-border-strong);
   border-radius: 16px;
   outline: none;
   background: var(--app-surface);
@@ -615,9 +615,9 @@ watch(
 }
 
 .primary-button {
-  border: 1px solid #182230;
-  background: #182230;
-  color: #ffffff;
+  border: 1px solid var(--app-inverse-bg);
+  background: var(--app-inverse-bg);
+  color: var(--app-agent-card-bg);
 }
 
 .secondary-button {

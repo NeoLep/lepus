@@ -274,6 +274,7 @@ function shortId(run: AgentRun): string {
   padding: 9px;
   overflow: auto;
   border-radius: 7px;
+  border: 1px solid var(--app-border-strong);
   background: var(--app-code-panel-bg);
   color: var(--app-code-panel-text);
   font-family: inherit;

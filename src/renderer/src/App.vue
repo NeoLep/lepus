@@ -473,7 +473,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
   min-width: 520px;
   overflow: hidden;
   background: #ffffff;
-  color: #182230;
+  color: var(--app-text);
   font-family:
     Inter,
     ui-sans-serif,

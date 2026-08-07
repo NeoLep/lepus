@@ -168,6 +168,7 @@ function pretty(value?: string): string {
   padding: 8px;
   overflow: auto;
   border-radius: 6px;
+  border: 1px solid var(--app-border-strong);
   background: var(--app-code-panel-bg);
   color: var(--app-code-panel-text);
   font-size: 10px;

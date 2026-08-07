@@ -205,7 +205,7 @@ watch(open, (isOpen) => {
   position: fixed;
   z-index: 92;
   inset: 0;
-  background: rgb(16 24 40 / 36%);
+  background: var(--app-dialog-overlay);
 }
 
 .search-dialog-content {
@@ -218,7 +218,7 @@ watch(open, (isOpen) => {
   max-height: min(740px, calc(100vh - 48px));
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #dfe3e8;
+  border: 1px solid var(--app-border-strong);
   border-radius: 16px;
   outline: none;
   background: var(--app-surface);
@@ -360,7 +360,7 @@ watch(open, (isOpen) => {
 }
 .enable-control input:checked + span {
   border-color: var(--app-text);
-  background: #182230;
+  background: var(--app-inverse-bg);
 }
 .enable-control small {
   color: var(--app-text-tertiary);
@@ -445,9 +445,9 @@ watch(open, (isOpen) => {
   cursor: pointer;
 }
 .primary-button {
-  border: 1px solid #182230;
-  background: #182230;
-  color: #fff;
+  border: 1px solid var(--app-inverse-bg);
+  background: var(--app-inverse-bg);
+  color: var(--app-agent-card-bg);
 }
 .secondary-button {
   border: 1px solid var(--app-border-strong);

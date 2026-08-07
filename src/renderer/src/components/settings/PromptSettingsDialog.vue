@@ -200,7 +200,7 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 90;
   inset: 0;
-  background: rgb(16 24 40 / 36%);
+  background: var(--app-dialog-overlay);
 }
 
 .prompt-dialog-content {
@@ -213,7 +213,7 @@ onBeforeUnmount(() => {
   max-height: min(750px, calc(100vh - 50px));
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #dfe3e8;
+  border: 1px solid var(--app-border-strong);
   border-radius: 16px;
   outline: none;
   background: var(--app-surface);
@@ -429,10 +429,10 @@ fieldset input {
   margin: 0;
   padding: 13px 14px;
   overflow: auto;
-  border: 1px solid #344054;
   border-radius: 10px;
-  background: #182230;
-  color: var(--app-border);
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-code-panel-bg);
+  color: var(--app-code-panel-text);
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 11px;
   line-height: 1.6;
@@ -489,9 +489,9 @@ fieldset input {
 }
 
 .primary-button {
-  border: 1px solid #182230;
-  background: #182230;
-  color: #ffffff;
+  border: 1px solid var(--app-inverse-bg);
+  background: var(--app-inverse-bg);
+  color: var(--app-agent-card-bg);
 }
 
 .reset-button:disabled,

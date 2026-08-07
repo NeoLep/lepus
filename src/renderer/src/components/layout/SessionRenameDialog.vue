@@ -119,7 +119,7 @@ watch(
   position: fixed;
   z-index: 120;
   inset: 0;
-  background: rgb(16 24 40 / 38%);
+  background: var(--app-dialog-overlay);
   backdrop-filter: blur(2px);
 }
 
@@ -262,9 +262,9 @@ watch(
 }
 
 .primary-button {
-  border: 1px solid #182230;
-  background: #182230;
-  color: #ffffff;
+  border: 1px solid var(--app-inverse-bg);
+  background: var(--app-inverse-bg);
+  color: var(--app-agent-card-bg);
 }
 
 .rename-dialog-actions button:disabled {

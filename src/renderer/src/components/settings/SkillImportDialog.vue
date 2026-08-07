@@ -19,11 +19,7 @@ import {
   ShieldCheck,
   X
 } from '@lucide/vue'
-import type {
-  SkillCatalogEntry,
-  SkillCatalogId,
-  SkillImportResult
-} from '@ipc/chat/constants'
+import type { SkillCatalogEntry, SkillCatalogId, SkillImportResult } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{ installedSkillIds: string[] }>()
@@ -278,7 +274,7 @@ watch(open, (isOpen) => {
   position: fixed;
   z-index: 130;
   inset: 0;
-  background: rgb(16 24 40 / 42%);
+  background: var(--app-dialog-overlay);
   backdrop-filter: blur(2px);
 }
 

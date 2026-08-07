@@ -22,7 +22,9 @@
     "release:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "release:mac:arm64": "npm run build && electron-builder --mac dmg zip --arm64 --publish never",
     "release:mac:x64": "npm run build && electron-builder --mac dmg zip --x64 --publish never",
-    "release:linux": "npm run build && electron-builder --linux AppImage deb --x64 --publish never"
+    "release:linux": "npm run build && electron-builder --linux AppImage deb --x64 --publish never",
+    "release:auto": "node scripts/build-release.mjs",
+    "release:publish": "node scripts/publish-release.mjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",

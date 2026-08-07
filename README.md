@@ -61,6 +61,49 @@ git push origin v1.0.1
 
 当前安装包未配置 Apple/Windows 代码签名，首次打开时可能出现系统安全提示。正式分发前应配置签名与 macOS 公证。
 
+### 本地一键构建
+
+在项目根目录执行：
+
+```bash
+pnpm release:auto
+```
+
+脚本会自动识别当前系统和 CPU 架构，依次安装依赖、检查 `src` 代码并生成对应平台安装包，结果位于 `dist/`。常用选项：
+
+```bash
+# 已安装依赖时加快构建
+pnpm release:auto -- --skip-install
+
+# 手动指定目标
+pnpm release:auto -- --target mac-arm64
+
+# 查看全部选项
+pnpm release:auto -- --help
+```
+
+支持目标：`mac-arm64`、`mac-x64`、`win-x64`、`linux-x64`。跨平台打包可能受原生依赖和系统工具限制；构建全部平台仍建议使用 GitHub Actions。
+
+### 一键触发全平台发布
+
+需要发布新版本时运行：
+
+```bash
+pnpm release:publish
+```
+
+脚本会同步远端标签、显示 `package.json` 和 Git 标签中的最新版本、建议下一个补丁版本，并提示输入新版本号。确认后，它会执行 ESLint 和类型检查、更新版本号、提交当前修改、创建版本标签，然后将 `main` 与标签原子推送到 GitHub，以触发全平台 GitHub Actions。
+
+如果工作区存在未提交修改，脚本会先列出并要求确认，避免意外提交。发布前请确保当前位于 `main` 分支。
+
+```bash
+# 预览流程，不修改或推送
+pnpm release:publish -- --dry-run
+
+# 跳过本地检查（GitHub Actions 仍会执行检查）
+pnpm release:publish -- --skip-checks
+```
+
 ## 技术栈
 
 Electron · Vue 3 · TypeScript · SQLite · electron-vite
