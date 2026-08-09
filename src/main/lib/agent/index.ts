@@ -18,7 +18,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { createFunctionToolRuntime, type FunctionToolRuntimeOptions } from './tools'
 import { interactiveDecisionContext } from './history-compressor'
 
-const MAX_TOOL_ROUNDS = 20
+const MAX_TOOL_ROUNDS = 64
 
 function recordedToolArguments(name: string, rawArguments: string): string {
   if (name !== 'browser_type') return rawArguments
@@ -47,6 +47,39 @@ function resolveSensitiveToolArguments(
     return JSON.stringify({ ...parsed, text: secret, sensitive: true })
   } catch {
     return rawArguments
+  }
+}
+
+function inferInteractivePrompt(
+  content: string,
+  hasActionActivity: boolean
+): UserInputPrompt | null {
+  if (!hasActionActivity) return null
+  const trimmed = content.trim()
+  if (!trimmed) return null
+  const inputRequestPattern =
+    /(?:需要(?:你|您)?(?:提供|输入|告诉|选择|确认)|请(?:提供|输入|告诉|选择|确认)|先告诉我|缺少.+(?:无法|不能|才(?:能)?继续)|才能继续|need (?:you to |your )|please (?:provide|enter|tell|choose|confirm)|cannot continue|can't continue)/i
+  if (!inputRequestPattern.test(trimmed)) return null
+
+  const fragments = trimmed
+    .split(/\n+|(?<=[。！？?!])\s*/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+  const question =
+    [...fragments].reverse().find((value) => inputRequestPattern.test(value)) ??
+    fragments.at(-1) ??
+    trimmed
+  const normalizedQuestion = question.slice(0, 500)
+  const sensitive =
+    /(?:密码|口令|验证码|凭据|令牌|密钥|credentials?|secret|password|passcode|token|api[\s_-]*key|private[\s_-]*key)/i.test(
+      normalizedQuestion
+    )
+  return {
+    question: normalizedQuestion,
+    options: [],
+    allowFreeform: true,
+    sensitive,
+    placeholder: sensitive ? '请输入敏感信息' : '请输入继续执行所需的信息'
   }
 }
 
@@ -160,6 +193,77 @@ export class Agent {
       }
 
       if (!toolCalls.length) {
+        const interactivePrompt = inferInteractivePrompt(
+          content,
+          toolExecutions.some((call) => !['update_plan', 'request_user_input'].includes(call.name))
+        )
+        if (interactivePrompt && options?.onUserInput) {
+          const toolCallId = `synthetic-input-${round}-${randomUUID()}`
+          visibleContent = visibleContent.slice(
+            0,
+            Math.max(0, visibleContent.length - content.length)
+          )
+          options.onContentUpdate?.(visibleContent)
+          const answer = await options.onUserInput(interactivePrompt, toolCallId)
+          const callArguments = JSON.stringify({
+            question: interactivePrompt.question,
+            allow_freeform: true,
+            sensitive: interactivePrompt.sensitive
+          })
+          if (answer.canceled) {
+            const result = JSON.stringify({ ok: false, error: '用户输入已取消' })
+            toolExecutions.push({
+              id: toolCallId,
+              name: 'request_user_input',
+              arguments: callArguments,
+              status: 'error',
+              result
+            })
+            const canceledContent = visibleContent || '已取消等待用户输入。'
+            options.onContentUpdate?.(canceledContent)
+            return {
+              message: { role: 'assistant' as const, content: canceledContent },
+              promptTokens: initialPromptTokens,
+              toolCalls: toolExecutions,
+              sources
+            }
+          }
+
+          let continuation: string
+          let result: string
+          if (interactivePrompt.sensitive) {
+            const secretId = `secret-${randomUUID()}`
+            sensitiveInputs.set(secretId, answer.answer)
+            result = JSON.stringify({
+              ok: true,
+              data: {
+                question: interactivePrompt.question,
+                sensitive: true,
+                secretId,
+                answer: '[敏感内容已在本机安全接收，请通过 secret_id 引用]'
+              }
+            })
+            continuation = `<application_input sensitive="true">The user supplied the requested sensitive value. It remains local and is available once as browser_type.secret_id=${JSON.stringify(secretId)}. Never ask for, reveal, or copy its underlying value.</application_input>`
+          } else {
+            result = JSON.stringify({
+              ok: true,
+              data: { question: interactivePrompt.question, answer: answer.answer }
+            })
+            continuation = `<application_input>${JSON.stringify({
+              question: interactivePrompt.question,
+              answer: answer.answer
+            })}</application_input>`
+          }
+          toolExecutions.push({
+            id: toolCallId,
+            name: 'request_user_input',
+            arguments: callArguments,
+            status: 'completed',
+            result
+          })
+          messages.push(responseMessage, { role: 'user', content: continuation })
+          continue
+        }
         return {
           message: { role: 'assistant' as const, content: visibleContent },
           promptTokens: initialPromptTokens,
@@ -399,7 +503,17 @@ export class Agent {
       messages.push(...toolMessages)
     }
 
-    throw new Error(`工具调用超过最大轮数（${this.maxToolRounds}）`)
+    const limitNotice = `任务已执行 ${this.maxToolRounds} 轮工具操作，达到单次运行的安全上限。当前进度和未完成计划已保留，请回复“继续”以接着执行。`
+    const content = visibleContent.trim()
+      ? `${visibleContent.trim()}\n\n${limitNotice}`
+      : limitNotice
+    options?.onContentUpdate?.(content)
+    return {
+      message: { role: 'assistant' as const, content },
+      promptTokens: initialPromptTokens,
+      toolCalls: toolExecutions,
+      sources
+    }
   }
 
   async summarizeConversation(

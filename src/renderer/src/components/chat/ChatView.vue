@@ -228,9 +228,9 @@ function selectSkill(skill: SkillSummary): void {
 function removeSelectedSkill(skillId: string): void {
   const sessionId = props.sessionId
   if (!sessionId) return
-  selectedSkillsBySession.value[sessionId] = (selectedSkillsBySession.value[sessionId] ?? []).filter(
-    (skill) => skill.id !== skillId
-  )
+  selectedSkillsBySession.value[sessionId] = (
+    selectedSkillsBySession.value[sessionId] ?? []
+  ).filter((skill) => skill.id !== skillId)
 }
 
 async function refreshToolCallDetailSetting(): Promise<void> {
@@ -294,8 +294,10 @@ function createLocalMessage(
 }
 
 function toIpcMessage(message: Message): Message {
+  const persistableMessage = { ...message }
+  delete persistableMessage.transient
   return {
-    ...message,
+    ...persistableMessage,
     ...(message.toolCalls
       ? { toolCalls: message.toolCalls.map((toolCall) => ({ ...toolCall })) }
       : {}),
@@ -388,6 +390,11 @@ async function reviseAndResend(message: Message, revisedContent: string): Promis
 
   sendingBySession.value[sessionId] = true
   streamedContentBySession.value[sessionId] = ''
+  if (message.transient) {
+    sessionMessages.pop()
+    await requestAssistant(sessionId, modelConfigId, sessionMessages)
+    return
+  }
   try {
     await window.api.chat.reviseMessage({
       sessionId,
@@ -455,7 +462,8 @@ function createSendErrorMessage(error: unknown): Message {
       error instanceof Error
         ? t('sendFailedWithReason', { reason: error.message })
         : t('sendFailed'),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    transient: true
   }
 }
 
@@ -472,7 +480,7 @@ async function requestAssistant(
       conversationId: sessionId,
       modelConfigId,
       locale: locale.value as ChatLocale,
-      messages: sessionMessages.map(toIpcMessage),
+      messages: sessionMessages.filter((message) => !message.transient).map(toIpcMessage),
       ...(skillIds.length ? { skillIds } : {})
     })
 

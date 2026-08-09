@@ -244,9 +244,11 @@ watch(
   z-index: 91;
   top: 50%;
   left: 50%;
+  display: flex;
   width: min(660px, calc(100vw - 40px));
   max-height: min(720px, calc(100vh - 48px));
-  overflow: auto;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--app-border-strong);
   border-radius: 16px;
   outline: none;
@@ -257,11 +259,13 @@ watch(
 
 .dialog-header {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: auto 1fr auto;
   align-items: start;
   gap: 11px;
   padding: 20px 22px 17px;
   border-bottom: 1px solid var(--app-border-subtle);
+  background: var(--app-surface);
 }
 
 .title-icon {
@@ -300,8 +304,14 @@ watch(
 
 .dialog-body {
   display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
   gap: 22px;
   padding: 20px 22px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .dialog-body.loading {
@@ -492,16 +502,33 @@ watch(
   padding: 11px 12px;
   border: 1px solid var(--app-border);
   border-radius: 9px;
+  background: var(--app-surface);
   cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
-.mode-list label.selected {
-  border-color: #84adff;
-  background: #f5f8ff;
+.mode-list label:hover {
+  border-color: var(--app-border-strong);
+  background: var(--app-hover);
+}
+
+.mode-list label.selected,
+.mode-list label.selected:hover {
+  border-color: var(--app-accent-strong);
+  background: var(--app-accent-soft);
+}
+
+.mode-list label:focus-within {
+  border-color: var(--app-accent-strong);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent) 18%, transparent);
 }
 
 .mode-list input {
   margin-top: 2px;
+  accent-color: var(--app-accent-strong);
 }
 
 .mode-list span {
@@ -513,6 +540,10 @@ watch(
 .mode-list strong {
   color: var(--app-text-secondary);
   font-size: 12px;
+}
+
+.mode-list label.selected strong {
+  color: var(--app-accent);
 }
 
 .mode-list small {
@@ -529,6 +560,7 @@ watch(
 }
 
 .form-error {
+  flex: 0 0 auto;
   margin: 0 22px 12px;
   color: var(--app-danger);
   font-size: 11px;
@@ -536,10 +568,12 @@ watch(
 
 .dialog-actions {
   display: flex;
+  flex: 0 0 auto;
   justify-content: flex-end;
   gap: 8px;
   padding: 14px 22px;
   border-top: 1px solid var(--app-border-subtle);
+  background: var(--app-surface);
 }
 
 .secondary-button {

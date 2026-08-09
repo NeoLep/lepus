@@ -255,6 +255,7 @@ export type Message = {
   toolCalls?: ToolCallRecord[]
   sources?: SearchCitation[]
   attachments?: MessageAttachment[]
+  transient?: boolean
 }
 
 export type MessageAttachmentKind = 'image' | 'pdf' | 'text'
