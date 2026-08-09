@@ -21,6 +21,7 @@ import MessageAttachments from './MessageAttachments.vue'
 import UserInputCards from './UserInputCards.vue'
 import CompressionRecordDividers from './CompressionRecordDividers.vue'
 import SubAgentRunCards from './SubAgentRunCards.vue'
+import BrowserToolCards from './BrowserToolCards.vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
@@ -89,7 +90,9 @@ function subAgentRunsForMessage(messageId: string): AgentRun[] {
 }
 
 function visibleToolCalls(calls: ToolCallRecord[] | undefined): ToolCallRecord[] {
-  return (calls ?? []).filter((call) => call.name !== 'delegate_tasks')
+  return (calls ?? []).filter(
+    (call) => call.name !== 'delegate_tasks' && !call.name.startsWith('browser_')
+  )
 }
 
 async function startEditing(message: Message): Promise<void> {
@@ -195,6 +198,7 @@ watch(
           </template>
           <template v-else>
             <SubAgentRunCards :runs="subAgentRunsForMessage(message.id)" />
+            <BrowserToolCards :calls="message.toolCalls ?? []" :session-id="sessionId" />
             <ToolCallCards
               v-if="showToolCallDetails"
               :calls="visibleToolCalls(message.toolCalls)"
@@ -243,6 +247,12 @@ watch(
             </strong>
           </div>
           <SubAgentRunCards :runs="activeSubAgentRuns" />
+          <BrowserToolCards
+            :calls="activeToolCalls ?? []"
+            :session-id="sessionId"
+            active
+            @cancel="(toolCallId) => emit('cancelDownload', toolCallId)"
+          />
           <ToolCallCards
             v-if="showToolCallDetails"
             :calls="visibleToolCalls(activeToolCalls)"

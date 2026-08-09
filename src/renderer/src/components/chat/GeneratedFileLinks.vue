@@ -14,7 +14,9 @@ type GeneratedFile = { callId: string; path: string; name: string }
 const files = computed<GeneratedFile[]>(() =>
   props.calls.flatMap((call) => {
     if (
-      !['write_file', 'copy_file', 'move_file', 'apply_patch'].includes(call.name) ||
+      !['write_file', 'copy_file', 'move_file', 'apply_patch', 'browser_screenshot'].includes(
+        call.name
+      ) ||
       call.status !== 'completed' ||
       !call.result
     ) {
@@ -25,7 +27,7 @@ const files = computed<GeneratedFile[]>(() =>
         ok?: boolean
         data?: { path?: unknown; destinationPath?: unknown }
       }
-      const outputPath = ['write_file', 'apply_patch'].includes(call.name)
+      const outputPath = ['write_file', 'apply_patch', 'browser_screenshot'].includes(call.name)
         ? result.data?.path
         : result.data?.destinationPath
       if (!result.ok || typeof outputPath !== 'string') return []

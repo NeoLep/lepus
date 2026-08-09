@@ -38,6 +38,7 @@ import { getChatRepository } from './repository'
 import { HISTORY_COMPRESSION } from '@/shared/agent/history-compression'
 import { PromptBuilder } from '@/main/lib/agent/prompt-builder'
 import { SubtaskScheduler } from '@/main/lib/agent/subtask-scheduler'
+import { normalizeTrustedBrowserOrigins } from '@/main/lib/agent/tools/network-security'
 import {
   buildExplicitSkillInvocationPrompt,
   buildSkillPrompt,
@@ -207,6 +208,7 @@ You are operating in task mode.
 - Activation: ${taskRoute.preference === 'on' ? 'the user forced task mode on' : 'the automatic router detected a potentially multi-step request'}.
 - For work with two or more meaningful steps, call update_plan before other action tools.
 - Before committing to a plan, call request_user_input when a missing user choice would materially change the outcome.
+- If execution is blocked by missing information, call request_user_input and continue after the answer arrives in the same turn. Never fall back to a plain-text question while plan steps remain unfinished. Use sensitive=true for credentials, then pass the returned local secretId through browser_type.secret_id without exposing the value.
 - Ask one focused question at a time. When useful, provide 2-4 concise, mutually exclusive options and allow a free-form answer.
 - Do not ask when a safe, reversible assumption is sufficient, and never repeat a question the user already answered.
 - Keep step IDs stable and submit the complete plan on every update.
@@ -352,8 +354,9 @@ export default () => {
       : undefined
     if (request.selectedOptionId && !selectedOption) throw new Error('所选选项不存在')
     if (!selectedOption && !pending.prompt.allowFreeform) throw new Error('请选择一个选项')
-    const answer = selectedOption?.label ?? request.answer.trim()
-    if (!answer) throw new Error('回答不能为空')
+    const answer =
+      selectedOption?.label ?? (pending.prompt.sensitive ? request.answer : request.answer.trim())
+    if (!answer.length) throw new Error('回答不能为空')
     if (answer.length > 2_000) throw new Error('回答不能超过 2000 个字符')
     pending.resolve({
       answer,
@@ -627,7 +630,8 @@ export default () => {
       sessionToolAllowances.delete(request.sessionId)
       return getChatRepository().savePermissionSettings(request.sessionId, {
         workspacePath,
-        mode: request.mode
+        mode: request.mode,
+        trustedBrowserOrigins: normalizeTrustedBrowserOrigins(request.trustedBrowserOrigins ?? [])
       })
     }
   )
@@ -840,8 +844,8 @@ export default () => {
           updateAgentRun({ toolCallCount: observedToolCallIds.size })
         }
         if (call.name === 'update_plan' || call.name === 'request_user_input') return
-        if ((!showToolCallDetails && call.name !== 'download_file') || event.sender.isDestroyed())
-          return
+        const alwaysVisible = call.name === 'download_file' || call.name.startsWith('browser_')
+        if ((!showToolCallDetails && !alwaysVisible) || event.sender.isDestroyed()) return
         event.sender.send(CHAT_CHANNELS.TOOL_ACTIVITY_CHANGED, {
           sessionId: request.conversationId,
           call
@@ -900,23 +904,6 @@ export default () => {
       const onPlanUpdate = (update: import('./constants').TaskPlanUpdate): void => {
         const plan = repository.saveTaskPlan(request.conversationId, update)
         if (!event.sender.isDestroyed()) {
-          event.sender.send(CHAT_CHANNELS.TASK_PLAN_CHANGED, {
-            sessionId: request.conversationId,
-            plan
-          })
-        }
-      }
-      const finalizeTaskPlan = (): void => {
-        if (!taskRoute.active) return
-        const currentPlan = repository.getTaskPlan(request.conversationId)
-        if (
-          !currentPlan ||
-          currentPlan.items.every((item) => ['completed', 'skipped'].includes(item.status))
-        ) {
-          return
-        }
-        const plan = repository.finalizeTaskPlan(request.conversationId)
-        if (plan && !event.sender.isDestroyed()) {
           event.sender.send(CHAT_CHANNELS.TASK_PLAN_CHANGED, {
             sessionId: request.conversationId,
             plan
@@ -985,6 +972,8 @@ export default () => {
         : null
       const agent = new Agent(modelConfig, searchConfigs, permissionSettings, taskRoute.active, {
         activeSkills,
+        getTrustedBrowserOrigins: () =>
+          repository.getPermissionSettings(request.conversationId).trustedBrowserOrigins,
         ...(subtaskScheduler
           ? {
               delegateTasks: (tasks, signal) => subtaskScheduler.execute(tasks, signal)
@@ -1176,7 +1165,6 @@ export default () => {
         runId: agentRun!.id
       }
 
-      finalizeTaskPlan()
       updateAgentRun({
         status: 'completed',
         responseMessageId: message.id,

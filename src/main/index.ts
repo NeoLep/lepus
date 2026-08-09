@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { initial } from '../ipc/node'
 import { closeChatRepository } from '../ipc/chat/repository'
+import { closeBrowserManager } from './lib/agent/tools/browser-manager'
 
 const APPLICATION_NAME = 'Lepus'
 const APPLICATION_ID = 'com.electron'
@@ -109,7 +110,10 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', closeChatRepository)
+app.on('before-quit', () => {
+  void closeBrowserManager()
+  closeChatRepository()
+})
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.

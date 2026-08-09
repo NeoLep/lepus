@@ -3,6 +3,7 @@ import {
   Ban,
   CheckCircle2,
   CircleAlert,
+  ClipboardPaste,
   LoaderCircle,
   ShieldAlert,
   Square,
@@ -21,14 +22,21 @@ function pretty(value?: string): string {
     return value
   }
 }
+
+function toolLabel(name: string): string {
+  return name === 'clipboard_read_text' ? '读取剪切板文本' : name
+}
 </script>
 
 <template>
   <div v-if="calls.length" class="tool-cards">
     <details v-for="call in calls" :key="call.id" class="tool-card">
       <summary>
-        <span class="tool-icon"><Wrench :size="14" /></span>
-        <strong>{{ call.name }}</strong>
+        <span class="tool-icon">
+          <ClipboardPaste v-if="call.name === 'clipboard_read_text'" :size="14" />
+          <Wrench v-else :size="14" />
+        </span>
+        <strong>{{ toolLabel(call.name) }}</strong>
         <span class="tool-status" :class="call.status">
           <ShieldAlert v-if="call.status === 'awaiting_approval'" :size="14" />
           <LoaderCircle v-else-if="call.status === 'running'" :size="14" />
@@ -48,10 +56,14 @@ function pretty(value?: string): string {
           }}
         </span>
         <button
-          v-if="active && call.name === 'run_skill_script' && call.status === 'running'"
+          v-if="
+            active &&
+            (call.name === 'run_skill_script' || call.name.startsWith('browser_')) &&
+            call.status === 'running'
+          "
           class="cancel-tool-button"
           type="button"
-          title="取消脚本"
+          :title="call.name.startsWith('browser_') ? '取消浏览器操作' : '取消脚本'"
           @click.stop="emit('cancel', call.id)"
         >
           <Square :size="11" /> 取消

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
-import { ArrowUp, Check, HelpCircle, LoaderCircle } from '@lucide/vue'
+import { ArrowUp, Check, HelpCircle, LoaderCircle, LockKeyhole } from '@lucide/vue'
 import type { UserInputRequest } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 
@@ -28,15 +28,23 @@ function updateDraft(request: UserInputRequest, value: string): void {
 }
 
 function handleDraftInput(request: UserInputRequest, event: Event): void {
-  updateDraft(request, (event.target as HTMLTextAreaElement).value)
+  updateDraft(request, (event.target as HTMLInputElement | HTMLTextAreaElement).value)
 }
 
 function submit(request: UserInputRequest): void {
   const selectedOptionId = selectedByRequest[request.id] || undefined
   const selectedOption = request.options.find((option) => option.id === selectedOptionId)
-  const answer = selectedOption?.label ?? draftByRequest[request.id]?.trim() ?? ''
-  if (!answer) return
+  const draft = draftByRequest[request.id] ?? ''
+  const answer = selectedOption?.label ?? (request.sensitive ? draft : draft.trim())
+  if (!answer.length) return
   emit('answer', request, answer, selectedOptionId)
+  if (request.sensitive) delete draftByRequest[request.id]
+}
+
+function canSubmit(request: UserInputRequest): boolean {
+  if (selectedByRequest[request.id]) return true
+  const draft = draftByRequest[request.id] ?? ''
+  return request.sensitive ? draft.length > 0 : Boolean(draft.trim())
 }
 </script>
 
@@ -44,9 +52,10 @@ function submit(request: UserInputRequest): void {
   <div class="input-requests">
     <section v-for="request in requests" :key="request.id" class="input-card">
       <div class="question-heading">
-        <HelpCircle :size="18" />
+        <LockKeyhole v-if="request.sensitive" :size="18" />
+        <HelpCircle v-else :size="18" />
         <div>
-          <strong>{{ t('title') }}</strong>
+          <strong>{{ t(request.sensitive ? 'sensitiveTitle' : 'title') }}</strong>
           <p>{{ request.question }}</p>
         </div>
       </div>
@@ -74,7 +83,20 @@ function submit(request: UserInputRequest): void {
 
       <div v-if="request.allowFreeform" class="freeform">
         <span v-if="request.options.length">{{ t('orWrite') }}</span>
+        <input
+          v-if="request.sensitive"
+          :value="draftByRequest[request.id] ?? ''"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="2000"
+          :placeholder="request.placeholder || t('sensitivePlaceholder')"
+          :disabled="resolvingIds.includes(request.id)"
+          @input="handleDraftInput(request, $event)"
+          @keydown.enter.prevent="submit(request)"
+        />
         <textarea
+          v-else
           :value="draftByRequest[request.id] ?? ''"
           rows="2"
           maxlength="2000"
@@ -87,13 +109,10 @@ function submit(request: UserInputRequest): void {
       </div>
 
       <div class="answer-actions">
-        <span>{{ t('hint') }}</span>
+        <span>{{ t(request.sensitive ? 'sensitiveHint' : 'hint') }}</span>
         <button
           type="button"
-          :disabled="
-            resolvingIds.includes(request.id) ||
-            (!selectedByRequest[request.id] && !draftByRequest[request.id]?.trim())
-          "
+          :disabled="resolvingIds.includes(request.id) || !canSubmit(request)"
           @click="submit(request)"
         >
           <LoaderCircle v-if="resolvingIds.includes(request.id)" class="spin" :size="14" />
@@ -215,7 +234,8 @@ function submit(request: UserInputRequest): void {
   font-size: 10px;
 }
 
-.freeform textarea {
+.freeform textarea,
+.freeform input {
   width: 100%;
   resize: vertical;
   border: 1px solid var(--app-border-strong);
@@ -229,7 +249,8 @@ function submit(request: UserInputRequest): void {
   line-height: 1.5;
 }
 
-.freeform textarea:focus {
+.freeform textarea:focus,
+.freeform input:focus {
   border-color: #9b8afb;
   box-shadow: 0 0 0 2px rgb(127 86 217 / 12%);
 }
@@ -281,14 +302,20 @@ function submit(request: UserInputRequest): void {
 <i18n lang="yaml">
 zh-CN:
   title: Lepus 需要你的确认
+  sensitiveTitle: Lepus 需要敏感信息
   orWrite: 或者补充你的具体要求
   placeholder: 输入你的想法或补充信息…
+  sensitivePlaceholder: 输入内容不会发送给模型，也不会保存明文
   hint: 回答后将继续规划和执行
+  sensitiveHint: 敏感内容仅用于本轮执行
   continue: 继续
 en:
   title: Lepus needs your input
+  sensitiveTitle: Lepus needs sensitive information
   orWrite: Or provide your own details
   placeholder: Add your preferences or details…
+  sensitivePlaceholder: Input is not sent to the model or stored in plain text
   hint: Planning and execution will continue after your answer
+  sensitiveHint: Sensitive content is used only for this run
   continue: Continue
 </i18n>

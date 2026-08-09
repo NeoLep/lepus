@@ -1069,15 +1069,26 @@ export class ChatRepository {
   getPermissionSettings(sessionId: string): PermissionSettings {
     const row = this.database
       .prepare(
-        `SELECT workspace_path, mode
+        `SELECT workspace_path, mode, trusted_browser_origins_json
          FROM session_permission_settings
          WHERE session_id = ?`
       )
-      .get(sessionId) as { workspace_path: string; mode: string } | undefined
-    if (!row) return { ...DEFAULT_PERMISSION_SETTINGS }
+      .get(sessionId) as
+      { workspace_path: string; mode: string; trusted_browser_origins_json: string } | undefined
+    if (!row) return { ...DEFAULT_PERMISSION_SETTINGS, trustedBrowserOrigins: [] }
+    let trustedBrowserOrigins: string[] = []
+    try {
+      const parsed = JSON.parse(row.trusted_browser_origins_json) as unknown
+      if (Array.isArray(parsed)) {
+        trustedBrowserOrigins = parsed.filter((value): value is string => typeof value === 'string')
+      }
+    } catch {
+      trustedBrowserOrigins = []
+    }
     return {
       workspacePath: row.workspace_path,
-      mode: isPermissionMode(row.mode) ? row.mode : DEFAULT_PERMISSION_SETTINGS.mode
+      mode: isPermissionMode(row.mode) ? row.mode : DEFAULT_PERMISSION_SETTINGS.mode,
+      trustedBrowserOrigins
     }
   }
 
@@ -1087,14 +1098,21 @@ export class ChatRepository {
     this.database
       .prepare(
         `INSERT INTO session_permission_settings
-         (session_id, workspace_path, mode, updated_at)
-         VALUES (?, ?, ?, ?)
+         (session_id, workspace_path, mode, trusted_browser_origins_json, updated_at)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET
            workspace_path = excluded.workspace_path,
            mode = excluded.mode,
+           trusted_browser_origins_json = excluded.trusted_browser_origins_json,
            updated_at = excluded.updated_at`
       )
-      .run(sessionId, settings.workspacePath.trim(), settings.mode, now)
+      .run(
+        sessionId,
+        settings.workspacePath.trim(),
+        settings.mode,
+        JSON.stringify(settings.trustedBrowserOrigins),
+        now
+      )
     return this.getPermissionSettings(sessionId)
   }
 
@@ -1564,6 +1582,16 @@ export class ChatRepository {
           ALTER TABLE skills ADD COLUMN allowed_tools_json TEXT NOT NULL DEFAULT '[]';
           ALTER TABLE skills ADD COLUMN files_json TEXT NOT NULL DEFAULT '[]';
           PRAGMA user_version = 18;
+        `)
+      })()
+    }
+
+    if (version < 19) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE session_permission_settings
+            ADD COLUMN trusted_browser_origins_json TEXT NOT NULL DEFAULT '[]';
+          PRAGMA user_version = 19;
         `)
       })()
     }

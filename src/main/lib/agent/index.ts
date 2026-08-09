@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { randomUUID } from 'node:crypto'
 import {
   Message,
   ModelConfig,
@@ -17,7 +18,37 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { createFunctionToolRuntime, type FunctionToolRuntimeOptions } from './tools'
 import { interactiveDecisionContext } from './history-compressor'
 
-const MAX_TOOL_ROUNDS = 12
+const MAX_TOOL_ROUNDS = 20
+
+function recordedToolArguments(name: string, rawArguments: string): string {
+  if (name !== 'browser_type') return rawArguments
+  try {
+    const parsed = JSON.parse(rawArguments) as Record<string, unknown>
+    if (parsed['sensitive'] !== true) return rawArguments
+    return JSON.stringify({ ...parsed, text: '[敏感内容已隐藏]' })
+  } catch {
+    return JSON.stringify({ redacted: true, error: '工具参数无法解析' })
+  }
+}
+
+function resolveSensitiveToolArguments(
+  name: string,
+  rawArguments: string,
+  sensitiveInputs: Map<string, string>
+): string {
+  if (name !== 'browser_type') return rawArguments
+  try {
+    const parsed = JSON.parse(rawArguments) as Record<string, unknown>
+    const secretId = parsed['secret_id']
+    if (typeof secretId !== 'string') return rawArguments
+    const secret = sensitiveInputs.get(secretId)
+    if (secret === undefined) return rawArguments
+    sensitiveInputs.delete(secretId)
+    return JSON.stringify({ ...parsed, text: secret, sensitive: true })
+  } catch {
+    return rawArguments
+  }
+}
 
 export class Agent {
   public client: OpenAI
@@ -72,6 +103,7 @@ export class Agent {
     let initialPromptTokens: number | null = null
     const toolExecutions: ToolCallRecord[] = []
     const sources: SearchCitation[] = []
+    const sensitiveInputs = new Map<string, string>()
 
     for (let round = 0; round < this.maxToolRounds; round += 1) {
       const stream = await this.client.chat.completions.create(
@@ -139,10 +171,14 @@ export class Agent {
       messages.push(responseMessage)
       const toolMessages = await Promise.all(
         toolCalls.map(async (toolCall): Promise<ChatCompletionMessageParam> => {
+          const recordedArguments = recordedToolArguments(
+            toolCall.function.name,
+            toolCall.function.arguments
+          )
           const baseCall = {
             id: toolCall.id,
             name: toolCall.function.name,
-            arguments: toolCall.function.arguments
+            arguments: recordedArguments
           }
           const approval = this.toolRuntime.getApproval(
             toolCall.function.name,
@@ -155,7 +191,7 @@ export class Agent {
                   id: `approval-${toolCall.id}`,
                   toolCallId: toolCall.id,
                   name: toolCall.function.name,
-                  arguments: toolCall.function.arguments,
+                  arguments: recordedArguments,
                   risk: approval.risk,
                   reason: approval.reason,
                   allowSession: approval.allowSession ?? approval.risk !== 'high'
@@ -179,14 +215,21 @@ export class Agent {
           const toolSignal = options?.signal
             ? AbortSignal.any([options.signal, toolController.signal])
             : toolController.signal
-          if (['download_file', 'run_skill_script'].includes(toolCall.function.name)) {
+          if (
+            ['download_file', 'run_skill_script'].includes(toolCall.function.name) ||
+            toolCall.function.name.startsWith('browser_')
+          ) {
             options?.onToolCancellable?.(toolCall.id, () => toolController.abort())
           }
           let result: string
           try {
             result = await this.toolRuntime.execute(
               toolCall.function.name,
-              toolCall.function.arguments,
+              resolveSensitiveToolArguments(
+                toolCall.function.name,
+                toolCall.function.arguments,
+                sensitiveInputs
+              ),
               toolSignal,
               (progress) => options?.onToolActivity?.({ ...runningCall, progress })
             )
@@ -261,18 +304,32 @@ export class Agent {
               if (payload.ok && payload.data) {
                 if (!options?.onUserInput) throw new Error('当前界面无法接收用户回答')
                 const answer = await options.onUserInput(payload.data, toolCall.id)
-                result = answer.canceled
-                  ? JSON.stringify({ ok: false, error: '用户输入已取消' })
-                  : JSON.stringify({
-                      ok: true,
-                      data: {
-                        question: payload.data.question,
-                        answer: answer.answer,
-                        ...(answer.selectedOptionId
-                          ? { selectedOptionId: answer.selectedOptionId }
-                          : {})
-                      }
-                    })
+                if (answer.canceled) {
+                  result = JSON.stringify({ ok: false, error: '用户输入已取消' })
+                } else if (payload.data.sensitive) {
+                  const secretId = `secret-${randomUUID()}`
+                  sensitiveInputs.set(secretId, answer.answer)
+                  result = JSON.stringify({
+                    ok: true,
+                    data: {
+                      question: payload.data.question,
+                      sensitive: true,
+                      secretId,
+                      answer: '[敏感内容已在本机安全接收，请通过 secret_id 引用]'
+                    }
+                  })
+                } else {
+                  result = JSON.stringify({
+                    ok: true,
+                    data: {
+                      question: payload.data.question,
+                      answer: answer.answer,
+                      ...(answer.selectedOptionId
+                        ? { selectedOptionId: answer.selectedOptionId }
+                        : {})
+                    }
+                  })
+                }
               }
             } catch (error) {
               result = JSON.stringify({

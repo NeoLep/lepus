@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { shell } from 'electron'
+import { clipboard, shell } from 'electron'
 import type { ChatCompletionTool } from 'openai/resources/chat/completions'
 import type {
   PermissionSettings,
@@ -29,6 +29,8 @@ import { downloadFile } from './download'
 import { inspectFile } from './file-inspection'
 import { readInstalledSkillFile } from '../skill-installer'
 import { runInstalledSkillScript } from '../skill-script-runner'
+import { browserManager } from './browser-manager'
+import { isTrustedBrowserUrl } from './network-security'
 
 type JsonObject = Record<string, unknown>
 type ToolExecutionContext = {
@@ -62,6 +64,7 @@ export type FunctionToolRuntimeOptions = {
   readOnly?: boolean
   delegateTasks?: DelegateTasksHandler
   activeSkills?: SkillDefinition[]
+  getTrustedBrowserOrigins?: () => string[]
 }
 
 function requireString(value: unknown, name: string): string {
@@ -133,7 +136,297 @@ function createTool(
   }
 }
 
+function createBrowserTools(): FunctionTool[] {
+  return [
+    createTool(
+      'browser_status',
+      '检查可用的系统浏览器或 Lepus 浏览器组件、浏览器是否运行，并列出当前标签页。',
+      { type: 'object', properties: {}, additionalProperties: false },
+      () => browserManager.status()
+    ),
+    createTool(
+      'browser_install',
+      '在系统没有 Chrome、Edge、Brave 或 Chromium 时，下载并安装 Lepus 专用 Chromium 浏览器组件。仅在 browser_open 明确提示没有可用浏览器时使用；下载体积可能达到数百 MB。',
+      { type: 'object', properties: {}, additionalProperties: false },
+      (_arguments, signal) => browserManager.install(signal),
+      {
+        risk: 'high',
+        reason: '将从 Playwright 官方源下载并安装数百 MB 的 Chromium 浏览器组件。',
+        allowSession: false
+      }
+    ),
+    createTool(
+      'browser_open',
+      '使用独立的 Lepus 浏览器会话打开公开 HTTP/HTTPS 网页并返回面向 AI 的页面快照。优先复用系统已安装的 Chromium 内核浏览器；不允许 localhost、内网或包含凭据的 URL。局域网地址必须改用 browser_open_private。',
+      {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 8192,
+            description: '要打开的公开 HTTPS URL'
+          }
+        },
+        required: ['url'],
+        additionalProperties: false
+      },
+      ({ url }, signal) => browserManager.open(requireString(url, 'url'), signal)
+    ),
+    createTool(
+      'browser_open_private',
+      '打开用户明确要求访问的局域网 HTTP/HTTPS 页面，例如 10.x、172.16-31.x 或 192.168.x。必须使用绝对 URL；禁止 localhost、链路本地、元数据服务、URL 凭据和其他保留地址。',
+      {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 8192,
+            description: '用户明确要求访问的局域网页面绝对 URL'
+          }
+        },
+        required: ['url'],
+        additionalProperties: false
+      },
+      ({ url }, signal) => browserManager.openPrivate(requireString(url, 'url'), signal),
+      {
+        risk: 'high',
+        reason:
+          '将允许网页自动化访问本机所在局域网中的设备或服务，请确认该地址是你希望访问的目标。',
+        allowSession: false
+      }
+    ),
+    createTool(
+      'browser_tabs',
+      '列出 Lepus 浏览器当前所有标签页的 tabId、标题和 URL。',
+      { type: 'object', properties: {}, additionalProperties: false },
+      () => browserManager.listTabs()
+    ),
+    createTool(
+      'browser_snapshot',
+      '获取指定标签页最新的 AI/ARIA 页面快照。网页变化后应重新调用，后续操作必须使用快照中的 ref。',
+      {
+        type: 'object',
+        properties: {
+          tab_id: { type: 'string', minLength: 1, maxLength: 80, description: '标签页 ID' }
+        },
+        required: ['tab_id'],
+        additionalProperties: false
+      },
+      ({ tab_id: tabId }, signal) => browserManager.snapshot(requireString(tabId, 'tab_id'), signal)
+    ),
+    createTool(
+      'browser_click',
+      '点击页面快照中的元素引用。点击可能改变网站状态；执行后返回更新后的页面快照。',
+      {
+        type: 'object',
+        properties: {
+          tab_id: { type: 'string', minLength: 1, maxLength: 80 },
+          ref: {
+            type: 'string',
+            pattern: '^e\\d+$',
+            description: '最近页面快照中的元素引用，例如 e12'
+          }
+        },
+        required: ['tab_id', 'ref'],
+        additionalProperties: false
+      },
+      ({ tab_id: tabId, ref }, signal) =>
+        browserManager.click(requireString(tabId, 'tab_id'), requireString(ref, 'ref'), signal),
+      {
+        risk: 'medium',
+        reason: '将点击第三方网页中的元素，可能引起导航或改变网站状态。',
+        allowSession: false
+      }
+    ),
+    createTool(
+      'browser_type',
+      '向页面快照指定的输入控件填写文字，可选择按 Enter 提交。普通内容使用 text；request_user_input 返回的敏感凭据必须使用 secret_id，绝不能复制到 text。',
+      {
+        type: 'object',
+        properties: {
+          tab_id: { type: 'string', minLength: 1, maxLength: 80 },
+          ref: { type: 'string', pattern: '^e\\d+$' },
+          text: { type: 'string', maxLength: 10000, description: '要发送给网页的文字' },
+          secret_id: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 100,
+            description: 'request_user_input 敏感输入返回的本地临时凭据 ID'
+          },
+          submit: { type: 'boolean', description: '填写后是否按 Enter，默认 false' },
+          sensitive: {
+            type: 'boolean',
+            description: '文字是否为密码或令牌；为 true 时工具记录会隐藏 text'
+          }
+        },
+        required: ['tab_id', 'ref'],
+        additionalProperties: false
+      },
+      ({ tab_id: tabId, ref, text, secret_id: secretId, submit }, signal) => {
+        if (text === undefined) {
+          throw new Error(
+            typeof secretId === 'string'
+              ? '敏感凭据已失效，请重新请求用户输入'
+              : 'text 或有效的 secret_id 至少需要提供一个'
+          )
+        }
+        return browserManager.type(
+          requireString(tabId, 'tab_id'),
+          requireString(ref, 'ref'),
+          requireText(text, 'text'),
+          submit === true,
+          signal
+        )
+      },
+      {
+        risk: 'high',
+        reason: '将把指定文字发送给第三方网页；如果同时提交，可能产生外部操作。',
+        allowSession: false
+      }
+    ),
+    createTool(
+      'browser_select',
+      '在页面快照指定的下拉控件中选择一个或多个值，执行后返回更新快照。',
+      {
+        type: 'object',
+        properties: {
+          tab_id: { type: 'string', minLength: 1, maxLength: 80 },
+          ref: { type: 'string', pattern: '^e\\d+$' },
+          values: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 20,
+            items: { type: 'string', maxLength: 1000 }
+          }
+        },
+        required: ['tab_id', 'ref', 'values'],
+        additionalProperties: false
+      },
+      ({ tab_id: tabId, ref, values }, signal) =>
+        browserManager.select(
+          requireString(tabId, 'tab_id'),
+          requireString(ref, 'ref'),
+          (values as string[]).map((value) => requireText(value, 'values[]')),
+          signal
+        ),
+      {
+        risk: 'medium',
+        reason: '将改变第三方网页中的表单选项。',
+        allowSession: false
+      }
+    ),
+    createTool(
+      'browser_scroll',
+      '滚动指定浏览器标签页并返回滚动后的最新页面快照。正数向下/向右，负数向上/向左。',
+      {
+        type: 'object',
+        properties: {
+          tab_id: { type: 'string', minLength: 1, maxLength: 80 },
+          delta_x: { type: 'integer', minimum: -10000, maximum: 10000 },
+          delta_y: { type: 'integer', minimum: -10000, maximum: 10000 }
+        },
+        required: ['tab_id', 'delta_y'],
+        additionalProperties: false
+      },
+      ({ tab_id: tabId, delta_x: deltaX, delta_y: deltaY }) =>
+        browserManager.scroll(
+          requireString(tabId, 'tab_id'),
+          optionalInteger(deltaX, 'delta_x', 0),
+          optionalInteger(deltaY, 'delta_y', 0)
+        )
+    ),
+    createTool(
+      'browser_back',
+      '让指定浏览器标签页返回上一页，并返回最新页面快照。',
+      {
+        type: 'object',
+        properties: { tab_id: { type: 'string', minLength: 1, maxLength: 80 } },
+        required: ['tab_id'],
+        additionalProperties: false
+      },
+      ({ tab_id: tabId }, signal) => browserManager.goBack(requireString(tabId, 'tab_id'), signal)
+    ),
+    createTool(
+      'browser_forward',
+      '让指定浏览器标签页前进一页，并返回最新页面快照。',
+      {
+        type: 'object',
+        properties: { tab_id: { type: 'string', minLength: 1, maxLength: 80 } },
+        required: ['tab_id'],
+        additionalProperties: false
+      },
+      ({ tab_id: tabId }, signal) =>
+        browserManager.goForward(requireString(tabId, 'tab_id'), signal)
+    ),
+    createTool(
+      'browser_screenshot',
+      '将指定网页截图保存到安全工作文件夹的 .lepus/browser-screenshots 目录。',
+      {
+        type: 'object',
+        properties: {
+          tab_id: { type: 'string', minLength: 1, maxLength: 80 },
+          filename: {
+            type: 'string',
+            maxLength: 180,
+            description: '可选 PNG 文件名；省略时自动生成且不会覆盖'
+          },
+          full_page: { type: 'boolean', description: '是否截取完整页面，默认 false' }
+        },
+        required: ['tab_id'],
+        additionalProperties: false
+      },
+      ({ tab_id: tabId, filename, full_page: fullPage }, signal, context) =>
+        browserManager.screenshot(
+          requireString(tabId, 'tab_id'),
+          context?.workspacePath ?? '',
+          typeof filename === 'string' ? filename : undefined,
+          fullPage === true,
+          signal
+        ),
+      {
+        risk: 'high',
+        reason: '将捕获第三方网页画面，并把 PNG 文件写入安全工作文件夹。',
+        allowSession: false
+      }
+    ),
+    createTool(
+      'browser_close',
+      '关闭指定的 Lepus 浏览器标签页。',
+      {
+        type: 'object',
+        properties: { tab_id: { type: 'string', minLength: 1, maxLength: 80 } },
+        required: ['tab_id'],
+        additionalProperties: false
+      },
+      ({ tab_id: tabId }) => browserManager.closeTab(requireString(tabId, 'tab_id'))
+    )
+  ]
+}
+
 const baseTools = [
+  createTool(
+    'clipboard_read_text',
+    '读取系统剪切板中的纯文本。仅当用户明确要求读取、粘贴、总结或处理剪切板内容时使用；不得主动或后台读取。结果最多返回 100,000 个字符。',
+    { type: 'object', properties: {}, additionalProperties: false },
+    () => {
+      const text = clipboard.readText()
+      const maximumCharacters = 100_000
+      const truncated = text.length > maximumCharacters
+      return {
+        text: truncated ? text.slice(0, maximumCharacters) : text,
+        characterCount: text.length,
+        truncated,
+        formats: clipboard.availableFormats()
+      }
+    },
+    {
+      risk: 'high',
+      reason: '将读取系统剪切板中的文本并加入当前对话记录；其中可能包含密码、令牌或其他敏感信息。',
+      allowSession: false
+    }
+  ),
   createTool(
     'inspect_file',
     '安全检查普通文件的元数据、真实文件头类型、扩展名一致性和 SHA-256。不会执行文件，也不会预览或解压压缩包。',
@@ -301,7 +594,7 @@ const baseTools = [
   ),
   createTool(
     'request_user_input',
-    '暂停任务并向用户提出一个简短问题。可提供 2 到 5 个互斥选项，也可以允许用户自由填写。仅在答案会实质影响计划或结果时使用。',
+    '暂停当前执行并通过界面向用户提出一个简短问题，获得回答后在同一轮中继续工作。执行途中缺少必要信息时必须使用此工具，不要用普通助手文本提问。可提供 2 到 5 个互斥选项，也可以允许用户自由填写；密码或令牌必须设置 sensitive=true。',
     {
       type: 'object',
       properties: {
@@ -331,6 +624,10 @@ const baseTools = [
           type: 'boolean',
           description: '是否允许用户自己填写答案，默认 true'
         },
+        sensitive: {
+          type: 'boolean',
+          description: '答案是否为密码、令牌等敏感信息；敏感输入会隐藏显示且不会保存明文'
+        },
         placeholder: {
           type: 'string',
           maxLength: 200,
@@ -340,7 +637,7 @@ const baseTools = [
       required: ['question'],
       additionalProperties: false
     },
-    ({ question, options, allow_freeform: allowFreeform, placeholder }) => {
+    ({ question, options, allow_freeform: allowFreeform, sensitive, placeholder }) => {
       const normalizedOptions = (options ?? []) as Array<{
         id: string
         label: string
@@ -357,6 +654,7 @@ const baseTools = [
         question: String(question).trim(),
         options: normalizedOptions,
         allowFreeform: canWrite,
+        sensitive: sensitive === true,
         ...(typeof placeholder === 'string' && placeholder.trim()
           ? { placeholder: placeholder.trim() }
           : {})
@@ -932,13 +1230,15 @@ export function createFunctionToolRuntime(
   const searchTool = createSearchTool(searchConfigs)
   const safeTools = baseTools.filter((tool) => {
     const name = tool.schema.type === 'function' ? tool.schema.function.name : ''
-    return !FILE_TOOL_NAMES.has(name) && !['update_plan', 'request_user_input'].includes(name)
+    return (
+      !FILE_TOOL_NAMES.has(name) &&
+      name !== 'update_plan' &&
+      !(options.readOnly && ['clipboard_read_text', 'request_user_input'].includes(name))
+    )
   })
   const taskTools = taskMode
     ? baseTools.filter(
-        (tool) =>
-          tool.schema.type === 'function' &&
-          ['update_plan', 'request_user_input'].includes(tool.schema.function.name)
+        (tool) => tool.schema.type === 'function' && tool.schema.function.name === 'update_plan'
       )
     : []
   const readOnlyFileToolNames = new Set([
@@ -955,6 +1255,7 @@ export function createFunctionToolRuntime(
       })
     : []
   const delegateTool = options.delegateTasks ? createDelegateTasksTool(options.delegateTasks) : null
+  const browserTools = options.readOnly ? [] : createBrowserTools()
   const skillFileTool = options.activeSkills?.some((skill) => skill.rootPath)
     ? createTool(
         'read_skill_file',
@@ -1061,6 +1362,7 @@ export function createFunctionToolRuntime(
     ...safeTools,
     ...taskTools,
     ...fileTools,
+    ...browserTools,
     ...(searchTool ? [searchTool] : []),
     ...(skillFileTool ? [skillFileTool] : []),
     ...(skillScriptTool ? [skillScriptTool] : []),
@@ -1100,6 +1402,26 @@ export function createFunctionToolRuntime(
           risk: 'medium',
           reason: '将把搜索关键词发送给已配置的第三方互联网搜索服务。',
           allowSession: false
+        }
+      }
+
+      if (name === 'browser_open_private') {
+        const url = String(validatedArguments['url'] ?? '')
+        const trustedOrigins =
+          options.getTrustedBrowserOrigins?.() ?? permissionSettings.trustedBrowserOrigins
+        return isTrustedBrowserUrl(url, trustedOrigins) ? undefined : tool.approval
+      }
+
+      if (['browser_click', 'browser_type', 'browser_select'].includes(name)) {
+        try {
+          const tabId = requireString(validatedArguments['tab_id'], 'tab_id')
+          const trustedOrigins =
+            options.getTrustedBrowserOrigins?.() ?? permissionSettings.trustedBrowserOrigins
+          return isTrustedBrowserUrl(browserManager.tabUrl(tabId), trustedOrigins)
+            ? undefined
+            : tool.approval
+        } catch {
+          return tool.approval
         }
       }
 

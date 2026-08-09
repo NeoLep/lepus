@@ -213,6 +213,7 @@ export type UserInputPrompt = {
   question: string
   options: UserInputOption[]
   allowFreeform: boolean
+  sensitive: boolean
   placeholder?: string
 }
 
@@ -378,6 +379,7 @@ export type PermissionMode = 'request_approval' | 'auto_approve' | 'full_access'
 export type PermissionSettings = {
   workspacePath: string
   mode: PermissionMode
+  trustedBrowserOrigins: string[]
 }
 
 export type SessionPermissionSettings = PermissionSettings & {

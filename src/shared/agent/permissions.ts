@@ -8,7 +8,8 @@ export const PERMISSION_MODES: PermissionMode[] = [
 
 export const DEFAULT_PERMISSION_SETTINGS: PermissionSettings = {
   workspacePath: '',
-  mode: 'request_approval'
+  mode: 'request_approval',
+  trustedBrowserOrigins: []
 }
 
 export function isPermissionMode(value: string): value is PermissionMode {

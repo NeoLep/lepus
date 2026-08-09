@@ -9,7 +9,7 @@ import {
   DialogRoot,
   DialogTitle
 } from 'reka-ui'
-import { FolderOpen, ShieldCheck, X } from '@lucide/vue'
+import { FolderOpen, GlobeLock, Plus, ShieldCheck, Trash2, X } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import type { PermissionMode, PermissionSettings } from '@ipc/chat/constants'
 import { DEFAULT_PERMISSION_SETTINGS } from '@/shared/agent/permissions'
@@ -17,7 +17,11 @@ import { DEFAULT_PERMISSION_SETTINGS } from '@/shared/agent/permissions'
 const open = defineModel<boolean>('open', { required: true })
 const props = defineProps<{ sessionId: string | null }>()
 const { t } = useI18n({ useScope: 'local' })
-const draft = ref<PermissionSettings>({ ...DEFAULT_PERMISSION_SETTINGS })
+const draft = ref<PermissionSettings>({
+  ...DEFAULT_PERMISSION_SETTINGS,
+  trustedBrowserOrigins: []
+})
+const trustedOriginInput = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const selecting = ref(false)
@@ -27,18 +31,49 @@ const modes: PermissionMode[] = ['request_approval', 'auto_approve', 'full_acces
 
 async function load(): Promise<void> {
   if (!props.sessionId) {
-    draft.value = { ...DEFAULT_PERMISSION_SETTINGS }
+    draft.value = { ...DEFAULT_PERMISSION_SETTINGS, trustedBrowserOrigins: [] }
+    trustedOriginInput.value = ''
     return
   }
   loading.value = true
   error.value = ''
   try {
-    draft.value = await window.api.chat.queryPermissionSettings(props.sessionId)
+    const settings = await window.api.chat.queryPermissionSettings(props.sessionId)
+    draft.value = { ...settings, trustedBrowserOrigins: [...settings.trustedBrowserOrigins] }
+    trustedOriginInput.value = ''
   } catch (loadError) {
     error.value = loadError instanceof Error ? loadError.message : t('loadFailed')
   } finally {
     loading.value = false
   }
+}
+
+function addTrustedOrigin(): boolean {
+  const value = trustedOriginInput.value.trim()
+  if (!value) return true
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      throw new Error(t('trustedInvalid'))
+    }
+    const origin = url.origin
+    if (!draft.value.trustedBrowserOrigins.includes(origin)) {
+      if (draft.value.trustedBrowserOrigins.length >= 50) throw new Error(t('trustedLimit'))
+      draft.value.trustedBrowserOrigins = [...draft.value.trustedBrowserOrigins, origin]
+    }
+    trustedOriginInput.value = ''
+    error.value = ''
+    return true
+  } catch (originError) {
+    error.value = originError instanceof Error ? originError.message : t('trustedInvalid')
+    return false
+  }
+}
+
+function removeTrustedOrigin(origin: string): void {
+  draft.value.trustedBrowserOrigins = draft.value.trustedBrowserOrigins.filter(
+    (item) => item !== origin
+  )
 }
 
 async function selectFolder(): Promise<void> {
@@ -56,6 +91,7 @@ async function selectFolder(): Promise<void> {
 
 async function save(): Promise<void> {
   if (saving.value || !props.sessionId) return
+  if (!addTrustedOrigin()) return
   saving.value = true
   error.value = ''
   try {
@@ -119,6 +155,47 @@ watch(
               </button>
             </div>
             <p v-if="!draft.workspacePath" class="workspace-warning">{{ t('disabledHelp') }}</p>
+          </section>
+
+          <section>
+            <div class="section-heading">
+              <strong>{{ t('trustedTitle') }}</strong>
+              <small>{{ t('trustedHelp') }}</small>
+            </div>
+            <div class="trusted-origin-row">
+              <div class="trusted-origin-input">
+                <GlobeLock :size="16" />
+                <input
+                  v-model="trustedOriginInput"
+                  type="url"
+                  maxlength="2048"
+                  :placeholder="t('trustedPlaceholder')"
+                  @keydown.enter.prevent="addTrustedOrigin"
+                />
+              </div>
+              <button
+                type="button"
+                :disabled="!trustedOriginInput.trim()"
+                @click="addTrustedOrigin"
+              >
+                <Plus :size="14" /> {{ t('addTrusted') }}
+              </button>
+            </div>
+            <div v-if="draft.trustedBrowserOrigins.length" class="trusted-origin-list">
+              <div v-for="origin in draft.trustedBrowserOrigins" :key="origin">
+                <GlobeLock :size="14" />
+                <span :title="origin">{{ origin }}</span>
+                <button
+                  type="button"
+                  :aria-label="t('removeTrusted')"
+                  @click="removeTrustedOrigin(origin)"
+                >
+                  <Trash2 :size="14" />
+                </button>
+              </div>
+            </div>
+            <p v-else class="trusted-empty">{{ t('trustedEmpty') }}</p>
+            <p class="hard-rule">{{ t('trustedRule') }}</p>
           </section>
 
           <section>
@@ -307,6 +384,103 @@ watch(
   color: var(--app-warning);
 }
 
+.trusted-origin-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.trusted-origin-input {
+  display: flex;
+  min-width: 0;
+  height: 36px;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 8px;
+  color: var(--app-text-tertiary);
+}
+
+.trusted-origin-input input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font-size: 11px;
+}
+
+.trusted-origin-row > button {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 11px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 8px;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trusted-origin-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.trusted-origin-list > div {
+  display: flex;
+  min-width: 0;
+  height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 7px 0 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface-subtle);
+  color: var(--app-accent);
+}
+
+.trusted-origin-list span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--app-text-secondary);
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trusted-origin-list button {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-tertiary);
+  cursor: pointer;
+}
+
+.trusted-origin-list button:hover {
+  background: var(--app-hover);
+  color: var(--app-danger);
+}
+
+.trusted-empty {
+  margin: 8px 0 0;
+  color: var(--app-text-muted);
+  font-size: 10px;
+}
+
 .mode-list {
   display: grid;
   gap: 8px;
@@ -397,6 +571,15 @@ zh-CN:
   selecting: 正在选择
   clear: 清除
   disabledHelp: 选择文件夹前，文件读取和写入工具不会提供给模型。
+  trustedTitle: 浏览器信任地址
+  trustedHelp: 信任后，在相同协议、主机和端口的页面中点击、输入和选择无需逐次审批。
+  trustedPlaceholder: 例如 http://192.168.31.206:8080
+  addTrusted: 添加
+  removeTrusted: 移除信任地址
+  trustedEmpty: 尚未添加信任地址。
+  trustedRule: 信任仅适用于页面交互；浏览器安装、文件写入和其他高风险能力仍按原规则审批。
+  trustedInvalid: 请输入包含 http:// 或 https:// 的有效地址，且不要包含用户名或密码。
+  trustedLimit: 最多添加 50 个信任地址。
   permissionTitle: 权限模式
   permissionHelp: 你可以随时调整；新的设置从下一次对话请求开始生效。
   request_approval:
@@ -424,6 +607,15 @@ en:
   selecting: Selecting
   clear: Clear
   disabledHelp: File read and write tools are unavailable until a folder is selected.
+  trustedTitle: Trusted browser addresses
+  trustedHelp: Clicks, typing, and selections require no per-action approval on pages with the same scheme, host, and port.
+  trustedPlaceholder: For example, http://192.168.31.206:8080
+  addTrusted: Add
+  removeTrusted: Remove trusted address
+  trustedEmpty: No trusted addresses yet.
+  trustedRule: Trust applies only to page interaction; browser installation, file writes, and other high-risk capabilities keep their existing approval rules.
+  trustedInvalid: Enter a valid address including http:// or https:// and do not include credentials.
+  trustedLimit: You can add up to 50 trusted addresses.
   permissionTitle: Permission mode
   permissionHelp: You can change this at any time; new settings apply to the next chat request.
   request_approval:

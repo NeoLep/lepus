@@ -39,6 +39,7 @@
     "markdown-it": "^15.0.0",
     "openai": "^7.1.0",
     "pdfjs-dist": "^6.2.108",
+    "playwright": "^1.62.1",
     "reka-ui": "^2.10.1",
     "tailwind-merge": "^3.6.0",
     "vue-i18n": "^11.4.8",

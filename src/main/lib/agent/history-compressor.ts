@@ -30,9 +30,15 @@ export function interactiveDecisionContext(message: Message): string {
       const request = JSON.parse(call.arguments) as { question?: unknown }
       const result = JSON.parse(call.result) as {
         ok?: boolean
-        data?: { answer?: unknown; selectedOptionId?: unknown }
+        data?: { answer?: unknown; selectedOptionId?: unknown; sensitive?: unknown }
       }
-      if (result.ok !== true || typeof result.data?.answer !== 'string') return []
+      if (
+        result.ok !== true ||
+        result.data?.sensitive === true ||
+        typeof result.data?.answer !== 'string'
+      ) {
+        return []
+      }
       return [
         {
           question: typeof request.question === 'string' ? request.question : '',
