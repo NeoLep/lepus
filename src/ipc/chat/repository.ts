@@ -10,6 +10,7 @@ import type {
   PromptSettings,
   PermissionSettings,
   RemoteBotSettings,
+  RemoteBotToolGroup,
   SearchProviderConfig,
   SearchProviderId,
   Session,
@@ -1065,13 +1066,52 @@ export class ChatRepository {
     } catch {
       allowedOpenIds = []
     }
+    const validToolGroups = new Set<RemoteBotToolGroup>([
+      'utilities',
+      'web_search',
+      'workspace_read',
+      'skills',
+      'browser',
+      'clipboard'
+    ])
+    const defaultToolGroups: RemoteBotToolGroup[] = [
+      'utilities',
+      'web_search',
+      'workspace_read',
+      'skills'
+    ]
+    let allowedToolGroups: RemoteBotToolGroup[] = [...defaultToolGroups]
+    try {
+      const parsed = JSON.parse(values.get('remoteBot.feishu.allowedToolGroups') ?? 'null')
+      if (Array.isArray(parsed)) {
+        allowedToolGroups = [
+          ...new Set(
+            parsed.filter(
+              (item): item is RemoteBotToolGroup =>
+                typeof item === 'string' && validToolGroups.has(item as RemoteBotToolGroup)
+            )
+          )
+        ]
+      }
+    } catch {
+      allowedToolGroups = [...defaultToolGroups]
+    }
+    const parsedMaxToolRounds = Number(values.get('remoteBot.feishu.maxToolRounds') ?? '12')
     return {
       enabled: values.get('remoteBot.enabled') === '1',
       platform: 'feishu',
       appId: values.get('remoteBot.feishu.appId') ?? '',
       appSecret: includeSecret && storedSecret ? decryptApiKey(storedSecret) : '',
       hasAppSecret: Boolean(storedSecret),
-      allowedOpenIds
+      allowedOpenIds,
+      allowedToolGroups,
+      workspacePath: values.get('remoteBot.feishu.workspacePath') ?? '',
+      maxToolRounds:
+        Number.isInteger(parsedMaxToolRounds) &&
+        parsedMaxToolRounds >= 2 &&
+        parsedMaxToolRounds <= 20
+          ? parsedMaxToolRounds
+          : 12
     }
   }
 
@@ -1086,6 +1126,19 @@ export class ChatRepository {
     const allowedOpenIds = [
       ...new Set(settings.allowedOpenIds.map((id) => id.trim()).filter(Boolean))
     ]
+    const validToolGroups = new Set<RemoteBotToolGroup>([
+      'utilities',
+      'web_search',
+      'workspace_read',
+      'skills',
+      'browser',
+      'clipboard'
+    ])
+    const allowedToolGroups = [
+      ...new Set(settings.allowedToolGroups.filter((group) => validToolGroups.has(group)))
+    ]
+    const workspacePath = settings.workspacePath.trim()
+    const maxToolRounds = Math.min(20, Math.max(2, Math.trunc(settings.maxToolRounds || 12)))
     const now = new Date().toISOString()
     const save = this.database.prepare(
       `INSERT INTO app_settings (key, value, updated_at)
@@ -1096,6 +1149,9 @@ export class ChatRepository {
       save.run('remoteBot.enabled', settings.enabled ? '1' : '0', now)
       save.run('remoteBot.feishu.appId', appId, now)
       save.run('remoteBot.feishu.allowedOpenIds', JSON.stringify(allowedOpenIds), now)
+      save.run('remoteBot.feishu.allowedToolGroups', JSON.stringify(allowedToolGroups), now)
+      save.run('remoteBot.feishu.workspacePath', workspacePath, now)
+      save.run('remoteBot.feishu.maxToolRounds', String(maxToolRounds), now)
       if (appSecret) save.run('remoteBot.feishu.appSecret', encryptApiKey(appSecret), now)
     })()
     return this.getRemoteBotSettings(false)

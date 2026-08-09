@@ -10,8 +10,8 @@ import {
   DialogRoot,
   DialogTitle
 } from 'reka-ui'
-import { Bot, CircleAlert, LoaderCircle, Radio, X } from '@lucide/vue'
-import type { RemoteBotSettings, RemoteBotStatus } from '@ipc/chat/constants'
+import { Bot, CircleAlert, FolderOpen, LoaderCircle, Radio, X } from '@lucide/vue'
+import type { RemoteBotSettings, RemoteBotStatus, RemoteBotToolGroup } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 
 const open = defineModel<boolean>('open', { required: true })
@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: fa
 const { t } = useI18n({ useScope: 'local' })
 const loading = ref(false)
 const saving = ref(false)
+const selectingFolder = ref(false)
 const error = ref('')
 const draft = ref<RemoteBotSettings>({
   enabled: false,
@@ -26,7 +27,10 @@ const draft = ref<RemoteBotSettings>({
   appId: '',
   appSecret: '',
   hasAppSecret: false,
-  allowedOpenIds: []
+  allowedOpenIds: [],
+  allowedToolGroups: ['utilities', 'web_search', 'workspace_read', 'skills'],
+  workspacePath: '',
+  maxToolRounds: 12
 })
 const allowedOpenIdsText = ref('')
 const status = ref<RemoteBotStatus>({
@@ -40,6 +44,33 @@ const lastSenderHint = computed(() => {
   if (!status.value.lastSenderOpenId) return ''
   return t('lastSender', { id: status.value.lastSenderOpenId })
 })
+const toolGroups = computed<Array<{ id: RemoteBotToolGroup; title: string; description: string }>>(
+  () => [
+    { id: 'utilities', title: t('tools.utilities'), description: t('tools.utilitiesHint') },
+    { id: 'web_search', title: t('tools.webSearch'), description: t('tools.webSearchHint') },
+    {
+      id: 'workspace_read',
+      title: t('tools.workspaceRead'),
+      description: t('tools.workspaceReadHint')
+    },
+    { id: 'skills', title: t('tools.skills'), description: t('tools.skillsHint') },
+    { id: 'browser', title: t('tools.browser'), description: t('tools.browserHint') },
+    { id: 'clipboard', title: t('tools.clipboard'), description: t('tools.clipboardHint') }
+  ]
+)
+
+async function selectWorkspace(): Promise<void> {
+  selectingFolder.value = true
+  error.value = ''
+  try {
+    const selected = await window.api.chat.selectWorkspaceFolder()
+    if (selected) draft.value.workspacePath = selected
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : t('selectFolderFailed')
+  } finally {
+    selectingFolder.value = false
+  }
+}
 
 async function load(): Promise<void> {
   loading.value = true
@@ -49,7 +80,12 @@ async function load(): Promise<void> {
       window.api.chat.queryRemoteBotSettings(),
       window.api.chat.queryRemoteBotStatus()
     ])
-    draft.value = { ...settings, appSecret: '', allowedOpenIds: [...settings.allowedOpenIds] }
+    draft.value = {
+      ...settings,
+      appSecret: '',
+      allowedOpenIds: [...settings.allowedOpenIds],
+      allowedToolGroups: [...settings.allowedToolGroups]
+    }
     allowedOpenIdsText.value = settings.allowedOpenIds.join('\n')
     status.value = currentStatus
   } catch (cause) {
@@ -64,15 +100,25 @@ async function save(): Promise<void> {
   error.value = ''
   try {
     const saved = await window.api.chat.updateRemoteBotSettings({
-      ...draft.value,
+      enabled: draft.value.enabled,
+      platform: 'feishu',
       appId: draft.value.appId.trim(),
       appSecret: draft.value.appSecret.trim(),
+      hasAppSecret: draft.value.hasAppSecret,
       allowedOpenIds: allowedOpenIdsText.value
         .split(/[\n,，]/)
         .map((id) => id.trim())
-        .filter(Boolean)
+        .filter(Boolean),
+      allowedToolGroups: [...draft.value.allowedToolGroups],
+      workspacePath: draft.value.workspacePath,
+      maxToolRounds: draft.value.maxToolRounds
     })
-    draft.value = { ...saved, appSecret: '', allowedOpenIds: [...saved.allowedOpenIds] }
+    draft.value = {
+      ...saved,
+      appSecret: '',
+      allowedOpenIds: [...saved.allowedOpenIds],
+      allowedToolGroups: [...saved.allowedToolGroups]
+    }
     allowedOpenIdsText.value = saved.allowedOpenIds.join('\n')
     status.value = await window.api.chat.queryRemoteBotStatus()
   } catch (cause) {
@@ -166,6 +212,49 @@ onBeforeUnmount(removeStatusListener)
               placeholder="ou_xxxxxxxxxxxxxxxx"
             ></textarea>
             <small>{{ t('allowlistHint') }}</small>
+          </label>
+
+          <section class="capability-section">
+            <div class="section-heading">
+              <div>
+                <strong>{{ t('capabilities') }}</strong>
+                <small>{{ t('capabilitiesHint') }}</small>
+              </div>
+              <span>{{ t('selectedCount', { count: draft.allowedToolGroups.length }) }}</span>
+            </div>
+            <label v-for="group in toolGroups" :key="group.id" class="capability-row">
+              <input v-model="draft.allowedToolGroups" type="checkbox" :value="group.id" />
+              <span>
+                <strong>{{ group.title }}</strong>
+                <small>{{ group.description }}</small>
+              </span>
+            </label>
+          </section>
+
+          <section v-if="draft.allowedToolGroups.includes('workspace_read')" class="workspace-card">
+            <div>
+              <strong>{{ t('workspace') }}</strong>
+              <small>{{ draft.workspacePath || t('workspaceEmpty') }}</small>
+            </div>
+            <button type="button" :disabled="selectingFolder" @click="selectWorkspace">
+              <LoaderCircle v-if="selectingFolder" class="spin" :size="15" />
+              <FolderOpen v-else :size="15" />
+              {{ t('chooseFolder') }}
+            </button>
+            <button
+              v-if="draft.workspacePath"
+              type="button"
+              class="text-button"
+              @click="draft.workspacePath = ''"
+            >
+              {{ t('clearFolder') }}
+            </button>
+          </section>
+
+          <label>
+            <span>{{ t('maxToolRounds') }}</span>
+            <input v-model.number="draft.maxToolRounds" type="number" min="2" max="20" />
+            <small>{{ t('maxToolRoundsHint') }}</small>
           </label>
 
           <aside class="setup-guide">
@@ -318,6 +407,83 @@ onBeforeUnmount(removeStatusListener)
   padding: 12px 14px;
   background: var(--app-surface-subtle);
 }
+.capability-section {
+  overflow: hidden;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--app-surface-subtle);
+}
+.section-heading > div,
+.capability-row > span,
+.workspace-card > div {
+  display: grid;
+  gap: 3px;
+}
+.section-heading small,
+.capability-row small,
+.workspace-card small {
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.section-heading > span {
+  color: var(--app-text-muted);
+  font-size: 12px;
+}
+.capability-row {
+  display: grid !important;
+  grid-template-columns: auto 1fr;
+  gap: 10px !important;
+  align-items: start;
+  padding: 11px 14px;
+  border-top: 1px solid var(--app-border);
+  cursor: pointer;
+}
+.capability-row input {
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: #3370ff;
+}
+.workspace-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+}
+.workspace-card > div {
+  min-width: 0;
+  flex: 1;
+}
+.workspace-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-card button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: var(--app-surface);
+  color: var(--app-text);
+  cursor: pointer;
+}
+.workspace-card .text-button {
+  border-color: transparent;
+  color: var(--app-text-muted);
+}
 .status-card > div,
 .platform-card > div,
 .toggle-row > div {
@@ -456,7 +622,30 @@ zh-CN:
   setupEvent: 事件订阅选择“使用长连接”，添加事件
   setupPublish: 创建版本并发布，将可见范围限制为自己。
   openConsole: 打开飞书开发者后台 ↗
-  safety: 远程会话默认只开放只读工具；需要审批、写文件、运行脚本或操作浏览器时，请回到桌面端完成。
+  capabilities: 工具与功能权限
+  capabilitiesHint: 只勾选允许飞书会话调用的能力；修改后立即对新消息生效。
+  selectedCount: 已启用 {count} 项
+  workspace: 只读工作文件夹
+  workspaceEmpty: 尚未选择；本地文件工具将不可用
+  chooseFolder: 选择
+  clearFolder: 清除
+  selectFolderFailed: 无法选择工作文件夹
+  maxToolRounds: 单次消息工具轮数上限
+  maxToolRoundsHint: 可设置 2–20；越低限制越严格，复杂任务可能需要分多条消息完成。
+  tools:
+    utilities: 基础工具
+    utilitiesHint: 计算、当前时间和 UUID 生成。
+    webSearch: 联网搜索
+    webSearchHint: 将查询词发送给已配置的搜索服务。
+    workspaceRead: 本地文件读取
+    workspaceReadHint: 仅可检查、查找和读取所选文件夹，不允许写入。
+    skills: Skills
+    skillsHint: 自动匹配已启用的 Skills，并读取其已登记参考文件。
+    browser: 浏览器操作
+    browserHint: 打开并操作公开网页；不允许安装浏览器、访问内网或保存截图。
+    clipboard: 读取剪贴板
+    clipboardHint: 允许读取这台电脑当前的纯文本剪贴板，可能包含敏感信息。
+  safety: 飞书会话始终禁止写文件和运行脚本。浏览器与剪贴板权限具有较高风险，请只向可信飞书用户开放。
   save: 保存并连接
   saving: 正在保存…
   loadFailed: 无法读取远程机器人设置
@@ -485,7 +674,30 @@ en:
   setupEvent: Select long connection for event subscription and add
   setupPublish: Publish a version and limit visibility to yourself.
   openConsole: Open Feishu developer console ↗
-  safety: Remote chats use read-only tools. Return to the desktop app for approvals, writes, scripts, or browser actions.
+  capabilities: Tools and capabilities
+  capabilitiesHint: Only checked capabilities are available to Feishu chats. Changes apply to new messages immediately.
+  selectedCount: '{count} enabled'
+  workspace: Read-only workspace
+  workspaceEmpty: Not selected; local file tools will be unavailable
+  chooseFolder: Choose
+  clearFolder: Clear
+  selectFolderFailed: Failed to select a workspace folder
+  maxToolRounds: Tool round limit per message
+  maxToolRoundsHint: Set from 2–20. Lower limits are stricter; complex work may require more messages.
+  tools:
+    utilities: Utilities
+    utilitiesHint: Calculator, current time, and UUID generation.
+    webSearch: Web search
+    webSearchHint: Sends search queries to the configured search provider.
+    workspaceRead: Local file reading
+    workspaceReadHint: Inspect, find, and read within the selected folder; writing stays disabled.
+    skills: Skills
+    skillsHint: Match enabled Skills and read their registered reference files.
+    browser: Browser control
+    browserHint: Open and operate public webpages; browser installation, private networks, and screenshots stay blocked.
+    clipboard: Read clipboard
+    clipboardHint: Read the computer's current plain-text clipboard, which may contain sensitive data.
+  safety: Feishu chats always block file writes and scripts. Browser and clipboard access are high-risk; only allow trusted Feishu users.
   save: Save and connect
   saving: Saving…
   loadFailed: Failed to load remote bot settings

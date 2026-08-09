@@ -62,6 +62,10 @@ export type DelegateTasksHandler = (
 
 export type FunctionToolRuntimeOptions = {
   readOnly?: boolean
+  allowBrowserTools?: boolean
+  allowClipboardTool?: boolean
+  allowedToolNames?: ReadonlySet<string>
+  approvalFreeToolNames?: ReadonlySet<string>
   delegateTasks?: DelegateTasksHandler
   activeSkills?: SkillDefinition[]
   getTrustedBrowserOrigins?: () => string[]
@@ -1233,7 +1237,11 @@ export function createFunctionToolRuntime(
     return (
       !FILE_TOOL_NAMES.has(name) &&
       name !== 'update_plan' &&
-      !(options.readOnly && ['clipboard_read_text', 'request_user_input'].includes(name))
+      !(
+        options.readOnly &&
+        (name === 'request_user_input' ||
+          (name === 'clipboard_read_text' && !options.allowClipboardTool))
+      )
     )
   })
   const taskTools = taskMode
@@ -1255,7 +1263,7 @@ export function createFunctionToolRuntime(
       })
     : []
   const delegateTool = options.delegateTasks ? createDelegateTasksTool(options.delegateTasks) : null
-  const browserTools = options.readOnly ? [] : createBrowserTools()
+  const browserTools = options.readOnly && !options.allowBrowserTools ? [] : createBrowserTools()
   const skillFileTool = options.activeSkills?.some((skill) => skill.rootPath)
     ? createTool(
         'read_skill_file',
@@ -1358,7 +1366,7 @@ export function createFunctionToolRuntime(
           }
         )
       : null
-  const tools = [
+  const availableTools = [
     ...safeTools,
     ...taskTools,
     ...fileTools,
@@ -1368,6 +1376,13 @@ export function createFunctionToolRuntime(
     ...(skillScriptTool ? [skillScriptTool] : []),
     ...(delegateTool ? [delegateTool] : [])
   ]
+  const tools = options.allowedToolNames
+    ? availableTools.filter(
+        (tool) =>
+          tool.schema.type === 'function' &&
+          options.allowedToolNames?.has(tool.schema.function.name)
+      )
+    : availableTools
   const toolMap = new Map(
     tools.map((tool) => {
       if (tool.schema.type !== 'function') throw new Error('仅支持 function 类型工具')
@@ -1387,6 +1402,8 @@ export function createFunctionToolRuntime(
       } catch {
         return tool.approval
       }
+
+      if (options.approvalFreeToolNames?.has(name)) return undefined
 
       if (name === 'search_web') {
         if (permissionSettings.mode === 'full_access') return undefined

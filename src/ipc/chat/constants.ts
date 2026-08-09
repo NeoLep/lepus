@@ -386,7 +386,13 @@ export type RemoteBotSettings = {
   appSecret: string
   hasAppSecret: boolean
   allowedOpenIds: string[]
+  allowedToolGroups: RemoteBotToolGroup[]
+  workspacePath: string
+  maxToolRounds: number
 }
+
+export type RemoteBotToolGroup =
+  'utilities' | 'web_search' | 'workspace_read' | 'skills' | 'browser' | 'clipboard'
 
 export type RemoteBotStatus = {
   state: 'stopped' | 'connecting' | 'connected' | 'error'

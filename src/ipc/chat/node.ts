@@ -611,11 +611,20 @@ export default () => {
   ipcMain.handle(CHAT_CHANNELS.REMOTE_BOT_SETTINGS_QUERY, () =>
     getChatRepository().getRemoteBotSettings(false)
   )
-  ipcMain.handle(CHAT_CHANNELS.REMOTE_BOT_SETTINGS_UPDATE, (_event, request: RemoteBotSettings) => {
-    const saved = getChatRepository().saveRemoteBotSettings(request)
-    void remoteBotManager.reload()
-    return saved
-  })
+  ipcMain.handle(
+    CHAT_CHANNELS.REMOTE_BOT_SETTINGS_UPDATE,
+    async (_event, request: RemoteBotSettings) => {
+      const workspacePath = request.workspacePath.trim()
+      if (workspacePath) {
+        if (!path.isAbsolute(workspacePath)) throw new Error('远程机器人工作文件夹必须是绝对路径')
+        const folderInfo = await stat(workspacePath)
+        if (!folderInfo.isDirectory()) throw new Error('远程机器人工作路径不是文件夹')
+      }
+      const saved = getChatRepository().saveRemoteBotSettings(request)
+      void remoteBotManager.reload()
+      return saved
+    }
+  )
   ipcMain.handle(CHAT_CHANNELS.REMOTE_BOT_STATUS_QUERY, () => remoteBotManager.getStatus())
   ipcMain.handle(CHAT_CHANNELS.PROMPT_PREVIEW, (_event, request: PromptPreviewRequest) =>
     new PromptBuilder().build(request)

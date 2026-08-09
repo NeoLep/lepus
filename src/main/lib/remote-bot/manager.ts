@@ -13,6 +13,27 @@ import {
 } from '@/ipc/chat/constants'
 import { getChatRepository } from '@/ipc/chat/repository'
 
+const REMOTE_TOOL_GROUPS = {
+  utilities: ['get_current_time', 'calculate', 'generate_uuid'],
+  web_search: ['search_web'],
+  workspace_read: ['inspect_file', 'search_files', 'search_text', 'read_file', 'list_directory'],
+  skills: ['read_skill_file'],
+  browser: [
+    'browser_status',
+    'browser_open',
+    'browser_tabs',
+    'browser_snapshot',
+    'browser_click',
+    'browser_type',
+    'browser_select',
+    'browser_scroll',
+    'browser_back',
+    'browser_forward',
+    'browser_close'
+  ],
+  clipboard: ['clipboard_read_text']
+} as const
+
 type FeishuMessageEvent = Parameters<NonNullable<lark.EventHandles['im.message.receive_v1']>>[0]
 
 const MAX_REPLY_CHARACTERS = 4_000
@@ -172,7 +193,8 @@ class RemoteBotManager {
             sessionId,
             text,
             event.message.chat_type,
-            senderOpenId
+            senderOpenId,
+            settings
           )
           await this.sendText(event.message.chat_id, reply || 'Lepus 没有生成可发送的回复。')
           this.publishStatus({ state: 'connected', message: '上一条飞书消息已处理完成' })
@@ -199,7 +221,8 @@ class RemoteBotManager {
     sessionId: string,
     content: string,
     chatType: string,
-    senderOpenId: string
+    senderOpenId: string,
+    settings: RemoteBotSettings
   ): Promise<string> {
     const repository = getChatRepository()
     const modelMetadata = repository.queryModelConfigs().find((config) => config.isActive)
@@ -235,20 +258,42 @@ class RemoteBotManager {
     }
     repository.createMessage(sessionId, userMessage)
     const history = repository.queryMessages(sessionId)
-    const activeSkills = matchSkills(repository.querySkills(), content)
+    const enabledGroups = new Set(settings.allowedToolGroups)
+    const activeSkills = enabledGroups.has('skills')
+      ? matchSkills(repository.querySkills(), content)
+      : []
+    const allowedToolNames = new Set(
+      settings.allowedToolGroups.flatMap((group) => [...REMOTE_TOOL_GROUPS[group]])
+    )
     const systemPrompt = [
       new PromptBuilder().build({ settings: repository.getPromptSettings(), locale: 'zh-CN' }),
       buildSkillPrompt(activeSkills),
-      `<remote_channel>当前消息来自用户配置的飞书远程机器人。仅执行本轮提供的只读工具；需要审批、敏感输入或修改本机状态时，清楚说明限制并让用户回到 Lepus 桌面端完成。</remote_channel>`
+      `<remote_channel>当前消息来自用户配置的飞书远程机器人。仅执行本轮提供且由用户启用的工具。除已启用的浏览器交互外，不得修改本机或外部状态；需要敏感输入、未授权能力或其他审批时，清楚说明限制并让用户回到 Lepus 桌面端完成。</remote_channel>`
     ]
       .filter(Boolean)
       .join('\n\n')
     const agent = new Agent(
       modelConfig,
       repository.getSearchProviderConfigs(),
-      repository.getPermissionSettings(sessionId),
+      {
+        workspacePath: enabledGroups.has('workspace_read') ? settings.workspacePath : '',
+        mode: 'request_approval',
+        trustedBrowserOrigins: []
+      },
       false,
-      { readOnly: true, activeSkills, maxToolRounds: 12 }
+      {
+        readOnly: true,
+        allowBrowserTools: enabledGroups.has('browser'),
+        allowClipboardTool: enabledGroups.has('clipboard'),
+        allowedToolNames,
+        approvalFreeToolNames: new Set([
+          ...(enabledGroups.has('web_search') ? REMOTE_TOOL_GROUPS.web_search : []),
+          ...(enabledGroups.has('browser') ? REMOTE_TOOL_GROUPS.browser : []),
+          ...(enabledGroups.has('clipboard') ? REMOTE_TOOL_GROUPS.clipboard : [])
+        ] as string[]),
+        activeSkills,
+        maxToolRounds: settings.maxToolRounds
+      }
     )
     const context = new HistoryCompressor(
       repository,

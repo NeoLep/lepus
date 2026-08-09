@@ -143,8 +143,9 @@ export class Agent {
         {
           model: this.model,
           messages,
-          tools: this.toolRuntime.schemas,
-          tool_choice: 'auto',
+          ...(this.toolRuntime.schemas.length
+            ? { tools: this.toolRuntime.schemas, tool_choice: 'auto' as const }
+            : {}),
           stream: true
         },
         { signal: options?.signal }
