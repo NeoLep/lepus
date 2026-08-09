@@ -17,8 +17,6 @@ import {
   Archive,
   ArchiveRestore,
   Bot,
-  ChevronDown,
-  ChevronRight,
   LoaderCircle,
   MessageSquare,
   PanelLeft,
@@ -26,9 +24,6 @@ import {
   Pin,
   PinOff,
   Search,
-  Sparkles,
-  Globe2,
-  SlidersHorizontal,
   Settings2,
   SquarePen,
   Trash2
@@ -52,11 +47,8 @@ const emit = defineEmits<{
   delete: [session: Session]
   togglePin: [session: Session]
   toggleArchive: [session: Session]
-  manageModels: []
-  managePrompts: []
-  manageSearch: []
-  manageSkills: []
-  manageRemoteBot: []
+  openRemoteChats: []
+  openSettings: []
 }>()
 
 const searchOpen = ref(false)
@@ -66,47 +58,27 @@ const showArchived = ref(false)
 const searchResults = ref<SessionSearchResult[]>([])
 const searchLoading = ref(false)
 const searchError = ref('')
-const collapsedGroups = ref<Record<'local' | 'remote', boolean>>({
-  local: localStorage.getItem('lepus.sidebar.group.local.collapsed') === '1',
-  remote: localStorage.getItem('lepus.sidebar.group.remote.collapsed') === '1'
-})
 const { t } = useI18n({ useScope: 'local' })
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let searchVersion = 0
 
 const visibleEntries = computed(() => {
   if (searchQuery.value.trim()) {
-    return searchResults.value.map((result) => ({
-      ...result,
-      session: props.sessions.find((session) => session.id === result.session.id) ?? result.session
-    }))
+    return searchResults.value
+      .map((result) => ({
+        ...result,
+        session:
+          props.sessions.find((session) => session.id === result.session.id) ?? result.session
+      }))
+      .filter((entry) => !isRemoteSession(entry.session))
   }
   return props.sessions
-    .filter((session) => session.isArchived === showArchived.value)
+    .filter((session) => !isRemoteSession(session) && session.isArchived === showArchived.value)
     .map((session) => ({ session, snippet: '', matchedIn: 'title' as const }))
 })
 
 function isRemoteSession(session: Session): boolean {
   return session.id.startsWith('remote-feishu-')
-}
-
-const conversationGroups = computed(() => {
-  const local = visibleEntries.value.filter((entry) => !isRemoteSession(entry.session))
-  const remote = visibleEntries.value.filter((entry) => isRemoteSession(entry.session))
-  return [
-    { id: 'local', label: t('localChats'), entries: local },
-    { id: 'remote', label: t('remoteChats'), entries: remote }
-  ].filter((group) => group.entries.length > 0)
-})
-
-function displaySessionTitle(session: Session): string {
-  return isRemoteSession(session) ? session.title.replace(/^飞书\s*·\s*/, '') : session.title
-}
-
-function toggleConversationGroup(groupId: 'local' | 'remote'): void {
-  const collapsed = !collapsedGroups.value[groupId]
-  collapsedGroups.value[groupId] = collapsed
-  localStorage.setItem(`lepus.sidebar.group.${groupId}.collapsed`, collapsed ? '1' : '0')
 }
 
 watch(searchQuery, (value) => {
@@ -252,126 +224,84 @@ onBeforeUnmount(() => {
           }}
         </p>
         <div
-          v-for="group in conversationGroups"
-          :key="group.id"
-          class="conversation-group"
-          :class="`${group.id}-conversation-group`"
+          v-for="entry in visibleEntries"
+          :key="entry.session.id"
+          class="conversation-item"
+          :class="{
+            active: entry.session.id === activeSessionId,
+            'has-snippet': !!entry.snippet && entry.matchedIn !== 'title'
+          }"
+          role="button"
+          tabindex="0"
+          @click="emit('select', entry.session.id)"
+          @keydown.enter="emit('select', entry.session.id)"
+          @keydown.space.prevent="emit('select', entry.session.id)"
         >
-          <button
-            class="conversation-group-heading"
-            :class="{ 'remote-group-heading': group.id === 'remote' }"
-            type="button"
-            :aria-expanded="!collapsedGroups[group.id as 'local' | 'remote']"
-            @click="toggleConversationGroup(group.id as 'local' | 'remote')"
-          >
-            <span class="group-toggle-icon">
-              <ChevronRight v-if="collapsedGroups[group.id as 'local' | 'remote']" :size="13" />
-              <ChevronDown v-else :size="13" />
-            </span>
-            <span v-if="group.id === 'remote'" class="remote-platform-icon"
-              ><Bot :size="14"
-            /></span>
-            <span v-else class="local-platform-icon"><MessageSquare :size="14" /></span>
-            <div>
-              <strong>{{ group.id === 'remote' ? t('feishu') : t('localChats') }}</strong>
-              <small>{{ group.id === 'remote' ? t('remoteChats') : t('localChatsHint') }}</small>
-            </div>
-            <span class="group-count">{{ group.entries.length }}</span>
-          </button>
-          <div
-            v-for="entry in group.entries"
-            v-show="!collapsedGroups[group.id as 'local' | 'remote']"
-            :key="entry.session.id"
-            class="conversation-item"
-            :class="{
-              active: entry.session.id === activeSessionId,
-              'has-snippet': !!entry.snippet && entry.matchedIn !== 'title',
-              'remote-item': group.id === 'remote'
-            }"
-            role="button"
-            tabindex="0"
-            @click="emit('select', entry.session.id)"
-            @keydown.enter="emit('select', entry.session.id)"
-            @keydown.space.prevent="emit('select', entry.session.id)"
-          >
-            <Bot v-if="group.id === 'remote'" :size="15" />
-            <MessageSquare v-else :size="15" />
-            <div class="conversation-copy">
-              <span>{{ displaySessionTitle(entry.session) }}</span>
-              <small v-if="entry.snippet && entry.matchedIn !== 'title'">{{ entry.snippet }}</small>
-            </div>
-            <Pin v-if="entry.session.isPinned" class="pin-indicator" :size="12" />
-            <Archive
-              v-if="searchQuery && entry.session.isArchived"
-              class="pin-indicator"
-              :size="12"
-            />
-            <DropdownMenuRoot>
-              <DropdownMenuTrigger as-child>
-                <button
-                  class="conversation-more"
-                  type="button"
-                  :aria-label="t('moreActions', { title: entry.session.title })"
-                  @click.stop
-                >
-                  <Ellipsis :size="16" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuPortal>
-                <DropdownMenuContent class="menu-content" align="start" :side-offset="4">
-                  <DropdownMenuItem class="menu-item" @select="emit('togglePin', entry.session)">
-                    <PinOff v-if="entry.session.isPinned" :size="15" />
-                    <Pin v-else :size="15" />
-                    {{ entry.session.isPinned ? t('unpin') : t('pin') }}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem class="menu-item" @select="emit('rename', entry.session)">
-                    <Pencil :size="15" />
-                    {{ t('common.rename') }}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    class="menu-item"
-                    @select="emit('toggleArchive', entry.session)"
-                  >
-                    <ArchiveRestore v-if="entry.session.isArchived" :size="15" />
-                    <Archive v-else :size="15" />
-                    {{ entry.session.isArchived ? t('restore') : t('archive') }}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator class="menu-separator" />
-                  <DropdownMenuItem
-                    class="menu-item danger-item"
-                    @select="emit('delete', entry.session)"
-                  >
-                    <Trash2 :size="15" />
-                    {{ t('common.delete') }}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenuPortal>
-            </DropdownMenuRoot>
+          <MessageSquare :size="15" />
+          <div class="conversation-copy">
+            <span>{{ entry.session.title }}</span>
+            <small v-if="entry.snippet && entry.matchedIn !== 'title'">{{ entry.snippet }}</small>
           </div>
+          <Pin v-if="entry.session.isPinned" class="pin-indicator" :size="12" />
+          <Archive
+            v-if="searchQuery && entry.session.isArchived"
+            class="pin-indicator"
+            :size="12"
+          />
+          <DropdownMenuRoot>
+            <DropdownMenuTrigger as-child>
+              <button
+                class="conversation-more"
+                type="button"
+                :aria-label="t('moreActions', { title: entry.session.title })"
+                @click.stop
+              >
+                <Ellipsis :size="16" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuContent class="menu-content" align="start" :side-offset="4">
+                <DropdownMenuItem class="menu-item" @select="emit('togglePin', entry.session)">
+                  <PinOff v-if="entry.session.isPinned" :size="15" />
+                  <Pin v-else :size="15" />
+                  {{ entry.session.isPinned ? t('unpin') : t('pin') }}
+                </DropdownMenuItem>
+                <DropdownMenuItem class="menu-item" @select="emit('rename', entry.session)">
+                  <Pencil :size="15" />
+                  {{ t('common.rename') }}
+                </DropdownMenuItem>
+                <DropdownMenuItem class="menu-item" @select="emit('toggleArchive', entry.session)">
+                  <ArchiveRestore v-if="entry.session.isArchived" :size="15" />
+                  <Archive v-else :size="15" />
+                  {{ entry.session.isArchived ? t('restore') : t('archive') }}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator class="menu-separator" />
+                <DropdownMenuItem
+                  class="menu-item danger-item"
+                  @select="emit('delete', entry.session)"
+                >
+                  <Trash2 :size="15" />
+                  {{ t('common.delete') }}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenuPortal>
+          </DropdownMenuRoot>
         </div>
       </div>
     </nav>
 
     <div class="settings-actions">
-      <button class="settings-button" type="button" @click="emit('manageRemoteBot')">
+      <button
+        class="settings-button remote-chats-button"
+        type="button"
+        @click="emit('openRemoteChats')"
+      >
         <Bot :size="17" />
-        <span>{{ t('remoteAccess') }}</span>
+        <span>{{ t('remoteConversations') }}</span>
       </button>
-      <button class="settings-button" type="button" @click="emit('manageSkills')">
-        <Sparkles :size="17" />
-        <span>{{ t('skills') }}</span>
-      </button>
-      <button class="settings-button" type="button" @click="emit('manageSearch')">
-        <Globe2 :size="17" />
-        <span>{{ t('webSearch') }}</span>
-      </button>
-      <button class="settings-button" type="button" @click="emit('managePrompts')">
-        <SlidersHorizontal :size="17" />
-        <span>{{ t('promptSettings') }}</span>
-      </button>
-      <button class="settings-button" type="button" @click="emit('manageModels')">
+      <button class="settings-button" type="button" @click="emit('openSettings')">
         <Settings2 :size="17" />
-        <span>{{ t('modelManagement') }}</span>
+        <span>{{ t('settings') }}</span>
       </button>
     </div>
   </aside>
@@ -467,97 +397,6 @@ kbd {
 
 .conversation-section {
   margin-top: 20px;
-}
-
-.remote-conversation-group {
-  margin-top: 14px;
-  padding: 6px;
-  border: 1px solid var(--app-border-subtle);
-  border-radius: 12px;
-  background: var(--app-surface-subtle);
-}
-
-.conversation-group-heading {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 9px;
-  padding: 5px 7px 7px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.local-conversation-group .conversation-group-heading {
-  margin-bottom: 3px;
-}
-
-.conversation-group-heading:hover {
-  background: var(--app-hover);
-}
-
-.group-toggle-icon {
-  display: grid;
-  width: 14px;
-  flex: 0 0 14px;
-  place-items: center;
-  color: var(--app-text-muted);
-}
-
-.remote-platform-icon,
-.local-platform-icon {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
-  place-items: center;
-  border-radius: 8px;
-  background: rgb(51 112 255 / 12%);
-  color: #3370ff;
-}
-
-.local-platform-icon {
-  background: var(--app-surface-muted);
-  color: var(--app-text-tertiary);
-}
-
-.conversation-group-heading > div {
-  display: grid;
-  min-width: 0;
-  flex: 1;
-  gap: 1px;
-}
-
-.conversation-group-heading strong {
-  color: var(--app-text-secondary);
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.conversation-group-heading small {
-  color: var(--app-text-muted);
-  font-size: 10px;
-}
-
-.group-count {
-  min-width: 20px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: var(--app-surface-muted);
-  color: var(--app-text-muted);
-  font-size: 10px;
-  text-align: center;
-}
-
-.conversation-item.remote-item > svg:first-child {
-  color: #3370ff;
-}
-
-.remote-conversation-group .conversation-item.active {
-  background: rgb(51 112 255 / 12%);
 }
 
 .section-label {
@@ -746,7 +585,12 @@ kbd {
 .settings-actions {
   display: grid;
   gap: 2px;
-  padding: 4px 8px 9px;
+  padding: 10px 8px 12px;
+  border-top: 1px solid var(--app-border-subtle);
+}
+
+.remote-chats-button svg {
+  color: #3370ff;
 }
 
 .settings-actions .settings-button {
@@ -773,15 +617,8 @@ zh-CN:
   noMatchingChats: 没有匹配的对话
   noChats: 还没有对话
   moreActions: '{title} 更多操作'
-  modelManagement: 模型管理
-  skills: Skill 管理
-  promptSettings: 提示词设置
-  webSearch: 互联网搜索
-  remoteAccess: 远程接入
-  localChats: 本地对话
-  localChatsHint: 在 Lepus 中创建
-  feishu: 飞书
-  remoteChats: 远程对话
+  settings: 设置
+  remoteConversations: 飞书（远程对话）
 en:
   collapseSidebar: Collapse sidebar
   chatNavigation: Chat navigation
@@ -800,13 +637,6 @@ en:
   noMatchingChats: No matching chats
   noChats: No chats yet
   moreActions: More actions for {title}
-  modelManagement: Model management
-  skills: Skill management
-  promptSettings: Prompt settings
-  webSearch: Web search
-  remoteAccess: Remote access
-  localChats: Local chats
-  localChatsHint: Created in Lepus
-  feishu: Feishu
-  remoteChats: Remote chats
+  settings: Settings
+  remoteConversations: Feishu (Remote chats)
 </i18n>

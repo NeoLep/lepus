@@ -41,6 +41,8 @@ const props = defineProps<{
   userInputRequests?: UserInputRequest[]
   resolvingUserInputIds?: string[]
   showToolCallDetails: boolean
+  readOnly?: boolean
+  userLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -96,6 +98,7 @@ function visibleToolCalls(calls: ToolCallRecord[] | undefined): ToolCallRecord[]
 }
 
 async function startEditing(message: Message): Promise<void> {
+  if (props.readOnly) return
   editingMessageId.value = message.id
   editDraft.value = message.content
   await nextTick()
@@ -149,7 +152,7 @@ watch(
           <Sparkles v-else :size="16" />
         </div>
         <div class="message-body">
-          <strong>{{ message.role === 'user' ? t('you') : 'Lepus' }}</strong>
+          <strong>{{ message.role === 'user' ? (userLabel ?? t('you')) : 'Lepus' }}</strong>
           <template v-if="message.role === 'user'">
             <MessageAttachments
               v-if="message.attachments?.length"
@@ -183,7 +186,7 @@ watch(
             </div>
             <template v-else>
               <p v-if="message.content" class="plain-content">{{ message.content }}</p>
-              <div v-if="message.id === latestUserMessageId" class="message-actions">
+              <div v-if="!readOnly && message.id === latestUserMessageId" class="message-actions">
                 <button
                   type="button"
                   :disabled="sending"
@@ -208,7 +211,10 @@ watch(
             <FileInspectionCards :calls="message.toolCalls ?? []" />
             <FileDiffCards :calls="message.toolCalls ?? []" />
             <MarkdownContent :content="message.content" :sources="message.sources" />
-            <div v-if="message.id === latestAssistantMessageId" class="message-actions">
+            <div
+              v-if="!readOnly && message.id === latestAssistantMessageId"
+              class="message-actions"
+            >
               <button
                 type="button"
                 :disabled="sending"

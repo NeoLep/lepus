@@ -5,11 +5,8 @@ import AppSidebar from './components/layout/AppSidebar.vue'
 import AppTopbar from './components/layout/AppTopbar.vue'
 import SessionRenameDialog from './components/layout/SessionRenameDialog.vue'
 import ChatView from './components/chat/ChatView.vue'
-import ModelManagerDialog from './components/model/ModelManagerDialog.vue'
-import PromptSettingsDialog from './components/settings/PromptSettingsDialog.vue'
-import SearchProviderDialog from './components/settings/SearchProviderDialog.vue'
-import SkillManagerDialog from './components/settings/SkillManagerDialog.vue'
-import RemoteBotDialog from './components/settings/RemoteBotDialog.vue'
+import RemoteChatsDialog from './components/settings/RemoteChatsDialog.vue'
+import SettingsDialog from './components/settings/SettingsDialog.vue'
 import type { ModelConfig, Session, TaskModePreference } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import { useAppTheme } from './theme'
@@ -18,6 +15,8 @@ type SplitterPanelInstance = {
   collapse: () => void
   expand: () => void
 }
+
+type SettingsSection = 'remote' | 'skills' | 'search' | 'prompts' | 'models'
 
 const sidebarOpen = ref(true)
 const sidebarPanel = ref<SplitterPanelInstance | null>(null)
@@ -31,11 +30,9 @@ const sessionError = ref('')
 const modelConfigs = ref<ModelConfig[]>([])
 const modelsLoading = ref(true)
 const modelError = ref('')
-const modelManagerOpen = ref(false)
-const promptSettingsOpen = ref(false)
-const searchSettingsOpen = ref(false)
-const skillManagerOpen = ref(false)
-const remoteBotOpen = ref(false)
+const settingsOpen = ref(false)
+const remoteChatsOpen = ref(false)
+const settingsSection = ref<SettingsSection>('remote')
 const renameDialogOpen = ref(false)
 const renameTarget = ref<Session | null>(null)
 const promptSettingsVersion = ref(0)
@@ -56,6 +53,17 @@ const activeSessionPersisted = computed(
 const persistedSessions = computed(() =>
   sessions.value.filter((session) => !pendingSessionIds.value.has(session.id))
 )
+const remoteSessions = computed(() =>
+  persistedSessions.value.filter((session) => isRemoteSession(session))
+)
+
+function isRemoteSession(session: Session): boolean {
+  return session.id.startsWith('remote-feishu-')
+}
+
+function firstLocalSession(): Session | undefined {
+  return sessions.value.find((session) => !isRemoteSession(session) && !session.isArchived)
+}
 
 function sortSessions(): void {
   sessions.value.sort(
@@ -174,7 +182,7 @@ async function deleteSession(session: Session): Promise<void> {
   if (pendingSessionIds.value.has(session.id)) {
     pendingSessionIds.value.delete(session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
-    activeSessionId.value = sessions.value[0]?.id ?? null
+    activeSessionId.value = firstLocalSession()?.id ?? null
     if (!activeSessionId.value) startNewSession()
     return
   }
@@ -184,7 +192,9 @@ async function deleteSession(session: Session): Promise<void> {
     const deletedIndex = sessions.value.findIndex((item) => item.id === session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
     if (activeSessionId.value === session.id) {
-      const activeSessions = sessions.value.filter((item) => !item.isArchived)
+      const activeSessions = sessions.value.filter(
+        (item) => !isRemoteSession(item) && !item.isArchived
+      )
       activeSessionId.value =
         activeSessions[Math.min(Math.max(deletedIndex, 0), activeSessions.length - 1)]?.id ?? null
     }
@@ -223,7 +233,7 @@ async function loadSessions(): Promise<void> {
   try {
     sessions.value = await window.api.chat.querySession()
     sortSessions()
-    const firstActiveSession = sessions.value.find((session) => !session.isArchived)
+    const firstActiveSession = firstLocalSession()
     if (firstActiveSession) activeSessionId.value = firstActiveSession.id
     else startNewSession()
   } catch (error) {
@@ -237,6 +247,10 @@ async function refreshSessionsFromRemote(sessionId?: string): Promise<void> {
   try {
     sessions.value = await window.api.chat.querySession()
     sortSessions()
+    if (activeSession.value && isRemoteSession(activeSession.value)) {
+      activeSessionId.value = firstLocalSession()?.id ?? null
+      if (!activeSessionId.value) startNewSession()
+    }
     if (sessionId) {
       remoteSessionVersions.value[sessionId] = (remoteSessionVersions.value[sessionId] ?? 0) + 1
     }
@@ -320,7 +334,7 @@ async function updateSessionManagement(
     if (index !== -1) sessions.value[index] = updated
     sortSessions()
     if (updated.isArchived && activeSessionId.value === updated.id) {
-      activeSessionId.value = sessions.value.find((item) => !item.isArchived)?.id ?? null
+      activeSessionId.value = firstLocalSession()?.id ?? null
       if (!activeSessionId.value) startNewSession()
     }
   } catch (error) {
@@ -380,6 +394,11 @@ function openSidebar(): void {
   sidebarPanel.value?.expand()
 }
 
+function openSettings(section: SettingsSection = 'remote'): void {
+  settingsSection.value = section
+  settingsOpen.value = true
+}
+
 const removeRemoteBotStatusListener = window.api.chat.onRemoteBotStatusChanged((status) => {
   if (status.lastEventAt) void refreshSessionsFromRemote(status.lastSessionId)
 })
@@ -416,11 +435,8 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
           @delete="deleteSession"
           @toggle-pin="togglePin"
           @toggle-archive="toggleArchive"
-          @manage-models="modelManagerOpen = true"
-          @manage-prompts="promptSettingsOpen = true"
-          @manage-search="searchSettingsOpen = true"
-          @manage-skills="skillManagerOpen = true"
-          @manage-remote-bot="remoteBotOpen = true"
+          @open-remote-chats="remoteChatsOpen = true"
+          @open-settings="openSettings()"
         />
       </SplitterPanel>
 
@@ -447,7 +463,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
             @export-markdown="activeSession && exportSession(activeSession, 'markdown')"
             @export-json="activeSession && exportSession(activeSession, 'json')"
             @select-model="selectModelConfig"
-            @manage-models="modelManagerOpen = true"
+            @manage-models="openSettings('models')"
             @toggle-theme="toggleTheme"
           />
           <ChatView
@@ -468,19 +484,18 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
         </section>
       </SplitterPanel>
     </SplitterGroup>
-    <ModelManagerDialog
-      v-model:open="modelManagerOpen"
+    <SettingsDialog
+      v-model:open="settingsOpen"
+      :initial-section="settingsSection"
       :configs="modelConfigs"
       :active-id="activeModelConfig?.id ?? null"
-      :error="modelError"
+      :model-error="modelError"
       :save-config="saveModelConfig"
       :delete-config="deleteModelConfig"
       :select-config="selectModelConfig"
+      @prompt-saved="promptSettingsVersion += 1"
     />
-    <PromptSettingsDialog v-model:open="promptSettingsOpen" @saved="promptSettingsVersion += 1" />
-    <SearchProviderDialog v-model:open="searchSettingsOpen" />
-    <SkillManagerDialog v-model:open="skillManagerOpen" />
-    <RemoteBotDialog v-model:open="remoteBotOpen" />
+    <RemoteChatsDialog v-model:open="remoteChatsOpen" :sessions="remoteSessions" />
     <SessionRenameDialog
       v-model:open="renameDialogOpen"
       :session="renameTarget"

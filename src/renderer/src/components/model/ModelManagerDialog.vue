@@ -21,6 +21,7 @@ const props = defineProps<{
   configs: ModelConfig[]
   activeId: string | null
   error: string
+  embedded?: boolean
   saveConfig: (config: ModelConfig) => Promise<boolean>
   deleteConfig: (id: string) => Promise<boolean>
   selectConfig: (id: string) => Promise<boolean>
@@ -173,10 +174,14 @@ watch(
 </script>
 
 <template>
-  <DialogRoot v-model:open="open">
-    <DialogPortal>
-      <DialogOverlay class="model-dialog-overlay" />
-      <DialogContent class="model-dialog-content" @open-auto-focus.prevent>
+  <DialogRoot v-model:open="open" :modal="!props.embedded">
+    <DialogPortal :disabled="props.embedded">
+      <DialogOverlay v-if="!props.embedded" class="model-dialog-overlay" />
+      <DialogContent
+        class="model-dialog-content"
+        :class="{ embedded: props.embedded }"
+        @open-auto-focus.prevent
+      >
         <header class="dialog-header">
           <div>
             <DialogTitle class="dialog-title">{{ t('title') }}</DialogTitle>
@@ -184,7 +189,7 @@ watch(
               {{ t('description') }}
             </DialogDescription>
           </div>
-          <DialogClose class="dialog-close" :aria-label="t('common.close')">
+          <DialogClose v-if="!props.embedded" class="dialog-close" :aria-label="t('common.close')">
             <X :size="18" />
           </DialogClose>
         </header>
@@ -358,6 +363,20 @@ watch(
   animation: dialog-in 160ms ease-out;
 }
 
+.model-dialog-content.embedded {
+  position: relative;
+  z-index: auto;
+  top: auto;
+  left: auto;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  animation: none;
+}
+
 .dialog-header {
   display: flex;
   align-items: flex-start;
@@ -404,7 +423,7 @@ watch(
 
 .config-list {
   min-height: 0;
-  padding: 14px 10px;
+  padding: 12px;
   border-right: 1px solid var(--app-border-subtle);
   background: var(--app-surface-subtle);
 }
@@ -483,7 +502,7 @@ watch(
   min-width: 0;
   flex-direction: column;
   gap: 15px;
-  padding: 22px 24px 18px;
+  padding: 20px 22px;
   overflow-y: auto;
 }
 

@@ -15,6 +15,7 @@ import type { SearchProviderConfig, SearchProviderId } from '@ipc/chat/constants
 import SearchProviderLogo from './SearchProviderLogo.vue'
 
 const open = defineModel<boolean>('open', { required: true })
+const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const emit = defineEmits<{ saved: [] }>()
 const { t } = useI18n({ useScope: 'local' })
 const configs = ref<SearchProviderConfig[]>([])
@@ -94,7 +95,7 @@ async function save(): Promise<void> {
       configs.value.map((config) => ({ ...config }))
     )
     emit('saved')
-    open.value = false
+    if (!props.embedded) open.value = false
   } catch (saveError) {
     error.value = saveError instanceof Error ? saveError.message : t('saveFailed')
   } finally {
@@ -102,16 +103,24 @@ async function save(): Promise<void> {
   }
 }
 
-watch(open, (isOpen) => {
-  if (isOpen) void load()
-})
+watch(
+  open,
+  (isOpen) => {
+    if (isOpen) void load()
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
-  <DialogRoot v-model:open="open">
-    <DialogPortal>
-      <DialogOverlay class="search-dialog-overlay" />
-      <DialogContent class="search-dialog-content" @open-auto-focus.prevent>
+  <DialogRoot v-model:open="open" :modal="!props.embedded">
+    <DialogPortal :disabled="props.embedded">
+      <DialogOverlay v-if="!props.embedded" class="search-dialog-overlay" />
+      <DialogContent
+        class="search-dialog-content"
+        :class="{ embedded: props.embedded }"
+        @open-auto-focus.prevent
+      >
         <header class="dialog-header">
           <div>
             <DialogTitle class="dialog-title">{{ t('title') }}</DialogTitle>
@@ -119,7 +128,7 @@ watch(open, (isOpen) => {
               {{ t('description') }}
             </DialogDescription>
           </div>
-          <DialogClose class="dialog-close" :aria-label="t('common.close')">
+          <DialogClose v-if="!props.embedded" class="dialog-close" :aria-label="t('common.close')">
             <X :size="18" />
           </DialogClose>
         </header>
@@ -188,7 +197,7 @@ watch(open, (isOpen) => {
         <footer class="dialog-actions">
           <small>{{ t('securityNote') }}</small>
           <span></span>
-          <DialogClose class="secondary-button" :disabled="saving">
+          <DialogClose v-if="!props.embedded" class="secondary-button" :disabled="saving">
             {{ t('common.cancel') }}
           </DialogClose>
           <button class="primary-button" type="button" :disabled="loading || saving" @click="save">
@@ -224,6 +233,24 @@ watch(open, (isOpen) => {
   background: var(--app-surface);
   box-shadow: 0 24px 70px rgb(16 24 40 / 24%);
   transform: translate(-50%, -50%);
+}
+
+.search-dialog-content.embedded {
+  position: relative;
+  z-index: auto;
+  top: auto;
+  left: auto;
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: none;
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
 }
 
 .dialog-header,
@@ -268,7 +295,11 @@ watch(open, (isOpen) => {
 
 .provider-grid {
   display: grid;
+  width: 100%;
+  height: 100%;
   min-height: 0;
+  box-sizing: border-box;
+  align-content: start;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   padding: 18px 22px;
@@ -281,7 +312,7 @@ watch(open, (isOpen) => {
 .provider-card {
   padding: 15px;
   border: 1px solid var(--app-border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--app-surface);
 }
 .provider-card.enabled {
@@ -426,6 +457,7 @@ watch(open, (isOpen) => {
   font-size: 12px;
 }
 .dialog-actions {
+  padding: 13px 22px;
   border-top: 1px solid var(--app-border-subtle);
 }
 .dialog-actions > small {

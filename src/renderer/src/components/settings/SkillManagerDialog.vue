@@ -15,6 +15,7 @@ import { useI18n } from 'vue-i18n'
 import SkillImportDialog from './SkillImportDialog.vue'
 
 const open = defineModel<boolean>('open', { required: true })
+const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const { t } = useI18n({ useScope: 'local' })
 const skills = ref<SkillDefinition[]>([])
 const selectedId = ref<string | null>(null)
@@ -161,16 +162,24 @@ async function remove(): Promise<void> {
   }
 }
 
-watch(open, (isOpen) => {
-  if (isOpen) void load()
-})
+watch(
+  open,
+  (isOpen) => {
+    if (isOpen) void load()
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
-  <DialogRoot v-model:open="open">
-    <DialogPortal>
-      <DialogOverlay class="skill-dialog-overlay" />
-      <DialogContent class="skill-dialog-content" @open-auto-focus.prevent>
+  <DialogRoot v-model:open="open" :modal="!props.embedded">
+    <DialogPortal :disabled="props.embedded">
+      <DialogOverlay v-if="!props.embedded" class="skill-dialog-overlay" />
+      <DialogContent
+        class="skill-dialog-content"
+        :class="{ embedded: props.embedded }"
+        @open-auto-focus.prevent
+      >
         <header class="skill-dialog-header">
           <span class="skill-title-icon"><Sparkles :size="19" /></span>
           <div>
@@ -179,7 +188,7 @@ watch(open, (isOpen) => {
               {{ t('description') }}
             </DialogDescription>
           </div>
-          <DialogClose class="dialog-close" :aria-label="t('common.close')">
+          <DialogClose v-if="!props.embedded" class="dialog-close" :aria-label="t('common.close')">
             <X :size="18" />
           </DialogClose>
         </header>
@@ -212,27 +221,32 @@ watch(open, (isOpen) => {
             </button>
           </aside>
 
-          <form v-if="draft" class="skill-form" @submit.prevent="save">
-            <div class="skill-form-scroll">
-              <div v-if="isImported" class="imported-skill-summary">
-                <div>
-                  <span><Download :size="14" /></span>
-                  <p>
-                    <strong>{{ t(`sourceTypes.${draft.sourceType}`) }}</strong>
-                    <small :title="draft.sourceUrl">{{ draft.sourceUrl }}</small>
-                  </p>
-                </div>
-                <div class="skill-file-counts">
-                  <span
-                    ><FileCode2 :size="12" />
-                    {{ t('scriptsCount', { count: fileCounts.script }) }}</span
-                  >
-                  <span>{{ t('referencesCount', { count: fileCounts.reference }) }}</span>
-                  <span>{{ t('assetsCount', { count: fileCounts.asset }) }}</span>
-                </div>
-                <small>{{ t('importedReadonly') }}</small>
+          <form
+            v-if="draft"
+            class="skill-form"
+            :class="{ 'has-import-summary': isImported }"
+            @submit.prevent="save"
+          >
+            <div v-if="isImported" class="imported-skill-summary">
+              <div>
+                <span><Download :size="14" /></span>
+                <p>
+                  <strong>{{ t(`sourceTypes.${draft.sourceType}`) }}</strong>
+                  <small :title="draft.sourceUrl">{{ draft.sourceUrl }}</small>
+                </p>
               </div>
-              <label class="mt-5">
+              <div class="skill-file-counts">
+                <span
+                  ><FileCode2 :size="12" />
+                  {{ t('scriptsCount', { count: fileCounts.script }) }}</span
+                >
+                <span>{{ t('referencesCount', { count: fileCounts.reference }) }}</span>
+                <span>{{ t('assetsCount', { count: fileCounts.asset }) }}</span>
+              </div>
+              <small>{{ t('importedReadonly') }}</small>
+            </div>
+            <div class="skill-form-scroll">
+              <label>
                 <span>{{ t('name') }}</span>
                 <input
                   :value="draft.name"
@@ -299,7 +313,7 @@ watch(open, (isOpen) => {
                   <Trash2 :size="14" /> {{ t('common.delete') }}
                 </button>
                 <span></span>
-                <DialogClose class="secondary-button" type="button">
+                <DialogClose v-if="!props.embedded" class="secondary-button" type="button">
                   {{ t('common.cancel') }}
                 </DialogClose>
                 <button
@@ -349,6 +363,19 @@ watch(open, (isOpen) => {
   color: var(--app-text-secondary);
   transform: translate(-50%, -50%);
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.skill-dialog-content.embedded {
+  position: relative;
+  z-index: auto;
+  top: auto;
+  left: auto;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
 }
 .skill-dialog-header {
   display: flex;
@@ -474,26 +501,25 @@ watch(open, (isOpen) => {
   overflow: hidden;
   grid-template-rows: minmax(0, 1fr) auto;
 }
+.skill-form.has-import-summary {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
 .skill-form-scroll {
   display: grid;
   min-height: 0;
   align-content: start;
   gap: 11px;
-  padding: 18px 20px;
+  padding: 20px 22px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 .imported-skill-summary {
-  position: sticky;
-  z-index: 2;
-  top: 0;
   display: grid;
   gap: 8px;
-  margin: -18px -20px 0;
-  padding: 0 20px 14px;
+  padding: 14px 22px;
   border-bottom: 1px solid var(--app-border-subtle);
-  background: var(--app-surface);
+  background: var(--app-surface-subtle);
 }
 .imported-skill-summary > div:first-child {
   display: flex;
@@ -603,20 +629,20 @@ watch(open, (isOpen) => {
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  padding: 12px 20px;
+  padding: 13px 22px;
 }
 .skill-form-actions > span {
   flex: 1;
 }
 .skill-form-actions button {
   display: inline-flex;
-  height: 34px;
+  height: 36px;
   flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   padding: 0 12px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }

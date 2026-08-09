@@ -18,6 +18,7 @@ import {
 } from '@/shared/agent/prompt-settings'
 
 const open = defineModel<boolean>('open', { required: true })
+const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const emit = defineEmits<{
   saved: []
 }>()
@@ -79,7 +80,7 @@ async function save(): Promise<void> {
   try {
     draft.value = await window.api.chat.updatePromptSettings({ ...draft.value })
     emit('saved')
-    open.value = false
+    if (!props.embedded) open.value = false
   } catch (saveError) {
     error.value = saveError instanceof Error ? saveError.message : t('saveFailed')
   } finally {
@@ -87,9 +88,13 @@ async function save(): Promise<void> {
   }
 }
 
-watch(open, (isOpen) => {
-  if (isOpen) void load()
-})
+watch(
+  open,
+  (isOpen) => {
+    if (isOpen) void load()
+  },
+  { immediate: true }
+)
 watch(draft, schedulePreview, { deep: true })
 watch(locale, schedulePreview)
 onBeforeUnmount(() => {
@@ -98,10 +103,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <DialogRoot v-model:open="open">
-    <DialogPortal>
-      <DialogOverlay class="prompt-dialog-overlay" />
-      <DialogContent class="prompt-dialog-content" @open-auto-focus.prevent>
+  <DialogRoot v-model:open="open" :modal="!props.embedded">
+    <DialogPortal :disabled="props.embedded">
+      <DialogOverlay v-if="!props.embedded" class="prompt-dialog-overlay" />
+      <DialogContent
+        class="prompt-dialog-content"
+        :class="{ embedded: props.embedded }"
+        @open-auto-focus.prevent
+      >
         <header class="dialog-header">
           <div>
             <DialogTitle class="dialog-title">{{ t('title') }}</DialogTitle>
@@ -109,7 +118,7 @@ onBeforeUnmount(() => {
               {{ t('description') }}
             </DialogDescription>
           </div>
-          <DialogClose class="dialog-close" :aria-label="t('common.close')">
+          <DialogClose v-if="!props.embedded" class="dialog-close" :aria-label="t('common.close')">
             <X :size="18" />
           </DialogClose>
         </header>
@@ -183,7 +192,7 @@ onBeforeUnmount(() => {
             {{ t('resetDefaults') }}
           </button>
           <span></span>
-          <DialogClose class="secondary-button" :disabled="saving">
+          <DialogClose v-if="!props.embedded" class="secondary-button" :disabled="saving">
             {{ t('common.cancel') }}
           </DialogClose>
           <button class="primary-button" type="button" :disabled="loading || saving" @click="save">
@@ -219,6 +228,20 @@ onBeforeUnmount(() => {
   background: var(--app-surface);
   box-shadow: 0 24px 70px rgb(16 24 40 / 24%);
   transform: translate(-50%, -50%);
+}
+
+.prompt-dialog-content.embedded {
+  position: relative;
+  z-index: auto;
+  top: auto;
+  left: auto;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
 }
 
 .dialog-header {
@@ -453,7 +476,7 @@ fieldset input {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 14px 20px;
+  padding: 13px 22px;
   border-top: 1px solid var(--app-border-subtle);
 }
 
@@ -515,7 +538,7 @@ fieldset input {
 
 <i18n lang="yaml">
 zh-CN:
-  title: 提示词设置
+  title: 提示词设计
   description: 自定义模型指令以及每次请求携带的动态环境信息。
   customInstructions: 自定义指令
   instructionsPlaceholder: 例如：回答代码问题时优先使用 TypeScript，回复尽量简洁。
@@ -538,7 +561,7 @@ zh-CN:
   saveFailed: 保存提示词设置失败
   previewFailed: 生成提示词预览失败
 en:
-  title: Prompt settings
+  title: Prompt design
   description: Customize model instructions and the runtime context included with each request.
   customInstructions: Custom instructions
   instructionsPlaceholder: 'Example: Prefer TypeScript for code questions and keep responses concise.'

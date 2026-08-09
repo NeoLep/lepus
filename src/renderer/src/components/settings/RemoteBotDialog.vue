@@ -15,6 +15,7 @@ import type { RemoteBotSettings, RemoteBotStatus } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 
 const open = defineModel<boolean>('open', { required: true })
+const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const { t } = useI18n({ useScope: 'local' })
 const loading = ref(false)
 const saving = ref(false)
@@ -81,9 +82,13 @@ async function save(): Promise<void> {
   }
 }
 
-watch(open, (value) => {
-  if (value) void load()
-})
+watch(
+  open,
+  (value) => {
+    if (value) void load()
+  },
+  { immediate: true }
+)
 
 const removeStatusListener = window.api.chat.onRemoteBotStatusChanged((nextStatus) => {
   status.value = nextStatus
@@ -92,17 +97,21 @@ onBeforeUnmount(removeStatusListener)
 </script>
 
 <template>
-  <DialogRoot v-model:open="open">
-    <DialogPortal>
-      <DialogOverlay class="remote-overlay" />
-      <DialogContent class="remote-dialog" @open-auto-focus.prevent>
+  <DialogRoot v-model:open="open" :modal="!props.embedded">
+    <DialogPortal :disabled="props.embedded">
+      <DialogOverlay v-if="!props.embedded" class="remote-overlay" />
+      <DialogContent
+        class="remote-dialog"
+        :class="{ embedded: props.embedded }"
+        @open-auto-focus.prevent
+      >
         <header class="remote-header">
           <span class="remote-icon"><Bot :size="19" /></span>
           <div>
             <DialogTitle>{{ t('title') }}</DialogTitle>
             <DialogDescription>{{ t('description') }}</DialogDescription>
           </div>
-          <DialogClose class="close-button" :aria-label="t('common.close')"
+          <DialogClose v-if="!props.embedded" class="close-button" :aria-label="t('common.close')"
             ><X :size="18"
           /></DialogClose>
         </header>
@@ -176,7 +185,7 @@ onBeforeUnmount(removeStatusListener)
           <p v-if="error" class="error-message">{{ error }}</p>
 
           <footer>
-            <DialogClose type="button">{{ t('common.cancel') }}</DialogClose>
+            <DialogClose v-if="!props.embedded" type="button">{{ t('common.cancel') }}</DialogClose>
             <button class="primary" type="submit" :disabled="saving">
               <LoaderCircle v-if="saving" class="spin" :size="16" />
               {{ saving ? t('saving') : t('save') }}
@@ -210,6 +219,23 @@ onBeforeUnmount(removeStatusListener)
   background: var(--app-surface);
   color: var(--app-text);
   box-shadow: 0 24px 80px rgb(15 23 42 / 28%);
+}
+
+.remote-dialog.embedded {
+  position: relative;
+  z-index: auto;
+  top: auto;
+  left: auto;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 .remote-header {
   display: grid;
@@ -245,8 +271,12 @@ onBeforeUnmount(removeStatusListener)
 }
 .remote-form {
   display: grid;
+  min-height: 0;
+  align-content: start;
   gap: 16px;
   padding: 20px 22px 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .remote-form label:not(.toggle-row) {
   display: grid;
@@ -259,12 +289,18 @@ onBeforeUnmount(removeStatusListener)
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--app-border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 9px 11px;
+  outline: none;
   color: var(--app-text);
   background: var(--app-surface);
   font: inherit;
   resize: vertical;
+}
+.remote-form input:not([type='checkbox']):focus,
+.remote-form textarea:focus {
+  border-color: #7f8a9b;
+  box-shadow: 0 0 0 3px rgb(152 162 179 / 16%);
 }
 .remote-form label small,
 .platform-card small {
@@ -278,7 +314,7 @@ onBeforeUnmount(removeStatusListener)
   gap: 11px;
   align-items: center;
   border: 1px solid var(--app-border);
-  border-radius: 12px;
+  border-radius: 10px;
   padding: 12px 14px;
   background: var(--app-surface-subtle);
 }
@@ -375,16 +411,18 @@ footer button {
   gap: 7px;
   align-items: center;
   border: 1px solid var(--app-border);
-  border-radius: 9px;
-  padding: 9px 15px;
+  height: 36px;
+  border-radius: 8px;
+  padding: 0 14px;
   background: var(--app-surface);
   color: var(--app-text);
   cursor: pointer;
 }
 footer .primary {
-  border-color: #3370ff;
-  background: #3370ff;
-  color: white;
+  border-color: var(--app-inverse-bg);
+  background: var(--app-inverse-bg);
+  color: var(--app-inverse-text);
+  font-weight: 600;
 }
 footer button:disabled {
   opacity: 0.6;
