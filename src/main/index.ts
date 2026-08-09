@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { initial } from '../ipc/node'
 import { closeChatRepository } from '../ipc/chat/repository'
 import { closeBrowserManager } from './lib/agent/tools/browser-manager'
+import { remoteBotManager } from './lib/remote-bot/manager'
 
 const APPLICATION_NAME = 'Lepus'
 const APPLICATION_ID = 'com.electron'
@@ -91,6 +92,7 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
   initial()
+  void remoteBotManager.reload()
 
   createWindow()
 
@@ -111,6 +113,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  remoteBotManager.stop()
   void closeBrowserManager()
   closeChatRepository()
 })

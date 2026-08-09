@@ -29,6 +29,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@larksuiteoapi/node-sdk": "^1.72.0",
     "@lucide/vue": "^1.27.0",
     "@vueuse/core": "^14.3.0",
     "better-sqlite3": "^13.0.2",

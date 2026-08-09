@@ -28,6 +28,10 @@ export const CHAT_CHANNELS = {
   MODEL_CONFIG_SELECT: 'model-config:select',
   PROMPT_SETTINGS_QUERY: 'prompt-settings:query',
   PROMPT_SETTINGS_UPDATE: 'prompt-settings:update',
+  REMOTE_BOT_SETTINGS_QUERY: 'remote-bot-settings:query',
+  REMOTE_BOT_SETTINGS_UPDATE: 'remote-bot-settings:update',
+  REMOTE_BOT_STATUS_QUERY: 'remote-bot-status:query',
+  REMOTE_BOT_STATUS_CHANGED: 'remote-bot-status:changed',
   PROMPT_PREVIEW: 'prompt:preview',
   SKILL_QUERY: 'skill:query',
   SKILL_CREATE: 'skill:create',
@@ -373,6 +377,24 @@ export type PromptSettings = {
   includeLocale: boolean
   includePlatform: boolean
   showToolCallDetails: boolean
+}
+
+export type RemoteBotSettings = {
+  enabled: boolean
+  platform: 'feishu'
+  appId: string
+  appSecret: string
+  hasAppSecret: boolean
+  allowedOpenIds: string[]
+}
+
+export type RemoteBotStatus = {
+  state: 'stopped' | 'connecting' | 'connected' | 'error'
+  message: string
+  updatedAt: string
+  lastEventAt?: string
+  lastSenderOpenId?: string
+  lastSessionId?: string
 }
 
 export type PermissionMode = 'request_approval' | 'auto_approve' | 'full_access'

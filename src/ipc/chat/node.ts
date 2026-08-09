@@ -15,6 +15,7 @@ import {
   ModelConfig,
   PromptPreviewRequest,
   PromptSettings,
+  RemoteBotSettings,
   SearchProviderConfig,
   Session,
   SessionExportRequest,
@@ -39,6 +40,7 @@ import { HISTORY_COMPRESSION } from '@/shared/agent/history-compression'
 import { PromptBuilder } from '@/main/lib/agent/prompt-builder'
 import { SubtaskScheduler } from '@/main/lib/agent/subtask-scheduler'
 import { normalizeTrustedBrowserOrigins } from '@/main/lib/agent/tools/network-security'
+import { remoteBotManager } from '@/main/lib/remote-bot/manager'
 import {
   buildExplicitSkillInvocationPrompt,
   buildSkillPrompt,
@@ -606,6 +608,15 @@ export default () => {
   ipcMain.handle(CHAT_CHANNELS.PROMPT_SETTINGS_UPDATE, (_event, request: PromptSettings) =>
     getChatRepository().savePromptSettings(request)
   )
+  ipcMain.handle(CHAT_CHANNELS.REMOTE_BOT_SETTINGS_QUERY, () =>
+    getChatRepository().getRemoteBotSettings(false)
+  )
+  ipcMain.handle(CHAT_CHANNELS.REMOTE_BOT_SETTINGS_UPDATE, (_event, request: RemoteBotSettings) => {
+    const saved = getChatRepository().saveRemoteBotSettings(request)
+    void remoteBotManager.reload()
+    return saved
+  })
+  ipcMain.handle(CHAT_CHANNELS.REMOTE_BOT_STATUS_QUERY, () => remoteBotManager.getStatus())
   ipcMain.handle(CHAT_CHANNELS.PROMPT_PREVIEW, (_event, request: PromptPreviewRequest) =>
     new PromptBuilder().build(request)
   )

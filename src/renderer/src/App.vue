@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle, TooltipProvider } from 'reka-ui'
 import AppSidebar from './components/layout/AppSidebar.vue'
 import AppTopbar from './components/layout/AppTopbar.vue'
@@ -9,6 +9,7 @@ import ModelManagerDialog from './components/model/ModelManagerDialog.vue'
 import PromptSettingsDialog from './components/settings/PromptSettingsDialog.vue'
 import SearchProviderDialog from './components/settings/SearchProviderDialog.vue'
 import SkillManagerDialog from './components/settings/SkillManagerDialog.vue'
+import RemoteBotDialog from './components/settings/RemoteBotDialog.vue'
 import type { ModelConfig, Session, TaskModePreference } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import { useAppTheme } from './theme'
@@ -34,9 +35,11 @@ const modelManagerOpen = ref(false)
 const promptSettingsOpen = ref(false)
 const searchSettingsOpen = ref(false)
 const skillManagerOpen = ref(false)
+const remoteBotOpen = ref(false)
 const renameDialogOpen = ref(false)
 const renameTarget = ref<Session | null>(null)
 const promptSettingsVersion = ref(0)
+const remoteSessionVersions = ref<Record<string, number>>({})
 const { t } = useI18n({ useScope: 'local' })
 const { theme, toggleTheme } = useAppTheme()
 const defaultSessionTitles = new Set(['新对话', 'New chat'])
@@ -230,6 +233,18 @@ async function loadSessions(): Promise<void> {
   }
 }
 
+async function refreshSessionsFromRemote(sessionId?: string): Promise<void> {
+  try {
+    sessions.value = await window.api.chat.querySession()
+    sortSessions()
+    if (sessionId) {
+      remoteSessionVersions.value[sessionId] = (remoteSessionVersions.value[sessionId] ?? 0) + 1
+    }
+  } catch (error) {
+    console.warn('Failed to refresh sessions after remote bot activity', error)
+  }
+}
+
 async function loadModelConfigs(): Promise<void> {
   modelsLoading.value = true
   modelError.value = ''
@@ -365,6 +380,10 @@ function openSidebar(): void {
   sidebarPanel.value?.expand()
 }
 
+const removeRemoteBotStatusListener = window.api.chat.onRemoteBotStatusChanged((status) => {
+  if (status.lastEventAt) void refreshSessionsFromRemote(status.lastSessionId)
+})
+onBeforeUnmount(removeRemoteBotStatusListener)
 onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
 </script>
 
@@ -401,6 +420,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
           @manage-prompts="promptSettingsOpen = true"
           @manage-search="searchSettingsOpen = true"
           @manage-skills="skillManagerOpen = true"
+          @manage-remote-bot="remoteBotOpen = true"
         />
       </SplitterPanel>
 
@@ -431,6 +451,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
             @toggle-theme="toggleTheme"
           />
           <ChatView
+            :key="`${activeSessionId ?? 'none'}:${remoteSessionVersions[activeSessionId ?? ''] ?? 0}`"
             :session-id="activeSessionId"
             :session-persisted="activeSessionPersisted"
             :model-config="activeModelConfig"
@@ -459,6 +480,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
     <PromptSettingsDialog v-model:open="promptSettingsOpen" @saved="promptSettingsVersion += 1" />
     <SearchProviderDialog v-model:open="searchSettingsOpen" />
     <SkillManagerDialog v-model:open="skillManagerOpen" />
+    <RemoteBotDialog v-model:open="remoteBotOpen" />
     <SessionRenameDialog
       v-model:open="renameDialogOpen"
       :session="renameTarget"

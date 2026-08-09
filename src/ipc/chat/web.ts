@@ -22,6 +22,8 @@ import {
   SessionPermissionSettings,
   PromptPreviewRequest,
   PromptSettings,
+  RemoteBotSettings,
+  RemoteBotStatus,
   SearchProviderConfig,
   Session,
   SessionExportRequest,
@@ -117,6 +119,18 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.PROMPT_SETTINGS_QUERY),
   updatePromptSettings: (request: PromptSettings): Promise<PromptSettings> =>
     ipcRenderer.invoke(CHAT_CHANNELS.PROMPT_SETTINGS_UPDATE, request),
+  queryRemoteBotSettings: (): Promise<RemoteBotSettings> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.REMOTE_BOT_SETTINGS_QUERY),
+  updateRemoteBotSettings: (request: RemoteBotSettings): Promise<RemoteBotSettings> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.REMOTE_BOT_SETTINGS_UPDATE, request),
+  queryRemoteBotStatus: (): Promise<RemoteBotStatus> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.REMOTE_BOT_STATUS_QUERY),
+  onRemoteBotStatusChanged: (listener: (status: RemoteBotStatus) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: RemoteBotStatus): void =>
+      listener(status)
+    ipcRenderer.on(CHAT_CHANNELS.REMOTE_BOT_STATUS_CHANGED, handler)
+    return () => ipcRenderer.removeListener(CHAT_CHANNELS.REMOTE_BOT_STATUS_CHANGED, handler)
+  },
   previewPrompt: (request: PromptPreviewRequest): Promise<string> =>
     ipcRenderer.invoke(CHAT_CHANNELS.PROMPT_PREVIEW, request),
   querySkills: (): Promise<SkillDefinition[]> => ipcRenderer.invoke(CHAT_CHANNELS.SKILL_QUERY),

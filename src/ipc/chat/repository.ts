@@ -9,6 +9,7 @@ import type {
   CompressionRecord,
   PromptSettings,
   PermissionSettings,
+  RemoteBotSettings,
   SearchProviderConfig,
   SearchProviderId,
   Session,
@@ -1040,6 +1041,64 @@ export class ChatRepository {
         readBoolean('prompt.showToolCallNames', DEFAULT_PROMPT_SETTINGS.showToolCallDetails)
       )
     }
+  }
+
+  getRemoteBotSettings(includeSecret = false): RemoteBotSettings {
+    const rows = this.database
+      .prepare(`SELECT key, value FROM app_settings WHERE key LIKE 'remoteBot.%'`)
+      .all() as Array<{ key: string; value: string }>
+    const values = new Map(rows.map((row) => [row.key, row.value]))
+    const storedSecret = values.get('remoteBot.feishu.appSecret') ?? ''
+    let allowedOpenIds: string[] = []
+    try {
+      const parsed = JSON.parse(values.get('remoteBot.feishu.allowedOpenIds') ?? '[]')
+      if (Array.isArray(parsed)) {
+        allowedOpenIds = [
+          ...new Set(
+            parsed
+              .filter((item): item is string => typeof item === 'string')
+              .map((item) => item.trim())
+              .filter(Boolean)
+          )
+        ]
+      }
+    } catch {
+      allowedOpenIds = []
+    }
+    return {
+      enabled: values.get('remoteBot.enabled') === '1',
+      platform: 'feishu',
+      appId: values.get('remoteBot.feishu.appId') ?? '',
+      appSecret: includeSecret && storedSecret ? decryptApiKey(storedSecret) : '',
+      hasAppSecret: Boolean(storedSecret),
+      allowedOpenIds
+    }
+  }
+
+  saveRemoteBotSettings(settings: RemoteBotSettings): RemoteBotSettings {
+    const appId = settings.appId.trim()
+    const appSecret = settings.appSecret.trim()
+    const current = this.getRemoteBotSettings(false)
+    if (settings.enabled && !appId) throw new Error('启用远程机器人前请填写飞书 App ID')
+    if (settings.enabled && !appSecret && !current.hasAppSecret) {
+      throw new Error('启用远程机器人前请填写飞书 App Secret')
+    }
+    const allowedOpenIds = [
+      ...new Set(settings.allowedOpenIds.map((id) => id.trim()).filter(Boolean))
+    ]
+    const now = new Date().toISOString()
+    const save = this.database.prepare(
+      `INSERT INTO app_settings (key, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    this.database.transaction(() => {
+      save.run('remoteBot.enabled', settings.enabled ? '1' : '0', now)
+      save.run('remoteBot.feishu.appId', appId, now)
+      save.run('remoteBot.feishu.allowedOpenIds', JSON.stringify(allowedOpenIds), now)
+      if (appSecret) save.run('remoteBot.feishu.appSecret', encryptApiKey(appSecret), now)
+    })()
+    return this.getRemoteBotSettings(false)
   }
 
   savePromptSettings(settings: PromptSettings): PromptSettings {

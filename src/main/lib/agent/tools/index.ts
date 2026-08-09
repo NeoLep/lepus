@@ -1279,85 +1279,85 @@ export function createFunctionToolRuntime(
           )
       )
     : null
-  const skillScriptTool = options.activeSkills?.some((skill) =>
-    skill.files.some((file) => file.kind === 'script')
-  )
-    ? createTool(
-        'run_skill_script',
-        '在临时副本中运行当前请求已启用 Skill 的已登记脚本。不会通过 shell 拼接参数，不继承 API Key 等应用环境变量，支持超时、取消和输出限制。脚本仍是第三方代码，每次调用都需要用户确认。',
-        {
-          type: 'object',
-          properties: {
-            skill_id: {
-              type: 'string',
-              minLength: 1,
-              maxLength: 64,
-              description: '当前请求已启用的 Skill ID'
-            },
-            path: {
-              type: 'string',
-              minLength: 1,
-              maxLength: 4096,
-              description: 'Skill 文件清单中 scripts/ 下的相对路径'
-            },
-            args: {
-              type: 'array',
-              maxItems: 32,
-              items: { type: 'string', maxLength: 4096 },
-              description: '直接传给脚本运行时的参数数组，不经过 shell 解析'
-            },
-            stdin: {
-              type: 'string',
-              maxLength: 100000,
-              description: '可选标准输入文本'
-            },
-            timeout_ms: {
-              type: 'integer',
-              minimum: 1,
-              maximum: 120000,
-              description: '超时时间，默认 30000 毫秒，最大 120000'
-            },
-            max_output_bytes: {
-              type: 'integer',
-              minimum: 1,
-              maximum: 2097152,
-              description: 'stdout 与 stderr 合计上限，默认 1 MiB，最大 2 MiB'
-            }
-          },
-          required: ['skill_id', 'path'],
-          additionalProperties: false
-        },
-        (
+  const skillScriptTool =
+    !options.readOnly &&
+    options.activeSkills?.some((skill) => skill.files.some((file) => file.kind === 'script'))
+      ? createTool(
+          'run_skill_script',
+          '在临时副本中运行当前请求已启用 Skill 的已登记脚本。不会通过 shell 拼接参数，不继承 API Key 等应用环境变量，支持超时、取消和输出限制。脚本仍是第三方代码，每次调用都需要用户确认。',
           {
-            skill_id: skillId,
-            path: scriptPath,
-            args,
-            stdin,
-            timeout_ms: timeoutMs,
-            max_output_bytes: maxOutputBytes
+            type: 'object',
+            properties: {
+              skill_id: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 64,
+                description: '当前请求已启用的 Skill ID'
+              },
+              path: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 4096,
+                description: 'Skill 文件清单中 scripts/ 下的相对路径'
+              },
+              args: {
+                type: 'array',
+                maxItems: 32,
+                items: { type: 'string', maxLength: 4096 },
+                description: '直接传给脚本运行时的参数数组，不经过 shell 解析'
+              },
+              stdin: {
+                type: 'string',
+                maxLength: 100000,
+                description: '可选标准输入文本'
+              },
+              timeout_ms: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 120000,
+                description: '超时时间，默认 30000 毫秒，最大 120000'
+              },
+              max_output_bytes: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 2097152,
+                description: 'stdout 与 stderr 合计上限，默认 1 MiB，最大 2 MiB'
+              }
+            },
+            required: ['skill_id', 'path'],
+            additionalProperties: false
           },
-          signal
-        ) =>
-          runInstalledSkillScript(
-            options.activeSkills ?? [],
+          (
             {
-              skillId: requireString(skillId, 'skill_id'),
-              path: requireString(scriptPath, 'path'),
-              arguments: args as string[] | undefined,
-              stdin: stdin as string | undefined,
-              timeoutMs: timeoutMs as number | undefined,
-              maxOutputBytes: maxOutputBytes as number | undefined
+              skill_id: skillId,
+              path: scriptPath,
+              args,
+              stdin,
+              timeout_ms: timeoutMs,
+              max_output_bytes: maxOutputBytes
             },
             signal
-          ),
-        {
-          risk: 'high',
-          reason:
-            '将运行已安装 Skill 附带的第三方代码。脚本会在临时副本中启动，但仍可能访问网络或本机可访问的文件。',
-          allowSession: false
-        }
-      )
-    : null
+          ) =>
+            runInstalledSkillScript(
+              options.activeSkills ?? [],
+              {
+                skillId: requireString(skillId, 'skill_id'),
+                path: requireString(scriptPath, 'path'),
+                arguments: args as string[] | undefined,
+                stdin: stdin as string | undefined,
+                timeoutMs: timeoutMs as number | undefined,
+                maxOutputBytes: maxOutputBytes as number | undefined
+              },
+              signal
+            ),
+          {
+            risk: 'high',
+            reason:
+              '将运行已安装 Skill 附带的第三方代码。脚本会在临时副本中启动，但仍可能访问网络或本机可访问的文件。',
+            allowSession: false
+          }
+        )
+      : null
   const tools = [
     ...safeTools,
     ...taskTools,
