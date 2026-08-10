@@ -392,7 +392,13 @@ export type RemoteBotSettings = {
 }
 
 export type RemoteBotToolGroup =
-  'utilities' | 'web_search' | 'workspace_read' | 'skills' | 'browser' | 'clipboard'
+  | 'utilities'
+  | 'web_search'
+  | 'workspace_read'
+  | 'skills'
+  | 'browser'
+  | 'browser_private'
+  | 'clipboard'
 
 export type RemoteBotStatus = {
   state: 'stopped' | 'connecting' | 'connected' | 'error'

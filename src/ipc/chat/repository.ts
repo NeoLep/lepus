@@ -1072,6 +1072,7 @@ export class ChatRepository {
       'workspace_read',
       'skills',
       'browser',
+      'browser_private',
       'clipboard'
     ])
     const defaultToolGroups: RemoteBotToolGroup[] = [
@@ -1132,6 +1133,7 @@ export class ChatRepository {
       'workspace_read',
       'skills',
       'browser',
+      'browser_private',
       'clipboard'
     ])
     const allowedToolGroups = [

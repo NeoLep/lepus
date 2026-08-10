@@ -10,7 +10,7 @@ import {
   DialogRoot,
   DialogTitle
 } from 'reka-ui'
-import { Bot, CircleAlert, FolderOpen, LoaderCircle, Radio, X } from '@lucide/vue'
+import { Bot, ChevronDown, CircleAlert, FolderOpen, LoaderCircle, Radio, X } from '@lucide/vue'
 import type { RemoteBotSettings, RemoteBotStatus, RemoteBotToolGroup } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 
@@ -19,7 +19,9 @@ const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: fa
 const { t } = useI18n({ useScope: 'local' })
 const loading = ref(false)
 const saving = ref(false)
+const saveQueued = ref(false)
 const selectingFolder = ref(false)
+const capabilitiesExpanded = ref(false)
 const error = ref('')
 const draft = ref<RemoteBotSettings>({
   enabled: false,
@@ -55,6 +57,11 @@ const toolGroups = computed<Array<{ id: RemoteBotToolGroup; title: string; descr
     },
     { id: 'skills', title: t('tools.skills'), description: t('tools.skillsHint') },
     { id: 'browser', title: t('tools.browser'), description: t('tools.browserHint') },
+    {
+      id: 'browser_private',
+      title: t('tools.browserPrivate'),
+      description: t('tools.browserPrivateHint')
+    },
     { id: 'clipboard', title: t('tools.clipboard'), description: t('tools.clipboardHint') }
   ]
 )
@@ -70,6 +77,10 @@ async function selectWorkspace(): Promise<void> {
   } finally {
     selectingFolder.value = false
   }
+}
+
+function syncCapabilitiesExpanded(event: Event): void {
+  capabilitiesExpanded.value = (event.currentTarget as HTMLDetailsElement).open
 }
 
 async function load(): Promise<void> {
@@ -96,6 +107,10 @@ async function load(): Promise<void> {
 }
 
 async function save(): Promise<void> {
+  if (saving.value) {
+    saveQueued.value = true
+    return
+  }
   saving.value = true
   error.value = ''
   try {
@@ -125,6 +140,10 @@ async function save(): Promise<void> {
     error.value = cause instanceof Error ? cause.message : t('saveFailed')
   } finally {
     saving.value = false
+    if (saveQueued.value) {
+      saveQueued.value = false
+      void save()
+    }
   }
 }
 
@@ -183,6 +202,37 @@ onBeforeUnmount(removeStatusListener)
             <input v-model="draft.enabled" type="checkbox" />
           </label>
 
+          <details
+            class="capability-section"
+            :open="capabilitiesExpanded"
+            @toggle="syncCapabilitiesExpanded"
+          >
+            <summary class="section-heading" :aria-expanded="capabilitiesExpanded">
+              <div>
+                <strong>{{ t('capabilities') }}</strong>
+                <small>{{ t('capabilitiesHint') }}</small>
+              </div>
+              <span class="section-heading-meta">
+                {{ t('selectedCount', { count: draft.allowedToolGroups.length }) }}
+                <ChevronDown :size="16" :class="{ expanded: capabilitiesExpanded }" />
+              </span>
+            </summary>
+            <div class="capability-content">
+              <label v-for="group in toolGroups" :key="group.id" class="capability-row">
+                <input
+                  v-model="draft.allowedToolGroups"
+                  type="checkbox"
+                  :value="group.id"
+                  @change="save"
+                />
+                <span>
+                  <strong>{{ group.title }}</strong>
+                  <small>{{ group.description }}</small>
+                </span>
+              </label>
+            </div>
+          </details>
+
           <section class="platform-card">
             <span class="platform-logo">飞</span>
             <div>
@@ -213,23 +263,6 @@ onBeforeUnmount(removeStatusListener)
             ></textarea>
             <small>{{ t('allowlistHint') }}</small>
           </label>
-
-          <section class="capability-section">
-            <div class="section-heading">
-              <div>
-                <strong>{{ t('capabilities') }}</strong>
-                <small>{{ t('capabilitiesHint') }}</small>
-              </div>
-              <span>{{ t('selectedCount', { count: draft.allowedToolGroups.length }) }}</span>
-            </div>
-            <label v-for="group in toolGroups" :key="group.id" class="capability-row">
-              <input v-model="draft.allowedToolGroups" type="checkbox" :value="group.id" />
-              <span>
-                <strong>{{ group.title }}</strong>
-                <small>{{ group.description }}</small>
-              </span>
-            </label>
-          </section>
 
           <section v-if="draft.allowedToolGroups.includes('workspace_read')" class="workspace-card">
             <div>
@@ -359,13 +392,17 @@ onBeforeUnmount(removeStatusListener)
   cursor: pointer;
 }
 .remote-form {
-  display: grid;
+  display: flex;
   min-height: 0;
-  align-content: start;
+  flex-direction: column;
+  align-items: stretch;
   gap: 16px;
   padding: 20px 22px 22px;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+.remote-form > * {
+  flex: 0 0 auto;
 }
 .remote-form label:not(.toggle-row) {
   display: grid;
@@ -408,17 +445,33 @@ onBeforeUnmount(removeStatusListener)
   background: var(--app-surface-subtle);
 }
 .capability-section {
-  overflow: hidden;
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  height: auto;
+  align-self: stretch;
+  overflow: visible;
   border: 1px solid var(--app-border);
   border-radius: 10px;
 }
 .section-heading {
   display: flex;
+  width: 100%;
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  border: 0;
   padding: 12px 14px;
   background: var(--app-surface-subtle);
+  color: var(--app-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  list-style: none;
+}
+.section-heading::-webkit-details-marker {
+  display: none;
 }
 .section-heading > div,
 .capability-row > span,
@@ -433,9 +486,30 @@ onBeforeUnmount(removeStatusListener)
   font-size: 12px;
   font-weight: 400;
 }
-.section-heading > span {
+.section-heading-meta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
   color: var(--app-text-muted);
   font-size: 12px;
+}
+.section-heading-meta svg {
+  transition: transform 160ms ease;
+}
+.section-heading-meta svg.expanded {
+  transform: rotate(180deg);
+}
+.capability-content {
+  display: block;
+  min-height: 0;
+  overflow: visible;
+}
+.capability-section:not([open]) > .capability-content {
+  display: none;
+}
+.capability-section[open] > .capability-content {
+  display: block;
 }
 .capability-row {
   display: grid !important;
@@ -623,7 +697,7 @@ zh-CN:
   setupPublish: 创建版本并发布，将可见范围限制为自己。
   openConsole: 打开飞书开发者后台 ↗
   capabilities: 工具与功能权限
-  capabilitiesHint: 只勾选允许飞书会话调用的能力；修改后立即对新消息生效。
+  capabilitiesHint: 只勾选允许飞书会话调用的能力；勾选后自动保存并对新消息生效。
   selectedCount: 已启用 {count} 项
   workspace: 只读工作文件夹
   workspaceEmpty: 尚未选择；本地文件工具将不可用
@@ -642,7 +716,9 @@ zh-CN:
     skills: Skills
     skillsHint: 自动匹配已启用的 Skills，并读取其已登记参考文件。
     browser: 浏览器操作
-    browserHint: 打开并操作公开网页；不允许安装浏览器、访问内网或保存截图。
+    browserHint: 打开并操作公开网页；不允许安装浏览器或保存截图。
+    browserPrivate: 内网浏览器访问
+    browserPrivateHint: 访问并操作局域网网页；仍会阻止 localhost、链路本地和云元数据地址。
     clipboard: 读取剪贴板
     clipboardHint: 允许读取这台电脑当前的纯文本剪贴板，可能包含敏感信息。
   safety: 飞书会话始终禁止写文件和运行脚本。浏览器与剪贴板权限具有较高风险，请只向可信飞书用户开放。
@@ -675,7 +751,7 @@ en:
   setupPublish: Publish a version and limit visibility to yourself.
   openConsole: Open Feishu developer console ↗
   capabilities: Tools and capabilities
-  capabilitiesHint: Only checked capabilities are available to Feishu chats. Changes apply to new messages immediately.
+  capabilitiesHint: Only checked capabilities are available to Feishu chats. Changes are saved automatically and apply to new messages.
   selectedCount: '{count} enabled'
   workspace: Read-only workspace
   workspaceEmpty: Not selected; local file tools will be unavailable
@@ -694,7 +770,9 @@ en:
     skills: Skills
     skillsHint: Match enabled Skills and read their registered reference files.
     browser: Browser control
-    browserHint: Open and operate public webpages; browser installation, private networks, and screenshots stay blocked.
+    browserHint: Open and operate public webpages; browser installation and screenshots stay blocked.
+    browserPrivate: Private-network browser access
+    browserPrivateHint: Operate LAN webpages; localhost, link-local, and cloud metadata addresses remain blocked.
     clipboard: Read clipboard
     clipboardHint: Read the computer's current plain-text clipboard, which may contain sensitive data.
   safety: Feishu chats always block file writes and scripts. Browser and clipboard access are high-risk; only allow trusted Feishu users.

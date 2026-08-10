@@ -31,6 +31,19 @@ const REMOTE_TOOL_GROUPS = {
     'browser_forward',
     'browser_close'
   ],
+  browser_private: [
+    'browser_status',
+    'browser_open_private',
+    'browser_tabs',
+    'browser_snapshot',
+    'browser_click',
+    'browser_type',
+    'browser_select',
+    'browser_scroll',
+    'browser_back',
+    'browser_forward',
+    'browser_close'
+  ],
   clipboard: ['clipboard_read_text']
 } as const
 
@@ -283,12 +296,13 @@ class RemoteBotManager {
       false,
       {
         readOnly: true,
-        allowBrowserTools: enabledGroups.has('browser'),
+        allowBrowserTools: enabledGroups.has('browser') || enabledGroups.has('browser_private'),
         allowClipboardTool: enabledGroups.has('clipboard'),
         allowedToolNames,
         approvalFreeToolNames: new Set([
           ...(enabledGroups.has('web_search') ? REMOTE_TOOL_GROUPS.web_search : []),
           ...(enabledGroups.has('browser') ? REMOTE_TOOL_GROUPS.browser : []),
+          ...(enabledGroups.has('browser_private') ? REMOTE_TOOL_GROUPS.browser_private : []),
           ...(enabledGroups.has('clipboard') ? REMOTE_TOOL_GROUPS.clipboard : [])
         ] as string[]),
         activeSkills,
