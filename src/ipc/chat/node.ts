@@ -53,6 +53,7 @@ import {
   queryOfficialSkillCatalog,
   removeInstalledSkill
 } from '@/main/lib/agent/skill-installer'
+import { synchronizeLocalFolderSkills } from '@/main/lib/agent/skill-sync'
 import {
   getAttachmentPreview,
   discardAttachment,
@@ -366,7 +367,7 @@ export default () => {
     })
   })
   ipcMain.handle(CHAT_CHANNELS.SESSION_QUERY, () => getChatRepository().querySessions())
-  ipcMain.handle(CHAT_CHANNELS.SKILL_QUERY, () => getChatRepository().querySkills())
+  ipcMain.handle(CHAT_CHANNELS.SKILL_QUERY, () => synchronizeLocalFolderSkills(getChatRepository()))
   ipcMain.handle(CHAT_CHANNELS.SKILL_CREATE, (_event, request: SkillDefinition) => {
     const repository = getChatRepository()
     const skill = normalizeSkill(request)
@@ -809,8 +810,9 @@ export default () => {
             .filter(Boolean)
             .slice(0, 3)
         : []
+      const availableSkills = await synchronizeLocalFolderSkills(repository)
       const activeSkills = matchSkills(
-        repository.querySkills(),
+        availableSkills,
         latestUserMessage?.content ?? '',
         selectedSkillIds
       )

@@ -424,6 +424,26 @@ export class ChatRepository {
     return row ? toSession(row) : null
   }
 
+  getRemoteChatSessionId(channelKey: string): string | null {
+    const row = this.database
+      .prepare(`SELECT session_id FROM remote_chat_sessions WHERE channel_key = ?`)
+      .get(channelKey) as { session_id: string } | undefined
+    return row?.session_id ?? null
+  }
+
+  saveRemoteChatSessionId(channelKey: string, sessionId: string): void {
+    const now = new Date().toISOString()
+    this.database
+      .prepare(
+        `INSERT INTO remote_chat_sessions (channel_key, session_id, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(channel_key) DO UPDATE SET
+           session_id = excluded.session_id,
+           updated_at = excluded.updated_at`
+      )
+      .run(channelKey, sessionId, now)
+  }
+
   querySkills(): SkillDefinition[] {
     return (
       this.database
@@ -1071,6 +1091,7 @@ export class ChatRepository {
       'web_search',
       'workspace_read',
       'skills',
+      'skill_scripts',
       'browser',
       'browser_private',
       'clipboard'
@@ -1132,6 +1153,7 @@ export class ChatRepository {
       'web_search',
       'workspace_read',
       'skills',
+      'skill_scripts',
       'browser',
       'browser_private',
       'clipboard'
@@ -1709,6 +1731,22 @@ export class ChatRepository {
           ALTER TABLE session_permission_settings
             ADD COLUMN trusted_browser_origins_json TEXT NOT NULL DEFAULT '[]';
           PRAGMA user_version = 19;
+        `)
+      })()
+    }
+
+    if (version < 20) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE remote_chat_sessions (
+            channel_key TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+          );
+          CREATE INDEX idx_remote_chat_sessions_updated
+            ON remote_chat_sessions(updated_at DESC);
+          PRAGMA user_version = 20;
         `)
       })()
     }

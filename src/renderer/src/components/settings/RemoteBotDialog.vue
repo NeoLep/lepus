@@ -56,6 +56,11 @@ const toolGroups = computed<Array<{ id: RemoteBotToolGroup; title: string; descr
       description: t('tools.workspaceReadHint')
     },
     { id: 'skills', title: t('tools.skills'), description: t('tools.skillsHint') },
+    {
+      id: 'skill_scripts',
+      title: t('tools.skillScripts'),
+      description: t('tools.skillScriptsHint')
+    },
     { id: 'browser', title: t('tools.browser'), description: t('tools.browserHint') },
     {
       id: 'browser_private',
@@ -715,13 +720,15 @@ zh-CN:
     workspaceReadHint: 仅可检查、查找和读取所选文件夹，不允许写入。
     skills: Skills
     skillsHint: 自动匹配已启用的 Skills，并读取其已登记参考文件。
+    skillScripts: 运行 Skill 脚本
+    skillScriptsHint: 允许飞书消息在本机运行 Skill 携带的脚本；脚本可访问网络和本机文件。
     browser: 浏览器操作
     browserHint: 打开并操作公开网页；不允许安装浏览器或保存截图。
     browserPrivate: 内网浏览器访问
     browserPrivateHint: 访问并操作局域网网页；仍会阻止 localhost、链路本地和云元数据地址。
     clipboard: 读取剪贴板
     clipboardHint: 允许读取这台电脑当前的纯文本剪贴板，可能包含敏感信息。
-  safety: 飞书会话始终禁止写文件和运行脚本。浏览器与剪贴板权限具有较高风险，请只向可信飞书用户开放。
+  safety: 飞书会话默认禁止写文件和运行脚本。Skill 脚本、浏览器与剪贴板权限具有较高风险，请只向可信飞书用户开放。
   save: 保存并连接
   saving: 正在保存…
   loadFailed: 无法读取远程机器人设置
@@ -769,13 +776,15 @@ en:
     workspaceReadHint: Inspect, find, and read within the selected folder; writing stays disabled.
     skills: Skills
     skillsHint: Match enabled Skills and read their registered reference files.
+    skillScripts: Run Skill scripts
+    skillScriptsHint: Allow Feishu messages to run bundled Skill scripts locally; scripts can access the network and local files.
     browser: Browser control
     browserHint: Open and operate public webpages; browser installation and screenshots stay blocked.
     browserPrivate: Private-network browser access
     browserPrivateHint: Operate LAN webpages; localhost, link-local, and cloud metadata addresses remain blocked.
     clipboard: Read clipboard
     clipboardHint: Read the computer's current plain-text clipboard, which may contain sensitive data.
-  safety: Feishu chats always block file writes and scripts. Browser and clipboard access are high-risk; only allow trusted Feishu users.
+  safety: Feishu chats block file writes and scripts by default. Skill scripts, browser, and clipboard access are high-risk; only allow trusted Feishu users.
   save: Save and connect
   saving: Saving…
   loadFailed: Failed to load remote bot settings

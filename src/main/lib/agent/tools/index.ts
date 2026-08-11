@@ -64,6 +64,7 @@ export type FunctionToolRuntimeOptions = {
   readOnly?: boolean
   allowBrowserTools?: boolean
   allowClipboardTool?: boolean
+  allowSkillScripts?: boolean
   allowedToolNames?: ReadonlySet<string>
   approvalFreeToolNames?: ReadonlySet<string>
   delegateTasks?: DelegateTasksHandler
@@ -1288,11 +1289,13 @@ export function createFunctionToolRuntime(
       )
     : null
   const skillScriptTool =
-    !options.readOnly &&
+    (!options.readOnly || options.allowSkillScripts) &&
     options.activeSkills?.some((skill) => skill.files.some((file) => file.kind === 'script'))
       ? createTool(
           'run_skill_script',
-          '在临时副本中运行当前请求已启用 Skill 的已登记脚本。不会通过 shell 拼接参数，不继承 API Key 等应用环境变量，支持超时、取消和输出限制。脚本仍是第三方代码，每次调用都需要用户确认。',
+          options.approvalFreeToolNames?.has('run_skill_script')
+            ? '在临时副本中运行当前请求已启用 Skill 的已登记脚本。用户已为当前渠道预先授权此能力；当 Skill 工作流需要时直接调用，无需再次等待确认。不会通过 shell 拼接参数，不继承 API Key 等应用环境变量，支持超时、取消和输出限制。'
+            : '在临时副本中运行当前请求已启用 Skill 的已登记脚本。不会通过 shell 拼接参数，不继承 API Key 等应用环境变量，支持超时、取消和输出限制。脚本仍是第三方代码，每次调用都需要用户确认。',
           {
             type: 'object',
             properties: {

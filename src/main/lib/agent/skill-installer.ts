@@ -34,6 +34,7 @@ const MAX_SKILL_MD_BYTES = 1024 * 1024
 const MAX_DISCOVERY_DEPTH = 8
 const GITHUB_USER_AGENT = 'Lepus-Agent-Skills'
 const IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', '__MACOSX'])
+const folderSkillRefreshes = new Map<string, Promise<SkillDefinition | null>>()
 
 type ParsedSkillMarkdown = Pick<
   SkillDefinition,
@@ -71,10 +72,24 @@ function asString(value: unknown): string {
 
 function parseTriggerMetadata(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return [...new Set(value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean))]
+    return [
+      ...new Set(
+        value
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      )
+    ]
   }
   if (typeof value !== 'string') return []
-  return [...new Set(value.split(/[\n,，]/).map((item) => item.trim()).filter(Boolean))]
+  return [
+    ...new Set(
+      value
+        .split(/[\n,，]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  ]
 }
 
 export function parseSkillMarkdown(contents: string): ParsedSkillMarkdown {
@@ -170,13 +185,129 @@ async function contentHash(rootPath: string, files: SkillFile[]): Promise<string
   return hash.digest('hex')
 }
 
-async function copySkillFiles(sourceRoot: string, destinationRoot: string, files: SkillFile[]): Promise<void> {
+async function copySkillFiles(
+  sourceRoot: string,
+  destinationRoot: string,
+  files: SkillFile[]
+): Promise<void> {
   for (const file of files) {
     const source = join(sourceRoot, ...file.path.split('/'))
     const destination = join(destinationRoot, ...file.path.split('/'))
     await mkdir(dirname(destination), { recursive: true })
     await copyFile(source, destination)
   }
+}
+
+async function findFolderSkillRoot(sourcePath: string, skillId: string): Promise<string> {
+  const sourceInfo = await stat(sourcePath)
+  if (!sourceInfo.isDirectory()) throw new Error('本地 Skill 来源不再是文件夹')
+  const roots = await discoverSkillRoots(sourcePath)
+  for (const root of roots) {
+    try {
+      const parsed = parseSkillMarkdown(await readFile(join(root, 'SKILL.md'), 'utf8'))
+      if (parsed.id === skillId) return root
+    } catch {
+      // Continue looking for the originally imported Skill in a multi-Skill folder.
+    }
+  }
+  throw new Error(`本地来源中找不到 Skill：${skillId}`)
+}
+
+async function replaceInstalledSkillFiles(
+  skillId: string,
+  sourceRoot: string,
+  files: SkillFile[]
+): Promise<string> {
+  const storageRoot = skillStorageRoot()
+  await mkdir(storageRoot, { recursive: true })
+  const destinationRoot = join(storageRoot, skillId)
+  if (resolve(sourceRoot) === resolve(destinationRoot)) return destinationRoot
+
+  const temporaryRoot = join(storageRoot, `.sync-${skillId}-${randomUUID()}`)
+  const backupRoot = join(storageRoot, `.backup-${skillId}-${randomUUID()}`)
+  await mkdir(temporaryRoot, { recursive: false })
+  let hasBackup = false
+  try {
+    await copySkillFiles(sourceRoot, temporaryRoot, files)
+    try {
+      await lstat(destinationRoot)
+      await rename(destinationRoot, backupRoot)
+      hasBackup = true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    try {
+      await rename(temporaryRoot, destinationRoot)
+    } catch (error) {
+      if (hasBackup) await rename(backupRoot, destinationRoot)
+      throw error
+    }
+    if (hasBackup) await rm(backupRoot, { recursive: true, force: true })
+    return destinationRoot
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true })
+  }
+}
+
+async function refreshImportedFolderSkillInternal(
+  skill: SkillDefinition
+): Promise<SkillDefinition | null> {
+  if (skill.sourceType !== 'folder' || !skill.sourceUrl) return null
+  const sourceRoot = await findFolderSkillRoot(skill.sourceUrl, skill.id)
+  const skillMarkdownPath = join(sourceRoot, 'SKILL.md')
+  const skillMarkdownInfo = await stat(skillMarkdownPath)
+  if (!skillMarkdownInfo.isFile() || skillMarkdownInfo.size > MAX_SKILL_MD_BYTES) {
+    throw new Error('SKILL.md 必须是小于 1 MiB 的普通文件')
+  }
+  const parsed = parseSkillMarkdown(await readFile(skillMarkdownPath, 'utf8'))
+  const files = await collectSkillFiles(sourceRoot)
+  const hash = await contentHash(sourceRoot, files)
+  if (hash === skill.contentHash) return null
+
+  const rootPath = await replaceInstalledSkillFiles(skill.id, sourceRoot, files)
+  return {
+    ...skill,
+    ...parsed,
+    enabled: skill.enabled,
+    sourceType: 'folder',
+    sourceUrl: sourceRoot,
+    contentHash: hash,
+    rootPath,
+    files,
+    createdAt: skill.createdAt,
+    updatedAt: new Date().toISOString()
+  }
+}
+
+export async function refreshImportedFolderSkill(
+  skill: SkillDefinition
+): Promise<SkillDefinition | null> {
+  const running = folderSkillRefreshes.get(skill.id)
+  if (running) return running
+  const refresh: Promise<SkillDefinition | null> = refreshImportedFolderSkillInternal(
+    skill
+  ).finally(() => {
+    if (folderSkillRefreshes.get(skill.id) === refresh) folderSkillRefreshes.delete(skill.id)
+  })
+  folderSkillRefreshes.set(skill.id, refresh)
+  return refresh
+}
+
+export async function refreshImportedFolderSkills(
+  skills: SkillDefinition[]
+): Promise<SkillImportResult> {
+  const refreshed: SkillDefinition[] = []
+  const errors: string[] = []
+  for (const skill of skills) {
+    if (skill.sourceType !== 'folder') continue
+    try {
+      const update = await refreshImportedFolderSkill(skill)
+      if (update) refreshed.push(update)
+    } catch (error) {
+      errors.push(`${skill.name}：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  return { skills: refreshed, errors }
 }
 
 async function installSkillDirectory(
@@ -290,7 +421,9 @@ async function installDiscoveredSkills(
       const relativeRoot = relative(rootPath, skillRoot).split(sep).join('/')
       const effectiveSourceUrl = sourceUrl.startsWith('https://github.com/')
         ? `${sourceUrl.replace(/\/$/, '')}${relativeRoot ? `/${relativeRoot}` : ''}`
-        : sourceUrl
+        : sourceType === 'folder'
+          ? skillRoot
+          : sourceUrl
       skills.push(await installSkillDirectory(skillRoot, sourceType, effectiveSourceUrl))
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error))
@@ -356,15 +489,22 @@ async function githubFetch(url: string): Promise<Response> {
     signal: AbortSignal.timeout(30_000)
   })
   if (!response.ok) {
-    const rateLimited = response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0'
-    throw new Error(rateLimited ? 'GitHub API 请求次数已达上限，请稍后重试' : `GitHub 请求失败：${response.status}`)
+    const rateLimited =
+      response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0'
+    throw new Error(
+      rateLimited
+        ? 'GitHub API 请求次数已达上限，请稍后重试'
+        : `GitHub 请求失败：${response.status}`
+    )
   }
   return response
 }
 
 async function githubDefaultBranch(location: GithubLocation): Promise<string> {
   if (location.ref) return location.ref
-  const response = await githubFetch(`https://api.github.com/repos/${location.owner}/${location.repo}`)
+  const response = await githubFetch(
+    `https://api.github.com/repos/${location.owner}/${location.repo}`
+  )
   const payload = (await response.json()) as { default_branch?: string }
   if (!payload.default_branch) throw new Error('无法确定 GitHub 仓库默认分支')
   return payload.default_branch
@@ -447,17 +587,13 @@ export async function importSkillGithub(
     .map((entry) => (entry.path === 'SKILL.md' ? '' : dirname(entry.path).split(sep).join('/')))
   const skillPaths = skillMarkdownPaths.includes('') ? [''] : [...new Set(skillMarkdownPaths)]
   if (!skillPaths.length) throw new Error('GitHub 仓库中没有找到 SKILL.md')
-  if (skillPaths.length > 100) throw new Error('GitHub 仓库包含超过 100 个 Skill，请使用具体目录 URL')
+  if (skillPaths.length > 100)
+    throw new Error('GitHub 仓库包含超过 100 个 Skill，请使用具体目录 URL')
   const skills: SkillDefinition[] = []
   const errors: string[] = []
   for (const skillPath of skillPaths) {
     try {
-      const result = await importGithubDirectory(
-        { ...location, skillPath },
-        ref,
-        sourceType,
-        tree
-      )
+      const result = await importGithubDirectory({ ...location, skillPath }, ref, sourceType, tree)
       skills.push(...result.skills)
       errors.push(...result.errors)
     } catch (error) {
@@ -499,7 +635,9 @@ async function mapConcurrent<T, R>(
   return results
 }
 
-export async function queryOfficialSkillCatalog(catalogId: SkillCatalogId): Promise<SkillCatalogEntry[]> {
+export async function queryOfficialSkillCatalog(
+  catalogId: SkillCatalogId
+): Promise<SkillCatalogEntry[]> {
   const catalog = OFFICIAL_CATALOGS[catalogId]
   if (!catalog) throw new Error('未知的官方 Skill 目录')
   const location: GithubLocation = {
@@ -524,8 +662,7 @@ export async function queryOfficialSkillCatalog(catalogId: SkillCatalogId): Prom
       const response = await fetch(rawUrl, { signal: AbortSignal.timeout(20_000) })
       if (!response.ok) return null
       const parsed = parseSkillMarkdown(await response.text())
-      const skillPath =
-        entry.path === 'SKILL.md' ? '' : dirname(entry.path).split(sep).join('/')
+      const skillPath = entry.path === 'SKILL.md' ? '' : dirname(entry.path).split(sep).join('/')
       return {
         id: `${catalog.owner}/${catalog.repo}/${skillPath}`,
         skillId: parsed.id,
@@ -572,7 +709,8 @@ export async function readInstalledSkillFile(
   const root = resolve(skill.rootPath)
   if (!target.startsWith(`${root}${sep}`)) throw new Error('Skill 文件路径越过了 Skill 根目录')
   const targetInfo = await lstat(target)
-  if (!targetInfo.isFile() || targetInfo.isSymbolicLink()) throw new Error('目标不是普通 Skill 文件')
+  if (!targetInfo.isFile() || targetInfo.isSymbolicLink())
+    throw new Error('目标不是普通 Skill 文件')
   const contents = await readFile(target, 'utf8')
   const limit = Math.min(Math.max(maxCharacters, 1), 500_000)
   return {

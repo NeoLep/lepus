@@ -691,7 +691,7 @@ zh-CN:
   instructions: 执行指令
   instructionsPlaceholder: 写明执行步骤、工具使用、输出格式和约束…
   enabled: 启用此 Skill
-  importedReadonly: 导入内容由 SKILL.md 管理；这里可以启用、停用或卸载。
+  importedReadonly: 导入内容由 SKILL.md 管理；本地文件夹会自动同步，这里可以启用、停用或卸载。
   scriptsCount: 脚本 {count}
   referencesCount: 参考文档 {count}
   assetsCount: 资源 {count}
@@ -728,7 +728,7 @@ en:
   instructions: Instructions
   instructionsPlaceholder: Define steps, tool usage, output format, and constraints…
   enabled: Enable this Skill
-  importedReadonly: Imported content is managed by SKILL.md. You can enable, disable, or uninstall it here.
+  importedReadonly: Imported content is managed by SKILL.md. Local folders sync automatically; you can enable, disable, or uninstall here.
   scriptsCount: '{count} scripts'
   referencesCount: '{count} references'
   assetsCount: '{count} assets'

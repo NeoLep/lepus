@@ -396,6 +396,7 @@ export type RemoteBotToolGroup =
   | 'web_search'
   | 'workspace_read'
   | 'skills'
+  | 'skill_scripts'
   | 'browser'
   | 'browser_private'
   | 'clipboard'
