@@ -226,7 +226,7 @@ if (confirmation.trim().toLowerCase() !== 'yes') {
   process.exit(0)
 }
 
-const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+const pnpmCommand = process.platform === 'win32' ? 'pnpm' : 'pnpm'
 if (!skipChecks) {
   if (!existsSync(resolve(projectRoot, 'node_modules', '.pnpm'))) {
     console.log('\n未发现依赖，正在安装…')

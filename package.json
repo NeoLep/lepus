@@ -1,6 +1,6 @@
 {
   "name": "lepus",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A local-first desktop AI workspace for models, files, tools, skills, and web search",
   "main": "./out/main/index.js",
   "author": "NeoLep",
