@@ -9,7 +9,7 @@ import {
   DialogRoot,
   DialogTitle
 } from 'reka-ui'
-import { Bot, Boxes, Cpu, Globe2, SlidersHorizontal, X } from '@lucide/vue'
+import { Bot, Boxes, Cpu, Globe2, RefreshCw, SlidersHorizontal, X } from '@lucide/vue'
 import type { ModelConfig } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import ModelManagerDialog from '../model/ModelManagerDialog.vue'
@@ -17,8 +17,9 @@ import PromptSettingsDialog from './PromptSettingsDialog.vue'
 import RemoteBotDialog from './RemoteBotDialog.vue'
 import SearchProviderDialog from './SearchProviderDialog.vue'
 import SkillManagerDialog from './SkillManagerDialog.vue'
+import AppUpdateDialog from './AppUpdateDialog.vue'
 
-type SettingsSection = 'remote' | 'skills' | 'search' | 'prompts' | 'models'
+type SettingsSection = 'remote' | 'skills' | 'search' | 'prompts' | 'models' | 'updates'
 
 const props = withDefaults(
   defineProps<{
@@ -51,7 +52,8 @@ const sections: Array<{
   { id: 'skills', label: 'skills', icon: Boxes },
   { id: 'search', label: 'search', icon: Globe2 },
   { id: 'prompts', label: 'prompts', icon: SlidersHorizontal },
-  { id: 'models', label: 'models', icon: Cpu }
+  { id: 'models', label: 'models', icon: Cpu },
+  { id: 'updates', label: 'updates', icon: RefreshCw }
 ]
 
 function selectSection(section: SettingsSection): void {
@@ -118,7 +120,7 @@ watch(
               @saved="emit('promptSaved')"
             />
             <ModelManagerDialog
-              v-else
+              v-else-if="activeSection === 'models'"
               v-model:open="pageOpen"
               embedded
               :configs="configs"
@@ -128,6 +130,7 @@ watch(
               :delete-config="deleteConfig"
               :select-config="selectConfig"
             />
+            <AppUpdateDialog v-else />
           </section>
         </div>
       </DialogContent>
@@ -344,6 +347,7 @@ zh-CN:
   search: 互联网搜索
   prompts: 提示词设计
   models: 模型管理
+  updates: 应用更新
 en:
   title: Settings
   description: Manage Lepus connections, capabilities, and model configuration.
@@ -353,4 +357,5 @@ en:
   search: Web search
   prompts: Prompt design
   models: Model management
+  updates: App updates
 </i18n>

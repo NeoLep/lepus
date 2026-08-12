@@ -6,6 +6,7 @@ import { initial } from '../ipc/node'
 import { closeChatRepository } from '../ipc/chat/repository'
 import { closeBrowserManager } from './lib/agent/tools/browser-manager'
 import { remoteBotManager } from './lib/remote-bot/manager'
+import { appUpdateManager } from './lib/app-updater'
 
 const APPLICATION_NAME = 'Lepus'
 const APPLICATION_ID = 'com.electron'
@@ -92,6 +93,7 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
   initial()
+  appUpdateManager.initialize()
   void remoteBotManager.reload()
 
   createWindow()

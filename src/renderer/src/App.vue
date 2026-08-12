@@ -16,7 +16,7 @@ type SplitterPanelInstance = {
   expand: () => void
 }
 
-type SettingsSection = 'remote' | 'skills' | 'search' | 'prompts' | 'models'
+type SettingsSection = 'remote' | 'skills' | 'search' | 'prompts' | 'models' | 'updates'
 
 const sidebarOpen = ref(true)
 const sidebarPanel = ref<SplitterPanelInstance | null>(null)
