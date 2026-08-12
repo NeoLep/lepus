@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, toRaw, watch } from 'vue'
 import {
   DialogClose,
   DialogContent,
@@ -97,7 +97,7 @@ async function save(): Promise<void> {
   try {
     draft.value = await window.api.chat.updatePermissionSettings({
       sessionId: props.sessionId,
-      ...draft.value
+      ...toRaw(draft.value)
     })
     open.value = false
   } catch (saveError) {
