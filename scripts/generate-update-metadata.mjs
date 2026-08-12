@@ -27,7 +27,11 @@ function quote(value) {
 }
 
 async function writeMetadata(name, matchingFiles) {
-  if (matchingFiles.length === 0) throw new Error(`No update packages found for ${name}`)
+  if (matchingFiles.length === 0) {
+    throw new Error(
+      `No update packages found for ${name}. Available release assets: ${filenames.join(', ') || '(none)'}`
+    )
+  }
   const files = await Promise.all(matchingFiles.sort().map(fileInfo))
   const primary = files[0]
   const lines = [
@@ -46,19 +50,22 @@ async function writeMetadata(name, matchingFiles) {
   await writeFile(resolve(outputDirectory, name), lines.join('\n'))
 }
 
+const windowsPackages = filenames.filter((name) => /^Lepus-.+-x64-setup\.exe$/i.test(name))
+const macPackages = filenames.filter((name) => /^Lepus-.+-(?:arm64|x64)\.zip$/i.test(name))
+const linuxPackages = filenames.filter((name) => /^Lepus-.+-x64\.AppImage$/i.test(name))
+
+for (const arch of ['arm64', 'x64']) {
+  if (!macPackages.some((name) => name.toLocaleLowerCase().endsWith(`-${arch}.zip`))) {
+    throw new Error(
+      `Missing macOS ${arch} ZIP update package. Available release assets: ${filenames.join(', ') || '(none)'}`
+    )
+  }
+}
+
 await Promise.all([
-  writeMetadata(
-    'latest.yml',
-    filenames.filter((name) => /^Lepus-.+-setup\.exe$/i.test(name))
-  ),
-  writeMetadata(
-    'latest-mac.yml',
-    filenames.filter((name) => /^Lepus-.+-(?:arm64|x64)\.zip$/i.test(name))
-  ),
-  writeMetadata(
-    'latest-linux.yml',
-    filenames.filter((name) => /^Lepus-.+\.AppImage$/i.test(name))
-  )
+  writeMetadata('latest.yml', windowsPackages),
+  writeMetadata('latest-mac.yml', macPackages),
+  writeMetadata('latest-linux.yml', linuxPackages)
 ])
 
 console.log(`Generated updater metadata for Lepus ${version}`)

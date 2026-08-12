@@ -74,6 +74,10 @@ jobs:
       - name: Build installers
         run: pnpm ${{ matrix.command }}
 
+      - name: List generated installers
+        shell: bash
+        run: find dist -maxdepth 1 -type f -print | sort
+
       - name: Upload installers
         uses: actions/upload-artifact@v7
         with:
