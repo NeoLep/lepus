@@ -1,4 +1,5 @@
 import type { PermissionMode, PermissionSettings } from '@/ipc/chat/constants'
+import { DEFAULT_INTERACTIVE_CAPABILITIES } from './capabilities'
 
 export const PERMISSION_MODES: PermissionMode[] = [
   'request_approval',
@@ -9,7 +10,8 @@ export const PERMISSION_MODES: PermissionMode[] = [
 export const DEFAULT_PERMISSION_SETTINGS: PermissionSettings = {
   workspacePath: '',
   mode: 'request_approval',
-  trustedBrowserOrigins: []
+  trustedBrowserOrigins: [],
+  capabilities: [...DEFAULT_INTERACTIVE_CAPABILITIES]
 }
 
 export function isPermissionMode(value: string): value is PermissionMode {

@@ -9,14 +9,19 @@ import {
   DialogRoot,
   DialogTitle
 } from 'reka-ui'
-import { Bot, LoaderCircle, MessageSquareText, X } from '@lucide/vue'
+import { Bot, CalendarClock, LoaderCircle, MessageSquareText, X } from '@lucide/vue'
 import type { Message, Session } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import ChatMessageList from '../chat/ChatMessageList.vue'
 
-const props = defineProps<{
-  sessions: Session[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    sessions: Session[]
+    variant?: 'remote' | 'scheduled'
+    initialSessionId?: string | null
+  }>(),
+  { variant: 'remote', initialSessionId: null }
+)
 
 const open = defineModel<boolean>('open', { required: true })
 const { t, locale } = useI18n({ useScope: 'local' })
@@ -32,12 +37,16 @@ const selectedSession = computed(
 )
 
 const remoteUserLabel = computed(() => {
+  if (props.variant === 'scheduled') return t('taskInput')
   const title = displayTitle(selectedSession.value)
   return title.replace(/^来自\s*/, '') || t('remoteUser')
 })
 
 function displayTitle(session: Session | null): string {
-  return session?.title.replace(/^飞书\s*·\s*/, '') || t('untitled')
+  if (!session) return t('untitled')
+  return props.variant === 'scheduled'
+    ? session.title.replace(/^定时任务\s*·\s*/, '')
+    : session.title.replace(/^飞书\s*·\s*/, '')
 }
 
 function formatUpdatedAt(value: string): string {
@@ -75,7 +84,9 @@ async function initialize(): Promise<void> {
   }
 
   const session =
-    props.sessions.find((item) => item.id === selectedSessionId.value) ?? props.sessions[0]
+    props.sessions.find((item) => item.id === props.initialSessionId) ??
+    props.sessions.find((item) => item.id === selectedSessionId.value) ??
+    props.sessions[0]
   if (session) await loadSession(session.id)
   else {
     selectedSessionId.value = null
@@ -87,6 +98,7 @@ async function initialize(): Promise<void> {
 watch(
   () => [
     open.value,
+    props.initialSessionId,
     props.sessions.map((session) => `${session.id}:${session.updatedAt}`).join('|')
   ],
   ([isOpen]) => {
@@ -102,11 +114,16 @@ watch(
       <DialogOverlay class="remote-chats-overlay" />
       <DialogContent class="remote-chats-dialog" @open-auto-focus.prevent>
         <header class="remote-chats-header">
-          <span class="remote-chats-icon"><Bot :size="19" /></span>
+          <span class="remote-chats-icon">
+            <CalendarClock v-if="variant === 'scheduled'" :size="19" />
+            <Bot v-else :size="19" />
+          </span>
           <div>
-            <DialogTitle class="remote-chats-title">{{ t('title') }}</DialogTitle>
+            <DialogTitle class="remote-chats-title">
+              {{ variant === 'scheduled' ? t('taskTitle') : t('title') }}
+            </DialogTitle>
             <DialogDescription class="remote-chats-description">
-              {{ t('description') }}
+              {{ variant === 'scheduled' ? t('taskDescription') : t('description') }}
             </DialogDescription>
           </div>
           <DialogClose class="remote-chats-close" :aria-label="t('common.close')">
@@ -136,14 +153,16 @@ watch(
                 </span>
               </button>
             </div>
-            <div v-else class="remote-session-empty">{{ t('noConversations') }}</div>
+            <div v-else class="remote-session-empty">
+              {{ variant === 'scheduled' ? t('noTaskResults') : t('noConversations') }}
+            </div>
           </aside>
 
           <section class="remote-conversation-panel">
             <header v-if="selectedSession" class="remote-conversation-header">
               <div>
                 <strong>{{ displayTitle(selectedSession) }}</strong>
-                <small>{{ t('fromFeishu') }}</small>
+                <small>{{ variant === 'scheduled' ? t('scheduledRun') : t('fromFeishu') }}</small>
               </div>
               <time :datetime="selectedSession.updatedAt">
                 {{ formatUpdatedAt(selectedSession.updatedAt) }}
@@ -165,9 +184,19 @@ watch(
             />
             <div v-else class="remote-conversation-state empty">
               <MessageSquareText :size="24" />
-              <strong>{{ selectedSession ? t('noMessages') : t('selectConversation') }}</strong>
+              <strong>{{
+                selectedSession
+                  ? t('noMessages')
+                  : variant === 'scheduled'
+                    ? t('selectTaskResult')
+                    : t('selectConversation')
+              }}</strong>
               <small>{{
-                selectedSession ? t('noMessagesHint') : t('selectConversationHint')
+                selectedSession
+                  ? t('noMessagesHint')
+                  : variant === 'scheduled'
+                    ? t('selectTaskResultHint')
+                    : t('selectConversationHint')
               }}</small>
             </div>
           </section>
@@ -180,14 +209,14 @@ watch(
 <style scoped>
 .remote-chats-overlay {
   position: fixed;
-  z-index: 124;
+  z-index: 140;
   inset: 0;
   background: var(--app-dialog-overlay);
 }
 
 .remote-chats-dialog {
   position: fixed;
-  z-index: 125;
+  z-index: 141;
   top: 50%;
   left: 50%;
   display: grid;
@@ -466,6 +495,13 @@ watch(
 zh-CN:
   title: 飞书（远程对话）
   description: 查看通过飞书机器人产生的远程对话记录。
+  taskTitle: 定时任务记录
+  taskDescription: 查看定时任务每次执行生成的结果与工具调用。
+  scheduledRun: 定时任务执行结果
+  taskInput: 任务内容
+  noTaskResults: 还没有定时任务执行记录
+  selectTaskResult: 选择一条任务记录
+  selectTaskResultHint: 从左侧列表查看任务内容、执行结果与工具调用。
   conversations: 对话列表
   fromFeishu: 来自飞书
   remoteUser: 飞书用户
@@ -479,6 +515,13 @@ zh-CN:
 en:
   title: Feishu (Remote chats)
   description: View conversations created through the Feishu bot.
+  taskTitle: Scheduled task history
+  taskDescription: View the results and tool calls generated by scheduled task runs.
+  scheduledRun: Scheduled task result
+  taskInput: Task input
+  noTaskResults: No scheduled task runs yet
+  selectTaskResult: Select a task run
+  selectTaskResultHint: Choose a run to view its input, result, and tool calls.
   conversations: Conversations
   fromFeishu: From Feishu
   remoteUser: Feishu user

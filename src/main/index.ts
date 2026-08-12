@@ -7,6 +7,7 @@ import { closeChatRepository } from '../ipc/chat/repository'
 import { closeBrowserManager } from './lib/agent/tools/browser-manager'
 import { remoteBotManager } from './lib/remote-bot/manager'
 import { appUpdateManager } from './lib/app-updater'
+import { scheduledTaskManager } from './lib/scheduled-task-manager'
 
 const APPLICATION_NAME = 'Lepus'
 const APPLICATION_ID = 'com.electron'
@@ -94,6 +95,7 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
   initial()
   appUpdateManager.initialize()
+  scheduledTaskManager.start()
   void remoteBotManager.reload()
 
   createWindow()
@@ -116,6 +118,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   remoteBotManager.stop()
+  scheduledTaskManager.stop()
   void closeBrowserManager()
   closeChatRepository()
 })

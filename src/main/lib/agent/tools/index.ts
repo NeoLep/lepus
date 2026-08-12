@@ -31,6 +31,7 @@ import { readInstalledSkillFile } from '../skill-installer'
 import { runInstalledSkillScript } from '../skill-script-runner'
 import { browserManager } from './browser-manager'
 import { isTrustedBrowserUrl } from './network-security'
+import { capabilityToolNames } from '@/shared/agent/capabilities'
 
 type JsonObject = Record<string, unknown>
 type ToolExecutionContext = {
@@ -1379,13 +1380,19 @@ export function createFunctionToolRuntime(
     ...(skillScriptTool ? [skillScriptTool] : []),
     ...(delegateTool ? [delegateTool] : [])
   ]
+  const capabilityNames = capabilityToolNames(permissionSettings.capabilities)
+  const capabilityFilteredTools = availableTools.filter((tool) => {
+    if (tool.schema.type !== 'function') return false
+    const name = tool.schema.function.name
+    return ['request_user_input', 'update_plan', 'delegate_tasks'].includes(name) || capabilityNames.has(name)
+  })
   const tools = options.allowedToolNames
-    ? availableTools.filter(
+    ? capabilityFilteredTools.filter(
         (tool) =>
           tool.schema.type === 'function' &&
           options.allowedToolNames?.has(tool.schema.function.name)
       )
-    : availableTools
+    : capabilityFilteredTools
   const toolMap = new Map(
     tools.map((tool) => {
       if (tool.schema.type !== 'function') throw new Error('仅支持 function 类型工具')

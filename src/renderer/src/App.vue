@@ -16,7 +16,7 @@ type SplitterPanelInstance = {
   expand: () => void
 }
 
-type SettingsSection = 'remote' | 'skills' | 'search' | 'prompts' | 'models' | 'updates'
+type SettingsSection = 'remote' | 'tasks' | 'skills' | 'search' | 'prompts' | 'models' | 'updates'
 
 const sidebarOpen = ref(true)
 const sidebarPanel = ref<SplitterPanelInstance | null>(null)
@@ -32,6 +32,8 @@ const modelsLoading = ref(true)
 const modelError = ref('')
 const settingsOpen = ref(false)
 const remoteChatsOpen = ref(false)
+const taskResultsOpen = ref(false)
+const taskResultTargetId = ref<string | null>(null)
 const settingsSection = ref<SettingsSection>('remote')
 const renameDialogOpen = ref(false)
 const renameTarget = ref<Session | null>(null)
@@ -56,13 +58,24 @@ const persistedSessions = computed(() =>
 const remoteSessions = computed(() =>
   persistedSessions.value.filter((session) => isRemoteSession(session))
 )
+const taskResultSessions = computed(() =>
+  persistedSessions.value.filter((session) => isScheduledSession(session))
+)
 
 function isRemoteSession(session: Session): boolean {
   return session.id.startsWith('remote-feishu-')
 }
 
+function isScheduledSession(session: Session): boolean {
+  return session.id.startsWith('scheduled-')
+}
+
+function isSpecialSession(session: Session): boolean {
+  return isRemoteSession(session) || isScheduledSession(session)
+}
+
 function firstLocalSession(): Session | undefined {
-  return sessions.value.find((session) => !isRemoteSession(session) && !session.isArchived)
+  return sessions.value.find((session) => !isSpecialSession(session) && !session.isArchived)
 }
 
 function sortSessions(): void {
@@ -193,7 +206,7 @@ async function deleteSession(session: Session): Promise<void> {
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
     if (activeSessionId.value === session.id) {
       const activeSessions = sessions.value.filter(
-        (item) => !isRemoteSession(item) && !item.isArchived
+        (item) => !isSpecialSession(item) && !item.isArchived
       )
       activeSessionId.value =
         activeSessions[Math.min(Math.max(deletedIndex, 0), activeSessions.length - 1)]?.id ?? null
@@ -247,7 +260,7 @@ async function refreshSessionsFromRemote(sessionId?: string): Promise<void> {
   try {
     sessions.value = await window.api.chat.querySession()
     sortSessions()
-    if (activeSession.value && isRemoteSession(activeSession.value)) {
+    if (activeSession.value && isSpecialSession(activeSession.value)) {
       activeSessionId.value = firstLocalSession()?.id ?? null
       if (!activeSessionId.value) startNewSession()
     }
@@ -399,6 +412,34 @@ function openSettings(section: SettingsSection = 'remote'): void {
   settingsOpen.value = true
 }
 
+async function openTaskResult(sessionId: string): Promise<void> {
+  sessionError.value = ''
+  try {
+    const refreshed = await window.api.chat.querySession()
+    sessions.value = refreshed
+    sortSessions()
+    const resultSession = sessions.value.find((session) => session.id === sessionId)
+    if (!resultSession) throw new Error(t('errors.taskResultMissing'))
+    taskResultTargetId.value = sessionId
+    taskResultsOpen.value = true
+  } catch (error) {
+    sessionError.value =
+      error instanceof Error ? error.message : t('errors.taskResultMissing')
+  }
+}
+
+async function openTaskResults(): Promise<void> {
+  sessionError.value = ''
+  try {
+    sessions.value = await window.api.chat.querySession()
+    sortSessions()
+  } catch (error) {
+    sessionError.value = error instanceof Error ? error.message : t('errors.loadSessions')
+  }
+  taskResultTargetId.value = null
+  taskResultsOpen.value = true
+}
+
 const removeRemoteBotStatusListener = window.api.chat.onRemoteBotStatusChanged((status) => {
   if (status.lastEventAt) void refreshSessionsFromRemote(status.lastSessionId)
 })
@@ -436,6 +477,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
           @toggle-pin="togglePin"
           @toggle-archive="toggleArchive"
           @open-remote-chats="remoteChatsOpen = true"
+          @open-task-results="openTaskResults"
           @open-settings="openSettings()"
         />
       </SplitterPanel>
@@ -494,8 +536,15 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
       :delete-config="deleteModelConfig"
       :select-config="selectModelConfig"
       @prompt-saved="promptSettingsVersion += 1"
+      @view-session="openTaskResult"
     />
     <RemoteChatsDialog v-model:open="remoteChatsOpen" :sessions="remoteSessions" />
+    <RemoteChatsDialog
+      v-model:open="taskResultsOpen"
+      :sessions="taskResultSessions"
+      :initial-session-id="taskResultTargetId"
+      variant="scheduled"
+    />
     <SessionRenameDialog
       v-model:open="renameDialogOpen"
       :session="renameTarget"
@@ -575,8 +624,12 @@ zh-CN:
   newConversation: 新对话
   deleteConfirm: 确定删除“{title}”吗？
   configureModelFirst: 请先配置模型
+  errors:
+    taskResultMissing: 找不到该任务的结果对话，可能已被删除。
 en:
   newConversation: New chat
   deleteConfirm: Delete “{title}”?
   configureModelFirst: Configure a model first
+  errors:
+    taskResultMissing: The result conversation could not be found and may have been deleted.
 </i18n>

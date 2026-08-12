@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, toRaw, watch } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import {
   DialogClose,
   DialogContent,
@@ -7,12 +7,16 @@ import {
   DialogOverlay,
   DialogPortal,
   DialogRoot,
-  DialogTitle
+  DialogTitle,
+  RadioGroupIndicator,
+  RadioGroupItem,
+  RadioGroupRoot
 } from 'reka-ui'
 import { FolderOpen, GlobeLock, Plus, ShieldCheck, Trash2, X } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import type { PermissionMode, PermissionSettings } from '@ipc/chat/constants'
 import { DEFAULT_PERMISSION_SETTINGS } from '@/shared/agent/permissions'
+import AgentCapabilityPicker from './AgentCapabilityPicker.vue'
 
 const open = defineModel<boolean>('open', { required: true })
 const props = defineProps<{ sessionId: string | null }>()
@@ -28,6 +32,16 @@ const selecting = ref(false)
 const error = ref('')
 
 const modes: PermissionMode[] = ['request_approval', 'auto_approve', 'full_access']
+const needsWorkspace = computed(() =>
+  draft.value.capabilities.some((item) =>
+    ['workspace_read', 'workspace_write', 'downloads'].includes(item)
+  )
+)
+const needsBrowserTrust = computed(() =>
+  draft.value.capabilities.some((item) =>
+    ['browser_public', 'browser_private'].includes(item)
+  )
+)
 
 async function load(): Promise<void> {
   if (!props.sessionId) {
@@ -134,6 +148,14 @@ watch(
         <div class="dialog-body" :class="{ loading }">
           <section>
             <div class="section-heading">
+              <strong>{{ t('capabilityTitle') }}</strong>
+              <small>{{ t('capabilityHelp') }}</small>
+            </div>
+            <AgentCapabilityPicker v-model="draft.capabilities" />
+          </section>
+
+          <section v-if="needsWorkspace">
+            <div class="section-heading">
               <strong>{{ t('workspaceTitle') }}</strong>
               <small>{{ t('workspaceHelp') }}</small>
             </div>
@@ -157,7 +179,7 @@ watch(
             <p v-if="!draft.workspacePath" class="workspace-warning">{{ t('disabledHelp') }}</p>
           </section>
 
-          <section>
+          <section v-if="needsBrowserTrust">
             <div class="section-heading">
               <strong>{{ t('trustedTitle') }}</strong>
               <small>{{ t('trustedHelp') }}</small>
@@ -203,15 +225,17 @@ watch(
               <strong>{{ t('permissionTitle') }}</strong>
               <small>{{ t('permissionHelp') }}</small>
             </div>
-            <div class="mode-list">
+            <RadioGroupRoot v-model="draft.mode" class="mode-list">
               <label v-for="mode in modes" :key="mode" :class="{ selected: draft.mode === mode }">
-                <input v-model="draft.mode" type="radio" :value="mode" />
+                <RadioGroupItem class="mode-radio" :value="mode">
+                  <RadioGroupIndicator class="mode-radio-indicator" />
+                </RadioGroupItem>
                 <span>
                   <strong>{{ t(`${mode}.title`) }}</strong>
                   <small>{{ t(`${mode}.description`) }}</small>
                 </span>
               </label>
-            </div>
+            </RadioGroupRoot>
             <p class="hard-rule">{{ t('hardRule') }}</p>
           </section>
         </div>
@@ -234,14 +258,14 @@ watch(
 <style scoped>
 .permission-dialog-overlay {
   position: fixed;
-  z-index: 90;
+  z-index: 9998;
   inset: 0;
   background: var(--app-dialog-overlay);
 }
 
 .permission-dialog-content {
   position: fixed;
-  z-index: 91;
+  z-index: 9999;
   top: 50%;
   left: 50%;
   display: flex;
@@ -526,10 +550,9 @@ watch(
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent) 18%, transparent);
 }
 
-.mode-list input {
-  margin-top: 2px;
-  accent-color: var(--app-accent-strong);
-}
+.mode-radio { display: grid; width: 17px; height: 17px; flex: none; margin-top: 1px; place-items: center; border: 1px solid var(--app-border-strong); border-radius: 50%; background: var(--app-surface); }
+.mode-radio[data-state='checked'] { border-color: var(--app-accent); }
+.mode-radio-indicator { width: 9px; height: 9px; border-radius: 50%; background: var(--app-accent); }
 
 .mode-list span {
   display: flex;
@@ -598,6 +621,8 @@ button:disabled {
 zh-CN:
   title: 文件与权限
   description: 为当前对话选择安全工作文件夹，并控制文件和互联网工具的审批方式。
+  capabilityTitle: 可用能力
+  capabilityHelp: 未勾选的能力不会作为工具提供给模型；此设置与其他运行入口共用同一套定义。
   workspaceTitle: 工作文件夹
   workspaceHelp: 相对路径会以此文件夹为根目录；该目录视为安全工作区。
   noWorkspace: 尚未选择文件夹
@@ -634,6 +659,8 @@ zh-CN:
 en:
   title: Files and permissions
   description: Choose a safe workspace folder and approval policy for the current chat.
+  capabilityTitle: Available capabilities
+  capabilityHelp: Unselected capabilities are hidden from the model. The same capability definitions are shared by every runtime.
   workspaceTitle: Workspace folder
   workspaceHelp: Relative paths resolve from this folder, which is treated as the safe workspace.
   noWorkspace: No folder selected

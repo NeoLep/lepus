@@ -9,7 +9,16 @@ import {
   DialogRoot,
   DialogTitle
 } from 'reka-ui'
-import { Bot, Boxes, Cpu, Globe2, RefreshCw, SlidersHorizontal, X } from '@lucide/vue'
+import {
+  Bot,
+  Boxes,
+  CalendarClock,
+  Cpu,
+  Globe2,
+  RefreshCw,
+  SlidersHorizontal,
+  X
+} from '@lucide/vue'
 import type { ModelConfig } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
 import ModelManagerDialog from '../model/ModelManagerDialog.vue'
@@ -18,8 +27,9 @@ import RemoteBotDialog from './RemoteBotDialog.vue'
 import SearchProviderDialog from './SearchProviderDialog.vue'
 import SkillManagerDialog from './SkillManagerDialog.vue'
 import AppUpdateDialog from './AppUpdateDialog.vue'
+import ScheduledTaskDialog from './ScheduledTaskDialog.vue'
 
-type SettingsSection = 'remote' | 'skills' | 'search' | 'prompts' | 'models' | 'updates'
+type SettingsSection = 'remote' | 'tasks' | 'skills' | 'search' | 'prompts' | 'models' | 'updates'
 
 const props = withDefaults(
   defineProps<{
@@ -35,7 +45,10 @@ const props = withDefaults(
 )
 
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ promptSaved: [] }>()
+const emit = defineEmits<{
+  promptSaved: []
+  viewSession: [sessionId: string]
+}>()
 const { t } = useI18n({ useScope: 'local' })
 const activeSection = ref<SettingsSection>(props.initialSection)
 const pageOpen = computed({
@@ -49,6 +62,7 @@ const sections: Array<{
   icon: typeof Bot
 }> = [
   { id: 'remote', label: 'remote', icon: Bot },
+  { id: 'tasks', label: 'tasks', icon: CalendarClock },
   { id: 'skills', label: 'skills', icon: Boxes },
   { id: 'search', label: 'search', icon: Globe2 },
   { id: 'prompts', label: 'prompts', icon: SlidersHorizontal },
@@ -103,6 +117,11 @@ watch(
 
           <section class="settings-page">
             <RemoteBotDialog v-if="activeSection === 'remote'" v-model:open="pageOpen" embedded />
+            <ScheduledTaskDialog
+              v-else-if="activeSection === 'tasks'"
+              :configs="configs"
+              @view-result="emit('viewSession', $event)"
+            />
             <SkillManagerDialog
               v-else-if="activeSection === 'skills'"
               v-model:open="pageOpen"
@@ -343,6 +362,7 @@ zh-CN:
   description: 管理 Lepus 的连接、能力与模型配置。
   navigation: 设置菜单
   remote: 远程接入
+  tasks: 定时任务
   skills: Skill 管理
   search: 互联网搜索
   prompts: 提示词设计
@@ -353,6 +373,7 @@ en:
   description: Manage Lepus connections, capabilities, and model configuration.
   navigation: Settings menu
   remote: Remote access
+  tasks: Scheduled tasks
   skills: Skill management
   search: Web search
   prompts: Prompt design

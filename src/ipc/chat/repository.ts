@@ -19,12 +19,19 @@ import type {
   TaskPlan,
   TaskPlanItem
 } from './constants'
+import type { ScheduledTask } from '../scheduled/constants'
 import { detectModelContextWindow } from '@/shared/agent/history-compression'
 import {
   DEFAULT_PROMPT_SETTINGS,
   PROMPT_CUSTOM_INSTRUCTIONS_MAX_LENGTH
 } from '@/shared/agent/prompt-settings'
 import { DEFAULT_PERMISSION_SETTINGS, isPermissionMode } from '@/shared/agent/permissions'
+import {
+  DEFAULT_INTERACTIVE_CAPABILITIES,
+  DEFAULT_UNATTENDED_CAPABILITIES,
+  normalizeCapabilities,
+  type AgentCapability
+} from '@/shared/agent/capabilities'
 
 type SessionRow = {
   id: string
@@ -129,6 +136,29 @@ type SkillRow = {
   compatibility: string
   allowed_tools_json: string
   files_json: string
+  created_at: string
+  updated_at: string
+}
+
+type ScheduledTaskRow = {
+  id: string
+  name: string
+  prompt: string
+  schedule_type: ScheduledTask['scheduleType']
+  run_at: string | null
+  time_of_day: string
+  weekdays_json: string
+  model_config_id: string
+  skill_ids_json: string
+  capabilities_json: string
+  workspace_path: string
+  max_tool_rounds: number
+  enabled: number
+  status: ScheduledTask['status']
+  last_run_at: string | null
+  next_run_at: string | null
+  last_error: string
+  last_session_id: string | null
   created_at: string
   updated_at: string
 }
@@ -291,6 +321,50 @@ function toAgentRun(row: AgentRunRow): AgentRun {
     createdAt: row.created_at,
     ...(row.started_at ? { startedAt: row.started_at } : {}),
     ...(row.finished_at ? { finishedAt: row.finished_at } : {})
+  }
+}
+
+function toScheduledTask(row: ScheduledTaskRow): ScheduledTask {
+  return {
+    id: row.id,
+    name: row.name,
+    prompt: row.prompt,
+    scheduleType: row.schedule_type,
+    runAt: row.run_at,
+    timeOfDay: row.time_of_day,
+    weekdays: JSON.parse(row.weekdays_json || '[]') as number[],
+    modelConfigId: row.model_config_id,
+    skillIds: parseStringArray(row.skill_ids_json),
+    capabilities: parseCapabilities(row.capabilities_json, DEFAULT_UNATTENDED_CAPABILITIES),
+    workspacePath: row.workspace_path,
+    maxToolRounds: row.max_tool_rounds,
+    enabled: row.enabled === 1,
+    status: row.status,
+    lastRunAt: row.last_run_at,
+    nextRunAt: row.next_run_at,
+    lastError: row.last_error,
+    lastSessionId: row.last_session_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
+
+function parseCapabilities(value: string, fallback: AgentCapability[]): AgentCapability[] {
+  try {
+    return normalizeCapabilities(JSON.parse(value || 'null'), fallback)
+  } catch {
+    return [...fallback]
+  }
+}
+
+function parseStringArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value || '[]') as unknown
+    return Array.isArray(parsed)
+      ? [...new Set(parsed.filter((item): item is string => typeof item === 'string'))]
+      : []
+  } catch {
+    return []
   }
 }
 
@@ -642,6 +716,80 @@ export class ChatRepository {
         finishedAt: run.finishedAt ?? null
       })
     return this.getAgentRun(run.id)!
+  }
+
+  queryScheduledTasks(): ScheduledTask[] {
+    const rows = this.database
+      .prepare(
+        `SELECT id, name, prompt, schedule_type, run_at, time_of_day, weekdays_json,
+                model_config_id, skill_ids_json, capabilities_json, workspace_path, max_tool_rounds,
+                enabled, status, last_run_at, next_run_at,
+                last_error, last_session_id, created_at, updated_at
+         FROM scheduled_tasks
+         ORDER BY enabled DESC, next_run_at ASC, updated_at DESC`
+      )
+      .all() as ScheduledTaskRow[]
+    return rows.map(toScheduledTask)
+  }
+
+  getScheduledTask(id: string): ScheduledTask | null {
+    const row = this.database
+      .prepare(
+        `SELECT id, name, prompt, schedule_type, run_at, time_of_day, weekdays_json,
+                model_config_id, skill_ids_json, capabilities_json, workspace_path, max_tool_rounds,
+                enabled, status, last_run_at, next_run_at,
+                last_error, last_session_id, created_at, updated_at
+         FROM scheduled_tasks WHERE id = ?`
+      )
+      .get(id) as ScheduledTaskRow | undefined
+    return row ? toScheduledTask(row) : null
+  }
+
+  saveScheduledTask(task: ScheduledTask): ScheduledTask {
+    this.database
+      .prepare(
+        `INSERT INTO scheduled_tasks
+           (id, name, prompt, schedule_type, run_at, time_of_day, weekdays_json,
+            model_config_id, skill_ids_json, capabilities_json, workspace_path, max_tool_rounds,
+            enabled, status, last_run_at, next_run_at,
+            last_error, last_session_id, created_at, updated_at)
+         VALUES
+           (@id, @name, @prompt, @scheduleType, @runAt, @timeOfDay, @weekdaysJson,
+            @modelConfigId, @skillIdsJson, @capabilitiesJson, @workspacePath, @maxToolRounds,
+            @enabled, @status, @lastRunAt, @nextRunAt,
+            @lastError, @lastSessionId, @createdAt, @updatedAt)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           prompt = excluded.prompt,
+           schedule_type = excluded.schedule_type,
+           run_at = excluded.run_at,
+           time_of_day = excluded.time_of_day,
+           weekdays_json = excluded.weekdays_json,
+           model_config_id = excluded.model_config_id,
+           skill_ids_json = excluded.skill_ids_json,
+           capabilities_json = excluded.capabilities_json,
+           workspace_path = excluded.workspace_path,
+           max_tool_rounds = excluded.max_tool_rounds,
+           enabled = excluded.enabled,
+           status = excluded.status,
+           last_run_at = excluded.last_run_at,
+           next_run_at = excluded.next_run_at,
+           last_error = excluded.last_error,
+           last_session_id = excluded.last_session_id,
+           updated_at = excluded.updated_at`
+      )
+      .run({
+        ...task,
+        weekdaysJson: JSON.stringify(task.weekdays),
+        skillIdsJson: JSON.stringify(task.skillIds),
+        capabilitiesJson: JSON.stringify(task.capabilities),
+        enabled: task.enabled ? 1 : 0
+      })
+    return this.getScheduledTask(task.id)!
+  }
+
+  deleteScheduledTask(id: string): void {
+    this.database.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(id)
   }
 
   searchSessions(query: string): SessionSearchResult[] {
@@ -1086,34 +1234,12 @@ export class ChatRepository {
     } catch {
       allowedOpenIds = []
     }
-    const validToolGroups = new Set<RemoteBotToolGroup>([
-      'utilities',
-      'web_search',
-      'workspace_read',
-      'skills',
-      'skill_scripts',
-      'browser',
-      'browser_private',
-      'clipboard'
-    ])
-    const defaultToolGroups: RemoteBotToolGroup[] = [
-      'utilities',
-      'web_search',
-      'workspace_read',
-      'skills'
-    ]
+    const defaultToolGroups: RemoteBotToolGroup[] = [...DEFAULT_UNATTENDED_CAPABILITIES]
     let allowedToolGroups: RemoteBotToolGroup[] = [...defaultToolGroups]
     try {
       const parsed = JSON.parse(values.get('remoteBot.feishu.allowedToolGroups') ?? 'null')
       if (Array.isArray(parsed)) {
-        allowedToolGroups = [
-          ...new Set(
-            parsed.filter(
-              (item): item is RemoteBotToolGroup =>
-                typeof item === 'string' && validToolGroups.has(item as RemoteBotToolGroup)
-            )
-          )
-        ]
+        allowedToolGroups = normalizeCapabilities(parsed, defaultToolGroups)
       }
     } catch {
       allowedToolGroups = [...defaultToolGroups]
@@ -1148,19 +1274,7 @@ export class ChatRepository {
     const allowedOpenIds = [
       ...new Set(settings.allowedOpenIds.map((id) => id.trim()).filter(Boolean))
     ]
-    const validToolGroups = new Set<RemoteBotToolGroup>([
-      'utilities',
-      'web_search',
-      'workspace_read',
-      'skills',
-      'skill_scripts',
-      'browser',
-      'browser_private',
-      'clipboard'
-    ])
-    const allowedToolGroups = [
-      ...new Set(settings.allowedToolGroups.filter((group) => validToolGroups.has(group)))
-    ]
+    const allowedToolGroups = normalizeCapabilities(settings.allowedToolGroups)
     const workspacePath = settings.workspacePath.trim()
     const maxToolRounds = Math.min(20, Math.max(2, Math.trunc(settings.maxToolRounds || 12)))
     const now = new Date().toISOString()
@@ -1208,13 +1322,20 @@ export class ChatRepository {
   getPermissionSettings(sessionId: string): PermissionSettings {
     const row = this.database
       .prepare(
-        `SELECT workspace_path, mode, trusted_browser_origins_json
+        `SELECT workspace_path, mode, trusted_browser_origins_json, capabilities_json
          FROM session_permission_settings
          WHERE session_id = ?`
       )
       .get(sessionId) as
-      { workspace_path: string; mode: string; trusted_browser_origins_json: string } | undefined
-    if (!row) return { ...DEFAULT_PERMISSION_SETTINGS, trustedBrowserOrigins: [] }
+      | { workspace_path: string; mode: string; trusted_browser_origins_json: string; capabilities_json: string }
+      | undefined
+    if (!row) {
+      return {
+        ...DEFAULT_PERMISSION_SETTINGS,
+        trustedBrowserOrigins: [],
+        capabilities: [...DEFAULT_INTERACTIVE_CAPABILITIES]
+      }
+    }
     let trustedBrowserOrigins: string[] = []
     try {
       const parsed = JSON.parse(row.trusted_browser_origins_json) as unknown
@@ -1227,7 +1348,8 @@ export class ChatRepository {
     return {
       workspacePath: row.workspace_path,
       mode: isPermissionMode(row.mode) ? row.mode : DEFAULT_PERMISSION_SETTINGS.mode,
-      trustedBrowserOrigins
+      trustedBrowserOrigins,
+      capabilities: parseCapabilities(row.capabilities_json, DEFAULT_INTERACTIVE_CAPABILITIES)
     }
   }
 
@@ -1237,12 +1359,13 @@ export class ChatRepository {
     this.database
       .prepare(
         `INSERT INTO session_permission_settings
-         (session_id, workspace_path, mode, trusted_browser_origins_json, updated_at)
-         VALUES (?, ?, ?, ?, ?)
+         (session_id, workspace_path, mode, trusted_browser_origins_json, capabilities_json, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET
            workspace_path = excluded.workspace_path,
            mode = excluded.mode,
            trusted_browser_origins_json = excluded.trusted_browser_origins_json,
+           capabilities_json = excluded.capabilities_json,
            updated_at = excluded.updated_at`
       )
       .run(
@@ -1250,6 +1373,9 @@ export class ChatRepository {
         settings.workspacePath.trim(),
         settings.mode,
         JSON.stringify(settings.trustedBrowserOrigins),
+        JSON.stringify(
+          normalizeCapabilities(settings.capabilities, DEFAULT_INTERACTIVE_CAPABILITIES)
+        ),
         now
       )
     return this.getPermissionSettings(sessionId)
@@ -1747,6 +1873,58 @@ export class ChatRepository {
           CREATE INDEX idx_remote_chat_sessions_updated
             ON remote_chat_sessions(updated_at DESC);
           PRAGMA user_version = 20;
+        `)
+      })()
+    }
+
+    if (version < 21) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          CREATE TABLE scheduled_tasks (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            schedule_type TEXT NOT NULL CHECK (schedule_type IN ('once', 'daily', 'weekly')),
+            run_at TEXT,
+            time_of_day TEXT NOT NULL DEFAULT '09:00',
+            weekdays_json TEXT NOT NULL DEFAULT '[]',
+            model_config_id TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+            status TEXT NOT NULL DEFAULT 'idle'
+              CHECK (status IN ('idle', 'running', 'succeeded', 'failed')),
+            last_run_at TEXT,
+            next_run_at TEXT,
+            last_error TEXT NOT NULL DEFAULT '',
+            last_session_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          CREATE INDEX idx_scheduled_tasks_due
+            ON scheduled_tasks(enabled, next_run_at ASC);
+          PRAGMA user_version = 21;
+        `)
+      })()
+    }
+
+    if (version < 22) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE session_permission_settings
+            ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '["utilities","web_search","workspace_read","workspace_write","skills","skill_scripts","browser_public","browser_private","clipboard","downloads"]';
+          ALTER TABLE scheduled_tasks
+            ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '["utilities","web_search","skills"]';
+          ALTER TABLE scheduled_tasks ADD COLUMN workspace_path TEXT NOT NULL DEFAULT '';
+          ALTER TABLE scheduled_tasks ADD COLUMN max_tool_rounds INTEGER NOT NULL DEFAULT 12;
+          PRAGMA user_version = 22;
+        `)
+      })()
+    }
+
+    if (version < 23) {
+      this.database.transaction(() => {
+        this.database.exec(`
+          ALTER TABLE scheduled_tasks ADD COLUMN skill_ids_json TEXT NOT NULL DEFAULT '[]';
+          PRAGMA user_version = 23;
         `)
       })()
     }

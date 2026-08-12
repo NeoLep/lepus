@@ -17,6 +17,7 @@ import {
   Archive,
   ArchiveRestore,
   Bot,
+  CalendarClock,
   LoaderCircle,
   MessageSquare,
   PanelLeft,
@@ -48,6 +49,7 @@ const emit = defineEmits<{
   togglePin: [session: Session]
   toggleArchive: [session: Session]
   openRemoteChats: []
+  openTaskResults: []
   openSettings: []
 }>()
 
@@ -70,15 +72,19 @@ const visibleEntries = computed(() => {
         session:
           props.sessions.find((session) => session.id === result.session.id) ?? result.session
       }))
-      .filter((entry) => !isRemoteSession(entry.session))
+      .filter((entry) => !isSpecialSession(entry.session))
   }
   return props.sessions
-    .filter((session) => !isRemoteSession(session) && session.isArchived === showArchived.value)
+    .filter((session) => !isSpecialSession(session) && session.isArchived === showArchived.value)
     .map((session) => ({ session, snippet: '', matchedIn: 'title' as const }))
 })
 
 function isRemoteSession(session: Session): boolean {
   return session.id.startsWith('remote-feishu-')
+}
+
+function isSpecialSession(session: Session): boolean {
+  return isRemoteSession(session) || session.id.startsWith('scheduled-')
 }
 
 watch(searchQuery, (value) => {
@@ -291,6 +297,14 @@ onBeforeUnmount(() => {
     </nav>
 
     <div class="settings-actions">
+      <button
+        class="settings-button task-results-button"
+        type="button"
+        @click="emit('openTaskResults')"
+      >
+        <CalendarClock :size="17" />
+        <span>{{ t('taskResults') }}</span>
+      </button>
       <button
         class="settings-button remote-chats-button"
         type="button"
@@ -593,6 +607,10 @@ kbd {
   color: #3370ff;
 }
 
+.task-results-button svg {
+  color: var(--app-accent);
+}
+
 .settings-actions .settings-button {
   width: 100%;
 }
@@ -618,6 +636,7 @@ zh-CN:
   noChats: 还没有对话
   moreActions: '{title} 更多操作'
   settings: 设置
+  taskResults: 定时任务记录
   remoteConversations: 飞书（远程对话）
 en:
   collapseSidebar: Collapse sidebar
@@ -638,5 +657,6 @@ en:
   noChats: No chats yet
   moreActions: More actions for {title}
   settings: Settings
+  taskResults: Scheduled task history
   remoteConversations: Feishu (Remote chats)
 </i18n>

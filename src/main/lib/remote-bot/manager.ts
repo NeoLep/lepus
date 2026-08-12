@@ -18,41 +18,7 @@ import {
   type RemoteBotStatus
 } from '@/ipc/chat/constants'
 import { getChatRepository } from '@/ipc/chat/repository'
-
-const REMOTE_TOOL_GROUPS = {
-  utilities: ['get_current_time', 'calculate', 'generate_uuid'],
-  web_search: ['search_web'],
-  workspace_read: ['inspect_file', 'search_files', 'search_text', 'read_file', 'list_directory'],
-  skills: ['read_skill_file'],
-  skill_scripts: ['read_skill_file', 'run_skill_script'],
-  browser: [
-    'browser_status',
-    'browser_open',
-    'browser_tabs',
-    'browser_snapshot',
-    'browser_click',
-    'browser_type',
-    'browser_select',
-    'browser_scroll',
-    'browser_back',
-    'browser_forward',
-    'browser_close'
-  ],
-  browser_private: [
-    'browser_status',
-    'browser_open_private',
-    'browser_tabs',
-    'browser_snapshot',
-    'browser_click',
-    'browser_type',
-    'browser_select',
-    'browser_scroll',
-    'browser_back',
-    'browser_forward',
-    'browser_close'
-  ],
-  clipboard: ['clipboard_read_text']
-} as const
+import { CAPABILITY_TOOL_NAMES, capabilityToolNames } from '@/shared/agent/capabilities'
 
 type FeishuMessageEvent = Parameters<NonNullable<lark.EventHandles['im.message.receive_v1']>>[0]
 
@@ -372,9 +338,7 @@ class RemoteBotManager {
         skill.id.toLocaleLowerCase() === explicitSkillId &&
         skill.files.some((file) => file.kind === 'script')
     )
-    const allowedToolNames = new Set(
-      settings.allowedToolGroups.flatMap((group) => [...REMOTE_TOOL_GROUPS[group]])
-    )
+    const allowedToolNames = capabilityToolNames(settings.allowedToolGroups)
     const systemPrompt = [
       new PromptBuilder().build({ settings: repository.getPromptSettings(), locale: 'zh-CN' }),
       buildSkillPrompt(activeSkills, {
@@ -383,7 +347,7 @@ class RemoteBotManager {
       explicitScriptSkill && enabledGroups.has('skill_scripts')
         ? `<explicit_skill_script>用户显式调用了 ${explicitScriptSkill.id}。必须优先按照该 Skill 的指令使用 run_skill_script 运行已登记脚本；不要先读取脚本源码，也不要用浏览器替代。只有脚本实际执行失败时才可以说明错误并选择其他已授权工具。</explicit_skill_script>`
         : '',
-      `<remote_channel>当前消息来自用户配置的飞书远程机器人。仅执行本轮提供且由用户启用的工具。除已启用的浏览器交互和 Skill 脚本外，不得修改本机或外部状态；需要敏感输入、未授权能力或其他审批时，清楚说明限制并让用户回到 Lepus 桌面端完成。</remote_channel>`
+      `<remote_channel>当前消息来自用户配置的飞书远程机器人。仅执行本轮提供且由用户启用的工具；勾选的能力已由用户预授权。文件操作必须限制在指定工作区内。需要敏感输入或未授权能力时，清楚说明限制并让用户回到 Lepus 桌面端完成。</remote_channel>`
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -391,23 +355,26 @@ class RemoteBotManager {
       modelConfig,
       repository.getSearchProviderConfigs(),
       {
-        workspacePath: enabledGroups.has('workspace_read') ? settings.workspacePath : '',
+        workspacePath:
+          enabledGroups.has('workspace_read') ||
+          enabledGroups.has('workspace_write') ||
+          enabledGroups.has('downloads')
+            ? settings.workspacePath
+            : '',
         mode: 'request_approval',
-        trustedBrowserOrigins: []
+        trustedBrowserOrigins: [],
+        capabilities: settings.allowedToolGroups
       },
       false,
       {
-        readOnly: true,
-        allowBrowserTools: enabledGroups.has('browser') || enabledGroups.has('browser_private'),
+        readOnly: !enabledGroups.has('workspace_write'),
+        allowBrowserTools:
+          enabledGroups.has('browser_public') || enabledGroups.has('browser_private'),
         allowClipboardTool: enabledGroups.has('clipboard'),
         allowSkillScripts: enabledGroups.has('skill_scripts'),
         allowedToolNames,
         approvalFreeToolNames: new Set([
-          ...(enabledGroups.has('web_search') ? REMOTE_TOOL_GROUPS.web_search : []),
-          ...(enabledGroups.has('browser') ? REMOTE_TOOL_GROUPS.browser : []),
-          ...(enabledGroups.has('browser_private') ? REMOTE_TOOL_GROUPS.browser_private : []),
-          ...(enabledGroups.has('skill_scripts') ? REMOTE_TOOL_GROUPS.skill_scripts : []),
-          ...(enabledGroups.has('clipboard') ? REMOTE_TOOL_GROUPS.clipboard : [])
+          ...settings.allowedToolGroups.flatMap((group) => [...CAPABILITY_TOOL_NAMES[group]])
         ] as string[]),
         activeSkills,
         maxToolRounds: settings.maxToolRounds

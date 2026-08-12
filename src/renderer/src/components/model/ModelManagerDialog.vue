@@ -7,10 +7,29 @@ import {
   DialogOverlay,
   DialogPortal,
   DialogRoot,
-  DialogTitle
+  DialogTitle,
+  SelectContent,
+  SelectItem,
+  SelectItemIndicator,
+  SelectItemText,
+  SelectPortal,
+  SelectRoot,
+  SelectTrigger,
+  SelectValue,
+  SelectViewport
 } from 'reka-ui'
-import { Check, Eye, EyeOff, Plus, Trash2, X } from '@lucide/vue'
-import type { ModelConfig } from '@ipc/chat/constants'
+import {
+  Check,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Plus,
+  RefreshCw,
+  Trash2,
+  WalletCards,
+  X
+} from '@lucide/vue'
+import type { DeepSeekBalance, ModelConfig } from '@ipc/chat/constants'
 import {
   createCompressionPolicy,
   detectModelContextWindow
@@ -33,9 +52,41 @@ const draft = ref<ModelConfig>(makeConfig())
 const saving = ref(false)
 const localError = ref('')
 const showApiKey = ref(false)
+const balance = ref<DeepSeekBalance | null>(null)
+const balanceLoading = ref(false)
+const balanceError = ref('')
+const selectedBaseUrlPreset = ref('custom')
 const { t } = useI18n({ useScope: 'local' })
 
+const baseUrlPresets = [
+  { id: 'deepseek', label: 'DeepSeek', url: 'https://api.deepseek.com' },
+  { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1' },
+  { id: 'kimi', label: 'Kimi', url: 'https://api.moonshot.cn/v1' },
+  {
+    id: 'qwen',
+    label: '通义千问（阿里云百炼）',
+    url: 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+  }
+] as const
+
 const isExisting = computed(() => props.configs.some((config) => config.id === draft.value.id))
+const savedConfig = computed(() => props.configs.find((config) => config.id === draft.value.id))
+const supportsDeepSeekBalance = computed(() => {
+  const baseURL = savedConfig.value?.baseURL
+  if (!baseURL) return false
+  try {
+    const url = new URL(baseURL)
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'api.deepseek.com' &&
+      (url.port === '' || url.port === '443') &&
+      !url.username &&
+      !url.password
+    )
+  } catch {
+    return false
+  }
+})
 const tokenPolicy = computed(() =>
   createCompressionPolicy({
     ...draft.value,
@@ -70,6 +121,11 @@ function editConfig(config: ModelConfig): void {
   draft.value = { ...config, apiKey: '' }
   localError.value = ''
   showApiKey.value = false
+  balance.value = null
+  balanceError.value = ''
+  const normalized = config.baseURL.trim().replace(/\/+$/, '')
+  selectedBaseUrlPreset.value =
+    baseUrlPresets.find((preset) => preset.url === normalized)?.id ?? 'custom'
 }
 
 function createConfig(): void {
@@ -77,6 +133,60 @@ function createConfig(): void {
   draft.value = makeConfig()
   localError.value = ''
   showApiKey.value = false
+  balance.value = null
+  balanceError.value = ''
+  selectedBaseUrlPreset.value = 'custom'
+}
+
+function applyBaseUrlPreset(): void {
+  if (selectedBaseUrlPreset.value === 'custom') return
+  const preset = baseUrlPresets.find((item) => item.id === selectedBaseUrlPreset.value)
+  if (preset) draft.value.baseURL = preset.url
+}
+
+function baseUrlPresetLabel(): string {
+  if (selectedBaseUrlPreset.value === 'custom') return t('customProvider')
+  return (
+    baseUrlPresets.find((preset) => preset.id === selectedBaseUrlPreset.value)?.label ??
+    t('customProvider')
+  )
+}
+
+function markBaseUrlCustom(): void {
+  const normalized = draft.value.baseURL.trim().replace(/\/+$/, '')
+  selectedBaseUrlPreset.value =
+    baseUrlPresets.find((preset) => preset.url === normalized)?.id ?? 'custom'
+}
+
+function formatBalance(value: string, currency: 'CNY' | 'USD'): string {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return `${value} ${currency}`
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6
+  }).format(amount)
+}
+
+function formatBalanceTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' }).format(date)
+}
+
+async function refreshBalance(): Promise<void> {
+  if (!supportsDeepSeekBalance.value || balanceLoading.value) return
+  balanceLoading.value = true
+  balanceError.value = ''
+  try {
+    balance.value = await window.api.chat.queryDeepSeekBalance(draft.value.id)
+  } catch (error) {
+    balanceError.value = error instanceof Error ? error.message : t('balance.queryFailed')
+  } finally {
+    balanceLoading.value = false
+  }
 }
 
 function validate(): boolean {
@@ -227,14 +337,89 @@ watch(
                 :placeholder="t('configNameExample')"
               />
             </label>
-            <label>
-              <span>Base URL</span>
+
+            <section v-if="supportsDeepSeekBalance" class="balance-card">
+              <div class="balance-card-header">
+                <span class="balance-icon"><WalletCards :size="17" /></span>
+                <div>
+                  <strong>{{ t('balance.title') }}</strong>
+                  <small v-if="balance">{{
+                    t('balance.updatedAt', { time: formatBalanceTime(balance.queriedAt) })
+                  }}</small>
+                  <small v-else>{{ t('balance.description') }}</small>
+                </div>
+                <button type="button" :disabled="balanceLoading" @click="refreshBalance">
+                  <RefreshCw :size="14" :class="{ spinning: balanceLoading }" />
+                  {{ balanceLoading ? t('balance.querying') : t('balance.refresh') }}
+                </button>
+              </div>
+              <div v-if="balance" class="balance-list">
+                <div v-for="item in balance.balances" :key="item.currency" class="balance-row">
+                  <div>
+                    <span>{{ t('balance.available') }}</span>
+                    <strong>{{ formatBalance(item.totalBalance, item.currency) }}</strong>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>{{ t('balance.toppedUp') }}</dt>
+                      <dd>{{ formatBalance(item.toppedUpBalance, item.currency) }}</dd>
+                    </div>
+                    <div>
+                      <dt>{{ t('balance.granted') }}</dt>
+                      <dd>{{ formatBalance(item.grantedBalance, item.currency) }}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <p class="balance-status" :class="{ unavailable: !balance.isAvailable }">
+                  {{ balance.isAvailable ? t('balance.usable') : t('balance.unusable') }}
+                </p>
+              </div>
+              <p v-if="balanceError" class="balance-error">{{ balanceError }}</p>
+            </section>
+            <label class="base-url-field">
+              <span>{{ t('baseUrl') }}</span>
+              <SelectRoot v-model="selectedBaseUrlPreset" @update:model-value="applyBaseUrlPreset">
+                <SelectTrigger class="provider-select-trigger" :aria-label="t('providerPreset')">
+                  <SelectValue>{{ baseUrlPresetLabel() }}</SelectValue>
+                  <ChevronDown :size="15" />
+                </SelectTrigger>
+                <SelectPortal>
+                  <SelectContent
+                    class="provider-select-content"
+                    position="popper"
+                    :side-offset="5"
+                    :style="{ zIndex: 1000 }"
+                  >
+                    <SelectViewport class="provider-select-viewport">
+                      <SelectItem
+                        v-for="preset in baseUrlPresets"
+                        :key="preset.id"
+                        class="provider-select-item"
+                        :value="preset.id"
+                      >
+                        <SelectItemIndicator class="provider-select-indicator">
+                          <Check :size="14" />
+                        </SelectItemIndicator>
+                        <SelectItemText>{{ preset.label }}</SelectItemText>
+                      </SelectItem>
+                      <SelectItem class="provider-select-item" value="custom">
+                        <SelectItemIndicator class="provider-select-indicator">
+                          <Check :size="14" />
+                        </SelectItemIndicator>
+                        <SelectItemText>{{ t('customProvider') }}</SelectItemText>
+                      </SelectItem>
+                    </SelectViewport>
+                  </SelectContent>
+                </SelectPortal>
+              </SelectRoot>
               <input
                 v-model="draft.baseURL"
                 type="url"
                 autocomplete="off"
                 placeholder="https://api.example.com/v1"
+                @input="markBaseUrlCustom"
               />
+              <small>{{ t('baseUrlHelp') }}</small>
             </label>
             <label>
               <span>{{ t('modelName') }}</span>
@@ -514,7 +699,8 @@ watch(
   font-weight: 600;
 }
 
-.config-form input {
+.config-form input,
+.provider-select-trigger {
   width: 100%;
   height: 38px;
   padding: 0 11px;
@@ -527,9 +713,74 @@ watch(
   font-size: 13px;
 }
 
-.config-form input:focus {
+.config-form input:focus,
+.provider-select-trigger:focus-visible {
   border-color: #7f8a9b;
   box-shadow: 0 0 0 3px rgb(152 162 179 / 16%);
+}
+
+.base-url-field {
+  display: grid;
+  gap: 7px;
+}
+
+.base-url-field > span {
+  margin-bottom: -1px !important;
+}
+
+.base-url-field > small {
+  color: var(--app-text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.provider-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  cursor: pointer;
+}
+
+:global(.provider-select-content) {
+  z-index: 1000 !important;
+  min-width: var(--reka-select-trigger-width);
+  max-height: min(320px, var(--reka-select-content-available-height));
+  overflow: hidden;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 9px;
+  background: var(--app-surface);
+  box-shadow: 0 12px 30px rgb(16 24 40 / 16%);
+  color: var(--app-text-secondary);
+}
+
+:global(.provider-select-viewport) {
+  padding: 5px;
+}
+
+:global(.provider-select-item) {
+  position: relative;
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  padding: 7px 9px 7px 31px;
+  border-radius: 7px;
+  outline: none;
+  font-size: 13px;
+  cursor: default;
+  user-select: none;
+}
+
+:global(.provider-select-item[data-highlighted]) {
+  background: var(--app-hover);
+  color: var(--app-text);
+}
+
+:global(.provider-select-indicator) {
+  position: absolute;
+  left: 9px;
+  display: inline-flex;
+  color: var(--app-accent);
 }
 
 .advanced-settings {
@@ -598,6 +849,134 @@ watch(
   margin-top: 5px;
   color: var(--app-text-tertiary);
   font-size: 10px;
+}
+
+.balance-card {
+  padding: 13px;
+  border: 1px solid var(--app-border-subtle);
+  border-radius: 10px;
+  background: var(--app-surface-subtle);
+}
+
+.balance-card-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.balance-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+}
+
+.balance-card-header > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.balance-card-header strong {
+  color: var(--app-text);
+  font-size: 12px;
+}
+
+.balance-card-header small {
+  color: var(--app-text-muted);
+  font-size: 10px;
+}
+
+.balance-card-header button {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 7px;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.balance-card-header button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.balance-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.balance-row {
+  display: grid;
+  gap: 10px;
+  padding-top: 11px;
+  border-top: 1px solid var(--app-border-subtle);
+  grid-template-columns: minmax(110px, 0.8fr) minmax(180px, 1.2fr);
+}
+
+.balance-row > div {
+  display: grid;
+  gap: 2px;
+}
+
+.balance-row span,
+.balance-row dt {
+  color: var(--app-text-muted);
+  font-size: 10px;
+}
+
+.balance-row strong {
+  color: var(--app-text);
+  font-size: 18px;
+}
+
+.balance-row dl {
+  display: grid;
+  margin: 0;
+  gap: 4px;
+}
+
+.balance-row dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.balance-row dd {
+  margin: 0;
+  color: var(--app-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.balance-status,
+.balance-error {
+  margin: 0;
+  font-size: 10px;
+}
+
+.balance-status {
+  color: var(--app-success, #067647);
+}
+
+.balance-status.unavailable,
+.balance-error {
+  color: var(--app-danger);
+}
+
+.spinning {
+  animation: balance-spin 1s linear infinite;
 }
 
 .form-error {
@@ -684,6 +1063,12 @@ watch(
     transform: translate(-50%, -48%) scale(0.98);
   }
 }
+
+@keyframes balance-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 </style>
 
 <i18n lang="yaml">
@@ -693,6 +1078,10 @@ zh-CN:
   newConfig: 新建配置
   configName: 配置名称
   configNameExample: 例如：DeepSeek
+  baseUrl: 服务商与 Base URL
+  providerPreset: 服务商预设
+  customProvider: 自定义地址
+  baseUrlHelp: 选择服务商可自动填入官方地址；输入框始终可以手动修改。
   modelName: 模型名称
   modelNameExample: 例如：deepseek-chat
   hideApiKey: 隐藏 API Key
@@ -711,6 +1100,18 @@ zh-CN:
   saving: 保存中…
   saveConfig: 保存配置
   deleteConfirm: 确定删除模型配置“{name}”吗？
+  balance:
+    title: DeepSeek 账户余额
+    description: 通过 DeepSeek 官方 API 查询，不会显示或传递给界面的 API Key。
+    refresh: 查询余额
+    querying: 查询中…
+    queryFailed: 查询 DeepSeek 余额失败
+    updatedAt: 更新于 {time}
+    available: 可用余额
+    toppedUp: 充值余额
+    granted: 赠送余额
+    usable: 当前账户余额可用于 API 调用
+    unusable: 当前账户余额不足，无法调用 API
   contextSource:
     manual: 手动设置
     detected: 根据模型名称自动识别
@@ -727,6 +1128,10 @@ en:
   newConfig: New configuration
   configName: Configuration name
   configNameExample: 'Example: DeepSeek'
+  baseUrl: Provider and Base URL
+  providerPreset: Provider preset
+  customProvider: Custom URL
+  baseUrlHelp: Select a provider to fill its official URL, or edit the field manually.
   modelName: Model name
   modelNameExample: 'Example: deepseek-chat'
   hideApiKey: Hide API key
@@ -745,6 +1150,18 @@ en:
   saving: Saving…
   saveConfig: Save configuration
   deleteConfirm: Delete model configuration “{name}”?
+  balance:
+    title: DeepSeek account balance
+    description: Queried from the official DeepSeek API without exposing the API key to the interface.
+    refresh: Check balance
+    querying: Checking…
+    queryFailed: Failed to query the DeepSeek balance
+    updatedAt: Updated {time}
+    available: Available balance
+    toppedUp: Topped-up balance
+    granted: Granted balance
+    usable: This account has sufficient balance for API calls
+    unusable: This account has insufficient balance for API calls
   contextSource:
     manual: Manually set
     detected: Automatically detected from the model name

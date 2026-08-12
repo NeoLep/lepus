@@ -41,6 +41,7 @@ import { PromptBuilder } from '@/main/lib/agent/prompt-builder'
 import { SubtaskScheduler } from '@/main/lib/agent/subtask-scheduler'
 import { normalizeTrustedBrowserOrigins } from '@/main/lib/agent/tools/network-security'
 import { remoteBotManager } from '@/main/lib/remote-bot/manager'
+import { isOfficialDeepSeekBaseUrl, queryDeepSeekBalance } from '@/main/lib/deepseek-balance'
 import {
   buildExplicitSkillInvocationPrompt,
   buildSkillPrompt,
@@ -605,6 +606,14 @@ export default () => {
   ipcMain.handle(CHAT_CHANNELS.MODEL_CONFIG_SELECT, (_event, id: string) =>
     getChatRepository().selectModelConfig(id)
   )
+  ipcMain.handle(CHAT_CHANNELS.MODEL_CONFIG_DEEPSEEK_BALANCE, async (_event, id: string) => {
+    const config = getChatRepository().getModelConfig(id)
+    if (!config) throw new Error('模型配置不存在')
+    if (!isOfficialDeepSeekBaseUrl(config.baseURL)) {
+      throw new Error('余额查询仅支持 DeepSeek 官方 API 地址')
+    }
+    return queryDeepSeekBalance(config.apiKey)
+  })
   ipcMain.handle(CHAT_CHANNELS.PROMPT_SETTINGS_QUERY, () => getChatRepository().getPromptSettings())
   ipcMain.handle(CHAT_CHANNELS.PROMPT_SETTINGS_UPDATE, (_event, request: PromptSettings) =>
     getChatRepository().savePromptSettings(request)
@@ -616,6 +625,12 @@ export default () => {
     CHAT_CHANNELS.REMOTE_BOT_SETTINGS_UPDATE,
     async (_event, request: RemoteBotSettings) => {
       const workspacePath = request.workspacePath.trim()
+      const needsWorkspace = request.allowedToolGroups.some((item) =>
+        ['workspace_read', 'workspace_write', 'downloads'].includes(item)
+      )
+      if (needsWorkspace && !workspacePath) {
+        throw new Error('启用文件相关能力前，请先选择远程机器人工作文件夹')
+      }
       if (workspacePath) {
         if (!path.isAbsolute(workspacePath)) throw new Error('远程机器人工作文件夹必须是绝对路径')
         const folderInfo = await stat(workspacePath)
@@ -652,7 +667,8 @@ export default () => {
       return getChatRepository().savePermissionSettings(request.sessionId, {
         workspacePath,
         mode: request.mode,
-        trustedBrowserOrigins: normalizeTrustedBrowserOrigins(request.trustedBrowserOrigins ?? [])
+        trustedBrowserOrigins: normalizeTrustedBrowserOrigins(request.trustedBrowserOrigins ?? []),
+        capabilities: request.capabilities
       })
     }
   )

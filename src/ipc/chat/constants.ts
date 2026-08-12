@@ -26,6 +26,7 @@ export const CHAT_CHANNELS = {
   MODEL_CONFIG_UPDATE: 'model-config:update',
   MODEL_CONFIG_DELETE: 'model-config:delete',
   MODEL_CONFIG_SELECT: 'model-config:select',
+  MODEL_CONFIG_DEEPSEEK_BALANCE: 'model-config:deepseek-balance',
   PROMPT_SETTINGS_QUERY: 'prompt-settings:query',
   PROMPT_SETTINGS_UPDATE: 'prompt-settings:update',
   REMOTE_BOT_SETTINGS_QUERY: 'remote-bot-settings:query',
@@ -386,20 +387,13 @@ export type RemoteBotSettings = {
   appSecret: string
   hasAppSecret: boolean
   allowedOpenIds: string[]
-  allowedToolGroups: RemoteBotToolGroup[]
+  allowedToolGroups: AgentCapability[]
   workspacePath: string
   maxToolRounds: number
 }
 
-export type RemoteBotToolGroup =
-  | 'utilities'
-  | 'web_search'
-  | 'workspace_read'
-  | 'skills'
-  | 'skill_scripts'
-  | 'browser'
-  | 'browser_private'
-  | 'clipboard'
+export type AgentCapability = import('@/shared/agent/capabilities').AgentCapability
+export type RemoteBotToolGroup = AgentCapability
 
 export type RemoteBotStatus = {
   state: 'stopped' | 'connecting' | 'connected' | 'error'
@@ -416,6 +410,7 @@ export type PermissionSettings = {
   workspacePath: string
   mode: PermissionMode
   trustedBrowserOrigins: string[]
+  capabilities: AgentCapability[]
 }
 
 export type SessionPermissionSettings = PermissionSettings & {
@@ -511,4 +506,17 @@ export type ModelConfig = {
   isActive: boolean
   createdAt: string
   updatedAt: string
+}
+
+export type DeepSeekBalanceInfo = {
+  currency: 'CNY' | 'USD'
+  totalBalance: string
+  grantedBalance: string
+  toppedUpBalance: string
+}
+
+export type DeepSeekBalance = {
+  isAvailable: boolean
+  balances: DeepSeekBalanceInfo[]
+  queriedAt: string
 }

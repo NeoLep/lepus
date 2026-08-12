@@ -8,11 +8,14 @@ import {
   DialogOverlay,
   DialogPortal,
   DialogRoot,
-  DialogTitle
+  DialogTitle,
+  SwitchRoot,
+  SwitchThumb
 } from 'reka-ui'
-import { Bot, ChevronDown, CircleAlert, FolderOpen, LoaderCircle, Radio, X } from '@lucide/vue'
-import type { RemoteBotSettings, RemoteBotStatus, RemoteBotToolGroup } from '@ipc/chat/constants'
+import { Bot, CircleAlert, FolderOpen, LoaderCircle, Radio, X } from '@lucide/vue'
+import type { RemoteBotSettings, RemoteBotStatus } from '@ipc/chat/constants'
 import { useI18n } from 'vue-i18n'
+import AgentCapabilityPicker from './AgentCapabilityPicker.vue'
 
 const open = defineModel<boolean>('open', { required: true })
 const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
@@ -21,7 +24,6 @@ const loading = ref(false)
 const saving = ref(false)
 const saveQueued = ref(false)
 const selectingFolder = ref(false)
-const capabilitiesExpanded = ref(false)
 const error = ref('')
 const draft = ref<RemoteBotSettings>({
   enabled: false,
@@ -46,29 +48,10 @@ const lastSenderHint = computed(() => {
   if (!status.value.lastSenderOpenId) return ''
   return t('lastSender', { id: status.value.lastSenderOpenId })
 })
-const toolGroups = computed<Array<{ id: RemoteBotToolGroup; title: string; description: string }>>(
-  () => [
-    { id: 'utilities', title: t('tools.utilities'), description: t('tools.utilitiesHint') },
-    { id: 'web_search', title: t('tools.webSearch'), description: t('tools.webSearchHint') },
-    {
-      id: 'workspace_read',
-      title: t('tools.workspaceRead'),
-      description: t('tools.workspaceReadHint')
-    },
-    { id: 'skills', title: t('tools.skills'), description: t('tools.skillsHint') },
-    {
-      id: 'skill_scripts',
-      title: t('tools.skillScripts'),
-      description: t('tools.skillScriptsHint')
-    },
-    { id: 'browser', title: t('tools.browser'), description: t('tools.browserHint') },
-    {
-      id: 'browser_private',
-      title: t('tools.browserPrivate'),
-      description: t('tools.browserPrivateHint')
-    },
-    { id: 'clipboard', title: t('tools.clipboard'), description: t('tools.clipboardHint') }
-  ]
+const needsWorkspace = computed(() =>
+  draft.value.allowedToolGroups.some((item) =>
+    ['workspace_read', 'workspace_write', 'downloads'].includes(item)
+  )
 )
 
 async function selectWorkspace(): Promise<void> {
@@ -82,10 +65,6 @@ async function selectWorkspace(): Promise<void> {
   } finally {
     selectingFolder.value = false
   }
-}
-
-function syncCapabilitiesExpanded(event: Event): void {
-  capabilitiesExpanded.value = (event.currentTarget as HTMLDetailsElement).open
 }
 
 async function load(): Promise<void> {
@@ -199,44 +178,30 @@ onBeforeUnmount(removeStatusListener)
             </div>
           </section>
 
-          <label class="toggle-row">
+          <div class="toggle-row">
             <div>
               <strong>{{ t('enable') }}</strong>
               <small>{{ t('enableHint') }}</small>
             </div>
-            <input v-model="draft.enabled" type="checkbox" />
-          </label>
+            <SwitchRoot v-model="draft.enabled" class="remote-switch">
+              <SwitchThumb />
+            </SwitchRoot>
+          </div>
 
-          <details
-            class="capability-section"
-            :open="capabilitiesExpanded"
-            @toggle="syncCapabilitiesExpanded"
-          >
-            <summary class="section-heading" :aria-expanded="capabilitiesExpanded">
+          <section class="capability-section">
+            <div class="section-heading">
               <div>
                 <strong>{{ t('capabilities') }}</strong>
                 <small>{{ t('capabilitiesHint') }}</small>
               </div>
               <span class="section-heading-meta">
                 {{ t('selectedCount', { count: draft.allowedToolGroups.length }) }}
-                <ChevronDown :size="16" :class="{ expanded: capabilitiesExpanded }" />
               </span>
-            </summary>
-            <div class="capability-content">
-              <label v-for="group in toolGroups" :key="group.id" class="capability-row">
-                <input
-                  v-model="draft.allowedToolGroups"
-                  type="checkbox"
-                  :value="group.id"
-                  @change="save"
-                />
-                <span>
-                  <strong>{{ group.title }}</strong>
-                  <small>{{ group.description }}</small>
-                </span>
-              </label>
             </div>
-          </details>
+            <div class="capability-content">
+              <AgentCapabilityPicker v-model="draft.allowedToolGroups" unattended />
+            </div>
+          </section>
 
           <section class="platform-card">
             <span class="platform-logo">飞</span>
@@ -269,7 +234,7 @@ onBeforeUnmount(removeStatusListener)
             <small>{{ t('allowlistHint') }}</small>
           </label>
 
-          <section v-if="draft.allowedToolGroups.includes('workspace_read')" class="workspace-card">
+          <section v-if="needsWorkspace" class="workspace-card">
             <div>
               <strong>{{ t('workspace') }}</strong>
               <small>{{ draft.workspacePath || t('workspaceEmpty') }}</small>
@@ -328,13 +293,13 @@ onBeforeUnmount(removeStatusListener)
 .remote-overlay {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 9998;
   background: rgb(15 23 42 / 42%);
   backdrop-filter: blur(2px);
 }
 .remote-dialog {
   position: fixed;
-  z-index: 81;
+  z-index: 9999;
   top: 50%;
   left: 50%;
   width: min(620px, calc(100vw - 32px));
@@ -472,20 +437,14 @@ onBeforeUnmount(removeStatusListener)
   color: var(--app-text);
   font: inherit;
   text-align: left;
-  cursor: pointer;
-  list-style: none;
-}
-.section-heading::-webkit-details-marker {
-  display: none;
+  cursor: default;
 }
 .section-heading > div,
-.capability-row > span,
 .workspace-card > div {
   display: grid;
   gap: 3px;
 }
 .section-heading small,
-.capability-row small,
 .workspace-card small {
   color: var(--app-text-muted);
   font-size: 12px;
@@ -499,37 +458,12 @@ onBeforeUnmount(removeStatusListener)
   color: var(--app-text-muted);
   font-size: 12px;
 }
-.section-heading-meta svg {
-  transition: transform 160ms ease;
-}
-.section-heading-meta svg.expanded {
-  transform: rotate(180deg);
-}
 .capability-content {
   display: block;
   min-height: 0;
-  overflow: visible;
-}
-.capability-section:not([open]) > .capability-content {
-  display: none;
-}
-.capability-section[open] > .capability-content {
-  display: block;
-}
-.capability-row {
-  display: grid !important;
-  grid-template-columns: auto 1fr;
-  gap: 10px !important;
-  align-items: start;
-  padding: 11px 14px;
+  padding: 12px 14px 14px;
   border-top: 1px solid var(--app-border);
-  cursor: pointer;
-}
-.capability-row input {
-  width: 17px;
-  height: 17px;
-  margin: 1px 0 0;
-  accent-color: #3370ff;
+  overflow: visible;
 }
 .workspace-card {
   display: flex;
@@ -587,17 +521,16 @@ onBeforeUnmount(removeStatusListener)
   color: #d97706;
 }
 .toggle-row {
-  cursor: pointer;
+  cursor: default;
 }
 .toggle-row small {
   color: var(--app-text-muted);
   font-weight: 400;
 }
-.toggle-row input {
-  width: 18px;
-  height: 18px;
-  accent-color: #3370ff;
-}
+.remote-switch { position: relative; width: 38px; height: 22px; flex: none; padding: 2px; border: 0; border-radius: 999px; background: var(--app-border-strong); cursor: pointer; }
+.remote-switch[data-state='checked'] { background: var(--app-accent); }
+.remote-switch > span { display: block; width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 3px rgb(0 0 0 / 20%); transition: transform 150ms ease; }
+.remote-switch[data-state='checked'] > span { transform: translateX(16px); }
 .platform-logo {
   display: grid;
   width: 32px;
@@ -702,9 +635,9 @@ zh-CN:
   setupPublish: 创建版本并发布，将可见范围限制为自己。
   openConsole: 打开飞书开发者后台 ↗
   capabilities: 工具与功能权限
-  capabilitiesHint: 只勾选允许飞书会话调用的能力；勾选后自动保存并对新消息生效。
+  capabilitiesHint: 只勾选允许飞书会话调用的能力；保存后对新消息生效。
   selectedCount: 已启用 {count} 项
-  workspace: 只读工作文件夹
+  workspace: 工作文件夹
   workspaceEmpty: 尚未选择；本地文件工具将不可用
   chooseFolder: 选择
   clearFolder: 清除
@@ -728,7 +661,7 @@ zh-CN:
     browserPrivateHint: 访问并操作局域网网页；仍会阻止 localhost、链路本地和云元数据地址。
     clipboard: 读取剪贴板
     clipboardHint: 允许读取这台电脑当前的纯文本剪贴板，可能包含敏感信息。
-  safety: 飞书会话默认禁止写文件和运行脚本。Skill 脚本、浏览器与剪贴板权限具有较高风险，请只向可信飞书用户开放。
+  safety: 勾选的能力会在飞书会话中预授权执行。写文件、Skill 脚本、登录态浏览器与剪贴板风险较高，请只向可信用户开放。
   save: 保存并连接
   saving: 正在保存…
   loadFailed: 无法读取远程机器人设置
@@ -758,9 +691,9 @@ en:
   setupPublish: Publish a version and limit visibility to yourself.
   openConsole: Open Feishu developer console ↗
   capabilities: Tools and capabilities
-  capabilitiesHint: Only checked capabilities are available to Feishu chats. Changes are saved automatically and apply to new messages.
+  capabilitiesHint: Only checked capabilities are available to Feishu chats. Saved changes apply to new messages.
   selectedCount: '{count} enabled'
-  workspace: Read-only workspace
+  workspace: Workspace
   workspaceEmpty: Not selected; local file tools will be unavailable
   chooseFolder: Choose
   clearFolder: Clear
@@ -784,7 +717,7 @@ en:
     browserPrivateHint: Operate LAN webpages; localhost, link-local, and cloud metadata addresses remain blocked.
     clipboard: Read clipboard
     clipboardHint: Read the computer's current plain-text clipboard, which may contain sensitive data.
-  safety: Feishu chats block file writes and scripts by default. Skill scripts, browser, and clipboard access are high-risk; only allow trusted Feishu users.
+  safety: Selected capabilities are preauthorized in Feishu chats. File writes, Skill scripts, signed-in browser access, and clipboard access are high-risk; allow trusted users only.
   save: Save and connect
   saving: Saving…
   loadFailed: Failed to load remote bot settings
