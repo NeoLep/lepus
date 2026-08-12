@@ -28,6 +28,8 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     needs: validate
+    env:
+      ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
     strategy:
       fail-fast: false
       matrix:
@@ -66,7 +68,20 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Dependency installation failed after $attempt attempts."
+              exit 1
+            fi
+            delay=$((attempt * 10))
+            echo "Dependency installation failed; retrying in ${delay}s (attempt $((attempt + 1))/3)..."
+            sleep "$delay"
+          done
 
       - name: Check code style
         run: pnpm exec eslint src --cache
