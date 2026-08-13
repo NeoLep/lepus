@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { CheckCircle2, Download, RefreshCw, RotateCw, TriangleAlert } from '@lucide/vue'
+import {
+  CheckCircle2,
+  Download,
+  ExternalLink,
+  GitFork,
+  RefreshCw,
+  RotateCw,
+  TriangleAlert
+} from '@lucide/vue'
 import type { UpdateState } from '@ipc/update/constants'
 import { useI18n } from 'vue-i18n'
 
@@ -61,6 +69,17 @@ onBeforeUnmount(removeListener)
         <h2>{{ t('title') }}</h2>
         <p>{{ t('description') }}</p>
       </div>
+      <a
+        class="github-link"
+        href="https://github.com/NeoLep/lepus"
+        target="_blank"
+        rel="noopener noreferrer"
+        :aria-label="t('openGithub')"
+      >
+        <GitFork :size="16" />
+        <span>{{ t('githubProject') }}</span>
+        <ExternalLink :size="13" />
+      </a>
     </header>
 
     <div class="update-body">
@@ -149,8 +168,12 @@ onBeforeUnmount(removeListener)
   color: var(--app-text-secondary);
 }
 .update-header {
+  display: flex;
   min-height: 72px;
   box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
   padding: 17px 22px 15px;
   border-bottom: 1px solid var(--app-border-subtle);
 }
@@ -166,6 +189,29 @@ onBeforeUnmount(removeListener)
   color: var(--app-text-muted);
   font-size: 12px;
   line-height: 1.45;
+}
+.github-link {
+  display: inline-flex;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 9px;
+  background: var(--app-surface);
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.github-link:hover {
+  background: var(--app-hover);
+  color: var(--app-text);
+}
+.github-link:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
 }
 .update-body {
   display: grid;
@@ -310,6 +356,8 @@ zh-CN:
   title: 应用更新
   description: 从 GitHub Releases 检查、下载并安装 Lepus 新版本。
   currentVersion: 当前版本
+  githubProject: GitHub 项目
+  openGithub: 在浏览器中打开 Lepus GitHub 项目主页
   check: 检查更新
   checking: 正在检查…
   availableVersion: 发现新版本 v{version}
@@ -332,6 +380,8 @@ en:
   title: App updates
   description: Check, download, and install new Lepus versions from GitHub Releases.
   currentVersion: Current version
+  githubProject: GitHub project
+  openGithub: Open the Lepus GitHub project page in your browser
   check: Check for updates
   checking: Checking…
   availableVersion: Version v{version} is available
