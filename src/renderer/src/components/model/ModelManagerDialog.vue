@@ -29,7 +29,7 @@ import {
   WalletCards,
   X
 } from '@lucide/vue'
-import type { DeepSeekBalance, ModelConfig } from '@ipc/chat/constants'
+import type { ModelConfig, ProviderBalance, ProviderBalanceProvider } from '@ipc/chat/constants'
 import {
   createCompressionPolicy,
   detectModelContextWindow
@@ -52,7 +52,7 @@ const draft = ref<ModelConfig>(makeConfig())
 const saving = ref(false)
 const localError = ref('')
 const showApiKey = ref(false)
-const balance = ref<DeepSeekBalance | null>(null)
+const balance = ref<ProviderBalance | null>(null)
 const balanceLoading = ref(false)
 const balanceError = ref('')
 const selectedBaseUrlPreset = ref('custom')
@@ -62,6 +62,8 @@ const baseUrlPresets = [
   { id: 'deepseek', label: 'DeepSeek', url: 'https://api.deepseek.com' },
   { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1' },
   { id: 'kimi', label: 'Kimi', url: 'https://api.moonshot.cn/v1' },
+  { id: 'siliconflow', label: '硅基流动', url: 'https://api.siliconflow.cn/v1' },
+  { id: 'openrouter', label: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   {
     id: 'qwen',
     label: '通义千问（阿里云百炼）',
@@ -71,20 +73,25 @@ const baseUrlPresets = [
 
 const isExisting = computed(() => props.configs.some((config) => config.id === draft.value.id))
 const savedConfig = computed(() => props.configs.find((config) => config.id === draft.value.id))
-const supportsDeepSeekBalance = computed(() => {
+const balanceProvider = computed<ProviderBalanceProvider | null>(() => {
   const baseURL = savedConfig.value?.baseURL
-  if (!baseURL) return false
+  if (!baseURL) return null
   try {
     const url = new URL(baseURL)
-    return (
-      url.protocol === 'https:' &&
-      url.hostname === 'api.deepseek.com' &&
-      (url.port === '' || url.port === '443') &&
-      !url.username &&
-      !url.password
+    if (
+      url.protocol !== 'https:' ||
+      (url.port && url.port !== '443') ||
+      url.username ||
+      url.password
     )
+      return null
+    if (url.hostname === 'api.deepseek.com') return 'deepseek'
+    if (url.hostname === 'api.moonshot.cn') return 'kimi'
+    if (url.hostname === 'api.siliconflow.cn') return 'siliconflow'
+    if (url.hostname === 'openrouter.ai') return 'openrouter'
+    return null
   } catch {
-    return false
+    return null
   }
 })
 const tokenPolicy = computed(() =>
@@ -177,11 +184,11 @@ function formatBalanceTime(value: string): string {
 }
 
 async function refreshBalance(): Promise<void> {
-  if (!supportsDeepSeekBalance.value || balanceLoading.value) return
+  if (!balanceProvider.value || balanceLoading.value) return
   balanceLoading.value = true
   balanceError.value = ''
   try {
-    balance.value = await window.api.chat.queryDeepSeekBalance(draft.value.id)
+    balance.value = await window.api.chat.queryProviderBalance(draft.value.id)
   } catch (error) {
     balanceError.value = error instanceof Error ? error.message : t('balance.queryFailed')
   } finally {
@@ -338,11 +345,13 @@ watch(
               />
             </label>
 
-            <section v-if="supportsDeepSeekBalance" class="balance-card">
+            <section v-if="balanceProvider" class="balance-card">
               <div class="balance-card-header">
                 <span class="balance-icon"><WalletCards :size="17" /></span>
                 <div>
-                  <strong>{{ t('balance.title') }}</strong>
+                  <strong>{{
+                    t('balance.title', { provider: t(`balance.providers.${balanceProvider}`) })
+                  }}</strong>
                   <small v-if="balance">{{
                     t('balance.updatedAt', { time: formatBalanceTime(balance.queriedAt) })
                   }}</small>
@@ -360,11 +369,11 @@ watch(
                     <strong>{{ formatBalance(item.totalBalance, item.currency) }}</strong>
                   </div>
                   <dl>
-                    <div>
+                    <div v-if="balance.provider !== 'openrouter'">
                       <dt>{{ t('balance.toppedUp') }}</dt>
                       <dd>{{ formatBalance(item.toppedUpBalance, item.currency) }}</dd>
                     </div>
-                    <div>
+                    <div v-if="balance.provider !== 'openrouter'">
                       <dt>{{ t('balance.granted') }}</dt>
                       <dd>{{ formatBalance(item.grantedBalance, item.currency) }}</dd>
                     </div>
@@ -1101,17 +1110,22 @@ zh-CN:
   saveConfig: 保存配置
   deleteConfirm: 确定删除模型配置“{name}”吗？
   balance:
-    title: DeepSeek 账户余额
-    description: 通过 DeepSeek 官方 API 查询，不会显示或传递给界面的 API Key。
+    title: '{provider} 账户余额'
+    description: 通过服务商官方 API 查询，不会显示或传递给界面的 API Key。
     refresh: 查询余额
     querying: 查询中…
-    queryFailed: 查询 DeepSeek 余额失败
+    queryFailed: 查询服务商余额失败
     updatedAt: 更新于 {time}
     available: 可用余额
     toppedUp: 充值余额
     granted: 赠送余额
     usable: 当前账户余额可用于 API 调用
     unusable: 当前账户余额不足，无法调用 API
+    providers:
+      deepseek: DeepSeek
+      kimi: Kimi
+      siliconflow: 硅基流动
+      openrouter: OpenRouter
   contextSource:
     manual: 手动设置
     detected: 根据模型名称自动识别
@@ -1151,17 +1165,22 @@ en:
   saveConfig: Save configuration
   deleteConfirm: Delete model configuration “{name}”?
   balance:
-    title: DeepSeek account balance
-    description: Queried from the official DeepSeek API without exposing the API key to the interface.
+    title: '{provider} account balance'
+    description: Queried from the provider's official API without exposing the API key to the interface.
     refresh: Check balance
     querying: Checking…
-    queryFailed: Failed to query the DeepSeek balance
+    queryFailed: Failed to query the provider balance
     updatedAt: Updated {time}
     available: Available balance
     toppedUp: Topped-up balance
     granted: Granted balance
     usable: This account has sufficient balance for API calls
     unusable: This account has insufficient balance for API calls
+    providers:
+      deepseek: DeepSeek
+      kimi: Kimi
+      siliconflow: SiliconFlow
+      openrouter: OpenRouter
   contextSource:
     manual: Manually set
     detected: Automatically detected from the model name

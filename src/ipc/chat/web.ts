@@ -18,7 +18,7 @@ import {
   MessageReviseRequest,
   MessageRegenerateRequest,
   ModelConfig,
-  DeepSeekBalance,
+  ProviderBalance,
   PermissionSettings,
   SessionPermissionSettings,
   PromptPreviewRequest,
@@ -116,8 +116,8 @@ export default {
     ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_DELETE, id),
   selectModelConfig: (id: string): Promise<void> =>
     ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_SELECT, id),
-  queryDeepSeekBalance: (id: string): Promise<DeepSeekBalance> =>
-    ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_DEEPSEEK_BALANCE, id),
+  queryProviderBalance: (id: string): Promise<ProviderBalance> =>
+    ipcRenderer.invoke(CHAT_CHANNELS.MODEL_CONFIG_PROVIDER_BALANCE, id),
   queryPromptSettings: (): Promise<PromptSettings> =>
     ipcRenderer.invoke(CHAT_CHANNELS.PROMPT_SETTINGS_QUERY),
   updatePromptSettings: (request: PromptSettings): Promise<PromptSettings> =>

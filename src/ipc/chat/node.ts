@@ -41,7 +41,7 @@ import { PromptBuilder } from '@/main/lib/agent/prompt-builder'
 import { SubtaskScheduler } from '@/main/lib/agent/subtask-scheduler'
 import { normalizeTrustedBrowserOrigins } from '@/main/lib/agent/tools/network-security'
 import { remoteBotManager } from '@/main/lib/remote-bot/manager'
-import { isOfficialDeepSeekBaseUrl, queryDeepSeekBalance } from '@/main/lib/deepseek-balance'
+import { detectBalanceProvider, queryProviderBalance } from '@/main/lib/provider-balance'
 import {
   buildExplicitSkillInvocationPrompt,
   buildSkillPrompt,
@@ -606,13 +606,12 @@ export default () => {
   ipcMain.handle(CHAT_CHANNELS.MODEL_CONFIG_SELECT, (_event, id: string) =>
     getChatRepository().selectModelConfig(id)
   )
-  ipcMain.handle(CHAT_CHANNELS.MODEL_CONFIG_DEEPSEEK_BALANCE, async (_event, id: string) => {
+  ipcMain.handle(CHAT_CHANNELS.MODEL_CONFIG_PROVIDER_BALANCE, async (_event, id: string) => {
     const config = getChatRepository().getModelConfig(id)
     if (!config) throw new Error('模型配置不存在')
-    if (!isOfficialDeepSeekBaseUrl(config.baseURL)) {
-      throw new Error('余额查询仅支持 DeepSeek 官方 API 地址')
-    }
-    return queryDeepSeekBalance(config.apiKey)
+    const provider = detectBalanceProvider(config.baseURL)
+    if (!provider) throw new Error('当前服务商不支持余额查询')
+    return queryProviderBalance(provider, config.apiKey)
   })
   ipcMain.handle(CHAT_CHANNELS.PROMPT_SETTINGS_QUERY, () => getChatRepository().getPromptSettings())
   ipcMain.handle(CHAT_CHANNELS.PROMPT_SETTINGS_UPDATE, (_event, request: PromptSettings) =>

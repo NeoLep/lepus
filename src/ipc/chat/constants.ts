@@ -26,7 +26,7 @@ export const CHAT_CHANNELS = {
   MODEL_CONFIG_UPDATE: 'model-config:update',
   MODEL_CONFIG_DELETE: 'model-config:delete',
   MODEL_CONFIG_SELECT: 'model-config:select',
-  MODEL_CONFIG_DEEPSEEK_BALANCE: 'model-config:deepseek-balance',
+  MODEL_CONFIG_PROVIDER_BALANCE: 'model-config:provider-balance',
   PROMPT_SETTINGS_QUERY: 'prompt-settings:query',
   PROMPT_SETTINGS_UPDATE: 'prompt-settings:update',
   REMOTE_BOT_SETTINGS_QUERY: 'remote-bot-settings:query',
@@ -508,15 +508,18 @@ export type ModelConfig = {
   updatedAt: string
 }
 
-export type DeepSeekBalanceInfo = {
+export type ProviderBalanceProvider = 'deepseek' | 'kimi' | 'siliconflow' | 'openrouter'
+
+export type ProviderBalanceInfo = {
   currency: 'CNY' | 'USD'
   totalBalance: string
   grantedBalance: string
   toppedUpBalance: string
 }
 
-export type DeepSeekBalance = {
+export type ProviderBalance = {
+  provider: ProviderBalanceProvider
   isAvailable: boolean
-  balances: DeepSeekBalanceInfo[]
+  balances: ProviderBalanceInfo[]
   queriedAt: string
 }
