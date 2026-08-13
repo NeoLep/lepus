@@ -2,7 +2,7 @@
 
 Lepus 是一个本地优先的桌面 AI 工作台：连接兼容 OpenAI API 的模型，让 AI 在可控权限下理解文件、搜索信息、规划任务并操作工作目录。
 
-[产品主页](https://neolep.github.io/lepus/) · [产品功能说明](./PRODUCT.md)
+[产品主页](https://neolep.github.io/lepus/) · [下载 Lepus](https://neolep.github.io/lepus/#download) · [产品功能说明](./PRODUCT.md)
 
 ## 核心能力
 
@@ -17,7 +17,7 @@ Lepus 是一个本地优先的桌面 AI 工作台：连接兼容 OpenAI API 的�
 - 统一能力权限：对话、飞书与定时任务共用同一套能力定义，可分别开放实用工具、联网搜索、工作区读写、Skills、Skill 脚本、公共或登录态浏览器、剪贴板与下载；未授权工具不会提供给模型。
 - 审批与安全控制：能力范围之外，还可选择逐次确认、自动批准和完全访问三种审批模式，并可按来源信任浏览器页面操作。
 - 本地会话管理：会话、消息和设置保存到本地，支持搜索、置顶、归档及 Markdown/JSON 导出。
-- 应用内更新：从 GitHub Releases 检查新版本，按需下载并在确认后重启安装。
+- 应用内更新：从 GitHub Releases 检查新版本；Windows 与 Linux AppImage 可按需下载并安装，未签名的 macOS 版本需前往官网下载后手动覆盖安装。
 - 定时任务：支持一次、每天和每周计划，可为每项任务选择模型、最多 3 个 Skills、工作区和能力权限；执行结果集中保存在独立的“定时任务记录”中并发送桌面通知。
 - 远程机器人：通过飞书自建应用的 WebSocket 长连接，在手机飞书中与本机运行的 Lepus 对话，无需公网回调地址。
 
@@ -60,6 +60,43 @@ pnpm build:win
 pnpm build:mac
 pnpm build:linux
 ```
+
+## 下载与安装
+
+请从 [Lepus 官网下载页](https://neolep.github.io/lepus/#download) 或 [GitHub Releases](https://github.com/NeoLep/lepus/releases/latest) 下载最新版本。
+
+### macOS
+
+先点击屏幕左上角的 Apple 菜单，选择“关于本机”，确认芯片类型：
+
+- 显示 Apple M 系列芯片：下载 `arm64.dmg`；
+- 显示 Intel 处理器：下载 `x64.dmg`。
+
+下载完成后：
+
+1. 打开 DMG，将 Lepus 拖入“应用程序”文件夹；
+2. 在 Finder 的“应用程序”中右键 Lepus，选择“打开”；
+3. 如果 macOS 仍提示“Lepus 已损坏，无法打开”，打开“终端”并执行：
+
+```bash
+xattr -rd com.apple.quarantine /Applications/Lepus.app
+open /Applications/Lepus.app
+```
+
+如果第一条命令提示权限不足，请改用：
+
+```bash
+sudo xattr -rd com.apple.quarantine /Applications/Lepus.app
+```
+
+Lepus 当前没有 Apple Developer 签名与公证，因此 macOS 会显示上述安全提示。请只安装从官网所链接的 GitHub Releases 下载的安装包，并可使用 Release 中的 `SHA256SUMS.txt` 核对文件完整性。
+
+未签名的 macOS 版本无法通过应用内更新完成可靠的签名校验。更新时请退出 Lepus，重新下载对应架构的 DMG，并用新版覆盖“应用程序”中的旧版本；本地对话和设置不会随应用覆盖而删除。
+
+### Windows 与 Linux
+
+- Windows x64：下载 `setup.exe` 安装程序。当前版本未进行 Windows 代码签名，系统可能显示“未知发布者”提示。
+- Linux x64：下载 AppImage 或 DEB；使用 AppImage 前可能需要执行 `chmod +x Lepus-*.AppImage`。
 
 ## 发布 Release
 

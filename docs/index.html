@@ -43,6 +43,7 @@
         <a href="#workflow">工作方式</a>
         <a href="#safety">安全</a>
         <a href="#automation">自动化</a>
+        <a href="#download">下载</a>
         <a class="nav-github" href="https://github.com/NeoLep/lepus">GitHub ↗</a>
       </nav>
     </header>
@@ -56,7 +57,7 @@
             Lepus 把模型、文件、网页搜索、专业技能与定时任务放进一个可控的桌面工作台。你给出目标，它理解上下文、制定计划，并只在你授权的能力范围内行动。
           </p>
           <div class="hero-actions">
-            <a class="button primary" href="https://github.com/NeoLep/lepus/releases">下载最新版本 <span>↗</span></a>
+            <a class="button primary" href="#download">下载最新版本 <span>↓</span></a>
             <a class="button quiet" href="#features">探索功能 <span>↓</span></a>
           </div>
           <div class="hero-notes" aria-label="产品特征">
@@ -238,11 +239,64 @@
         </div>
       </section>
 
+      <section id="download" class="section download-section">
+        <div class="section-intro reveal">
+          <p class="section-number">05 — 下载</p>
+          <h2>选择你的平台，<br />立即开始。</h2>
+          <p><span id="latest-version">正在获取最新版本…</span><br />安装包托管于 GitHub Releases，下载按钮会自动指向最新发布版本。</p>
+        </div>
+
+        <div class="download-grid reveal">
+          <article class="download-card featured">
+            <div class="download-platform"><span>⌘</span><small>macOS</small></div>
+            <h3>Apple Silicon</h3>
+            <p>适用于 Apple M1、M2、M3、M4 及后续 M 系列芯片。</p>
+            <a class="download-link" data-asset="mac-arm64" href="https://github.com/NeoLep/lepus/releases/latest">下载 arm64 DMG <span>↓</span></a>
+          </article>
+          <article class="download-card">
+            <div class="download-platform"><span>⌘</span><small>macOS</small></div>
+            <h3>Intel Mac</h3>
+            <p>适用于“关于本机”中显示 Intel 处理器的 Mac。</p>
+            <a class="download-link" data-asset="mac-x64" href="https://github.com/NeoLep/lepus/releases/latest">下载 x64 DMG <span>↓</span></a>
+          </article>
+          <article class="download-card">
+            <div class="download-platform"><span>⊞</span><small>Windows</small></div>
+            <h3>Windows x64</h3>
+            <p>适用于 Windows 10/11 64 位系统，提供 NSIS 安装程序。</p>
+            <a class="download-link" data-asset="windows-x64" href="https://github.com/NeoLep/lepus/releases/latest">下载 EXE <span>↓</span></a>
+          </article>
+          <article class="download-card">
+            <div class="download-platform"><span>◆</span><small>Linux</small></div>
+            <h3>Linux x64</h3>
+            <p>提供可直接运行的 AppImage；DEB 可在完整发布列表中下载。</p>
+            <a class="download-link" data-asset="linux-x64" href="https://github.com/NeoLep/lepus/releases/latest">下载 AppImage <span>↓</span></a>
+          </article>
+        </div>
+
+        <div class="mac-install reveal">
+          <div>
+            <p class="section-number">macOS 安装提示</p>
+            <h3>看到“已损坏”提示？</h3>
+            <p>Lepus 当前未进行 Apple 签名与公证。请先将 Lepus 拖入“应用程序”，然后打开“终端”执行：</p>
+          </div>
+          <div class="terminal-command">
+            <code>xattr -rd com.apple.quarantine /Applications/Lepus.app</code>
+            <button class="copy-command" type="button" aria-label="复制 macOS 安装命令">复制</button>
+          </div>
+          <p class="install-note">仅对从本官网所链接的 GitHub Releases 下载的安装包执行此操作。macOS 版本更新时，请下载新版 DMG 并覆盖安装；本地数据会保留。</p>
+        </div>
+
+        <div class="all-releases reveal">
+          <span>需要 DEB、ZIP、校验文件或历史版本？</span>
+          <a href="https://github.com/NeoLep/lepus/releases">查看全部 Releases ↗</a>
+        </div>
+      </section>
+
       <section class="section final-cta reveal">
-        <p class="section-number">05 — 开始</p>
+        <p class="section-number">06 — 开始</p>
         <h2>把下一项工作，<br />交给 Lepus。</h2>
         <p>开源、本地优先，为真实任务而构建。</p>
-        <a class="button primary" href="https://github.com/NeoLep/lepus/releases">下载 Lepus <span>↗</span></a>
+        <a class="button primary" href="#download">下载 Lepus <span>↑</span></a>
       </section>
     </main>
 

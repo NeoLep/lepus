@@ -173,6 +173,31 @@ h2 { font-size: clamp(44px, 5vw, 72px); }
 .safety-note p { margin: 0; color: #51534c; font-size: 9px; line-height: 1.7; }
 .safety-note strong { color: var(--ink); font-size: 10px; }
 
+.download-section { padding-bottom: 80px; }
+.download-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--ink); border-left: 1px solid var(--ink); }
+.download-card { display: flex; min-height: 360px; flex-direction: column; padding: 28px; border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); background: var(--paper); }
+.download-card.featured { background: #e7f4bf; }
+.download-platform { display: flex; align-items: center; justify-content: space-between; }
+.download-platform > span { display: grid; width: 48px; height: 48px; place-items: center; background: var(--ink); color: var(--white); font: 400 22px var(--font-mono); }
+.download-platform small { color: var(--muted); font: 400 10px var(--font-mono); text-transform: uppercase; }
+.download-card h3 { margin: 58px 0 12px; font-size: 24px; letter-spacing: -.04em; }
+.download-card p { margin: 0 0 28px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.download-link { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding: 14px 0 6px; border-bottom: 1px solid var(--ink); font-size: 12px; font-weight: 700; }
+.download-link:hover { color: var(--orange); border-color: var(--orange); }
+.download-link.is-loading { color: var(--muted); pointer-events: none; }
+.mac-install { display: grid; grid-template-columns: .8fr 1.2fr; gap: 34px 70px; margin-top: 36px; padding: 38px; border: 1px solid var(--ink); background: var(--ink); color: var(--white); }
+.mac-install .section-number { margin-bottom: 20px; color: var(--lime); }
+.mac-install h3 { margin: 0 0 12px; font-size: 25px; }
+.mac-install p:not(.section-number) { margin: 0; color: #b8b9b2; font-size: 12px; line-height: 1.8; }
+.terminal-command { display: flex; align-self: center; align-items: center; gap: 18px; min-width: 0; padding: 18px; border: 1px solid #565850; background: #23241f; }
+.terminal-command code { overflow-x: auto; color: var(--lime); font: 400 11px var(--font-mono); white-space: nowrap; }
+.copy-command { flex: 0 0 auto; margin-left: auto; padding: 7px 10px; border: 1px solid #6d6f67; background: transparent; color: var(--white); cursor: pointer; font-size: 10px; }
+.copy-command:hover { border-color: var(--lime); color: var(--lime); }
+.mac-install .install-note { grid-column: 1 / -1; padding-top: 20px; border-top: 1px solid #454740; }
+.all-releases { display: flex; justify-content: space-between; gap: 30px; padding: 22px 0; border-bottom: 1px solid var(--ink); color: var(--muted); font-size: 12px; }
+.all-releases a { color: var(--ink); font-weight: 700; }
+.all-releases a:hover { color: var(--orange); }
+
 .final-cta { text-align: center; }
 .final-cta .section-number { margin-bottom: 30px; }
 .final-cta > p:not(.section-number) { margin: 24px 0 34px; color: var(--muted); }
@@ -191,6 +216,7 @@ footer { display: flex; width: min(1400px, calc(100% - 64px)); align-items: cent
   .section-intro > p:last-child { grid-column: 2; }
   .feature-grid { grid-template-columns: repeat(2, 1fr); }
   .automation-flow { grid-template-columns: 1fr; }
+  .download-grid { grid-template-columns: repeat(2, 1fr); }
   .workflow-section { grid-template-columns: 1fr; }
   .workflow-heading { position: static; }
   .safety-section { gap: 6vw; }
@@ -221,6 +247,13 @@ footer { display: flex; width: min(1400px, calc(100% - 64px)); align-items: cent
   .feature-grid { grid-template-columns: 1fr; }
   .feature-wide { grid-column: auto; }
   .feature-card { min-height: 340px; }
+  .download-grid { grid-template-columns: 1fr; }
+  .download-card { min-height: 310px; }
+  .mac-install { grid-template-columns: 1fr; padding: 26px 20px; }
+  .mac-install .install-note { grid-column: auto; }
+  .terminal-command { width: 100%; align-items: stretch; flex-direction: column; }
+  .copy-command { margin-left: 0; }
+  .all-releases { align-items: flex-start; flex-direction: column; }
   .workflow-section { gap: 58px; }
   .workflow-step { grid-template-columns: 44px 1fr; }
   .step-tag { display: none; }
