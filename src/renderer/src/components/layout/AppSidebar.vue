@@ -56,6 +56,7 @@ const emit = defineEmits<{
 const searchOpen = ref(false)
 const searchQuery = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
+const sidebarBody = ref<HTMLElement | null>(null)
 const showArchived = ref(false)
 const searchResults = ref<SessionSearchResult[]>([])
 const searchLoading = ref(false)
@@ -78,6 +79,57 @@ const visibleEntries = computed(() => {
     .filter((session) => !isSpecialSession(session) && session.isArchived === showArchived.value)
     .map((session) => ({ session, snippet: '', matchedIn: 'title' as const }))
 })
+
+type ConversationGroupKey =
+  'pinned' | 'today' | 'yesterday' | 'previous7Days' | 'previous30Days' | 'older'
+
+const conversationGroups = computed(() => {
+  if (searchQuery.value.trim()) {
+    return [{ key: 'search', label: '', entries: visibleEntries.value }]
+  }
+
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const day = 24 * 60 * 60 * 1000
+  const groups: Record<ConversationGroupKey, typeof visibleEntries.value> = {
+    pinned: [],
+    today: [],
+    yesterday: [],
+    previous7Days: [],
+    previous30Days: [],
+    older: []
+  }
+
+  for (const entry of visibleEntries.value) {
+    if (entry.session.isPinned) {
+      groups.pinned.push(entry)
+      continue
+    }
+    const updatedAt = new Date(entry.session.updatedAt).getTime()
+    const key: ConversationGroupKey =
+      !Number.isFinite(updatedAt) || updatedAt < today - 30 * day
+        ? 'older'
+        : updatedAt >= today
+          ? 'today'
+          : updatedAt >= today - day
+            ? 'yesterday'
+            : updatedAt >= today - 7 * day
+              ? 'previous7Days'
+              : 'previous30Days'
+    groups[key].push(entry)
+  }
+
+  return (Object.keys(groups) as ConversationGroupKey[])
+    .filter((key) => groups[key].length > 0)
+    .map((key) => ({ key, label: t(key), entries: groups[key] }))
+})
+
+async function revealActiveSession(): Promise<void> {
+  await nextTick()
+  sidebarBody.value
+    ?.querySelector<HTMLElement>('[data-active-session="true"]')
+    ?.scrollIntoView({ block: 'nearest' })
+}
 
 function isRemoteSession(session: Session): boolean {
   return session.id.startsWith('remote-feishu-')
@@ -117,6 +169,15 @@ watch(
   (isArchived) => {
     if (isArchived === false) showArchived.value = false
   }
+)
+
+watch(
+  [
+    () => props.activeSessionId,
+    () => visibleEntries.value.map((entry) => entry.session.id).join(',')
+  ],
+  () => void revealActiveSession(),
+  { flush: 'post' }
 )
 
 async function openSearch(): Promise<void> {
@@ -180,7 +241,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <nav class="sidebar-body" :aria-label="t('chatNavigation')">
+    <nav ref="sidebarBody" class="sidebar-body" :aria-label="t('chatNavigation')">
       <button class="sidebar-action" type="button" @click="createChat">
         <SquarePen :size="17" />
         <span>{{ t('newChat') }}</span>
@@ -229,69 +290,76 @@ onBeforeUnmount(() => {
             searchQuery ? t('noMatchingChats') : showArchived ? t('noArchivedChats') : t('noChats')
           }}
         </p>
-        <div
-          v-for="entry in visibleEntries"
-          :key="entry.session.id"
-          class="conversation-item"
-          :class="{
-            active: entry.session.id === activeSessionId,
-            'has-snippet': !!entry.snippet && entry.matchedIn !== 'title'
-          }"
-          role="button"
-          tabindex="0"
-          @click="emit('select', entry.session.id)"
-          @keydown.enter="emit('select', entry.session.id)"
-          @keydown.space.prevent="emit('select', entry.session.id)"
-        >
-          <MessageSquare :size="15" />
-          <div class="conversation-copy">
-            <span>{{ entry.session.title }}</span>
-            <small v-if="entry.snippet && entry.matchedIn !== 'title'">{{ entry.snippet }}</small>
-          </div>
-          <Pin v-if="entry.session.isPinned" class="pin-indicator" :size="12" />
-          <Archive
-            v-if="searchQuery && entry.session.isArchived"
-            class="pin-indicator"
-            :size="12"
-          />
-          <DropdownMenuRoot>
-            <DropdownMenuTrigger as-child>
-              <button
-                class="conversation-more"
-                type="button"
-                :aria-label="t('moreActions', { title: entry.session.title })"
-                @click.stop
-              >
-                <Ellipsis :size="16" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuContent class="menu-content" align="start" :side-offset="4">
-                <DropdownMenuItem class="menu-item" @select="emit('togglePin', entry.session)">
-                  <PinOff v-if="entry.session.isPinned" :size="15" />
-                  <Pin v-else :size="15" />
-                  {{ entry.session.isPinned ? t('unpin') : t('pin') }}
-                </DropdownMenuItem>
-                <DropdownMenuItem class="menu-item" @select="emit('rename', entry.session)">
-                  <Pencil :size="15" />
-                  {{ t('common.rename') }}
-                </DropdownMenuItem>
-                <DropdownMenuItem class="menu-item" @select="emit('toggleArchive', entry.session)">
-                  <ArchiveRestore v-if="entry.session.isArchived" :size="15" />
-                  <Archive v-else :size="15" />
-                  {{ entry.session.isArchived ? t('restore') : t('archive') }}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator class="menu-separator" />
-                <DropdownMenuItem
-                  class="menu-item danger-item"
-                  @select="emit('delete', entry.session)"
+        <div v-for="group in conversationGroups" :key="group.key" class="conversation-group">
+          <p v-if="group.label" class="conversation-group-label">{{ group.label }}</p>
+          <div
+            v-for="entry in group.entries"
+            :key="entry.session.id"
+            class="conversation-item"
+            :class="{
+              active: entry.session.id === activeSessionId,
+              'has-snippet': !!entry.snippet && entry.matchedIn !== 'title'
+            }"
+            :data-active-session="entry.session.id === activeSessionId ? 'true' : undefined"
+            role="button"
+            tabindex="0"
+            @click="emit('select', entry.session.id)"
+            @keydown.enter="emit('select', entry.session.id)"
+            @keydown.space.prevent="emit('select', entry.session.id)"
+          >
+            <MessageSquare :size="15" />
+            <div class="conversation-copy">
+              <span>{{ entry.session.title }}</span>
+              <small v-if="entry.snippet && entry.matchedIn !== 'title'">{{ entry.snippet }}</small>
+            </div>
+            <Pin v-if="entry.session.isPinned" class="pin-indicator" :size="12" />
+            <Archive
+              v-if="searchQuery && entry.session.isArchived"
+              class="pin-indicator"
+              :size="12"
+            />
+            <DropdownMenuRoot>
+              <DropdownMenuTrigger as-child>
+                <button
+                  class="conversation-more"
+                  type="button"
+                  :aria-label="t('moreActions', { title: entry.session.title })"
+                  @click.stop
                 >
-                  <Trash2 :size="15" />
-                  {{ t('common.delete') }}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenuPortal>
-          </DropdownMenuRoot>
+                  <Ellipsis :size="16" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuContent class="menu-content" align="start" :side-offset="4">
+                  <DropdownMenuItem class="menu-item" @select="emit('togglePin', entry.session)">
+                    <PinOff v-if="entry.session.isPinned" :size="15" />
+                    <Pin v-else :size="15" />
+                    {{ entry.session.isPinned ? t('unpin') : t('pin') }}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem class="menu-item" @select="emit('rename', entry.session)">
+                    <Pencil :size="15" />
+                    {{ t('common.rename') }}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    class="menu-item"
+                    @select="emit('toggleArchive', entry.session)"
+                  >
+                    <ArchiveRestore v-if="entry.session.isArchived" :size="15" />
+                    <Archive v-else :size="15" />
+                    {{ entry.session.isArchived ? t('restore') : t('archive') }}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator class="menu-separator" />
+                  <DropdownMenuItem
+                    class="menu-item danger-item"
+                    @select="emit('delete', entry.session)"
+                  >
+                    <Trash2 :size="15" />
+                    {{ t('common.delete') }}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenuPortal>
+            </DropdownMenuRoot>
+          </div>
         </div>
       </div>
     </nav>
@@ -369,6 +437,17 @@ onBeforeUnmount(() => {
 
 .conversation-item {
   margin-bottom: 1px;
+}
+
+.conversation-group + .conversation-group {
+  margin-top: 14px;
+}
+
+.conversation-group-label {
+  margin: 0 9px 5px;
+  color: var(--app-text-muted);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .sidebar-action,
@@ -625,6 +704,12 @@ zh-CN:
   recent: 最近
   archived: 已归档
   searchResults: 搜索结果
+  pinned: 已置顶
+  today: 今天
+  yesterday: 昨天
+  previous7Days: 过去 7 天
+  previous30Days: 过去 30 天
+  older: 更早
   noArchivedChats: 还没有归档对话
   pin: 置顶
   unpin: 取消置顶
@@ -646,6 +731,12 @@ en:
   recent: Recent
   archived: Archived
   searchResults: Search results
+  pinned: Pinned
+  today: Today
+  yesterday: Yesterday
+  previous7Days: Previous 7 days
+  previous30Days: Previous 30 days
+  older: Older
   noArchivedChats: No archived chats
   pin: Pin
   unpin: Unpin

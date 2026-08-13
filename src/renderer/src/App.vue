@@ -14,6 +14,7 @@ import { useAppTheme } from './theme'
 type SplitterPanelInstance = {
   collapse: () => void
   expand: () => void
+  getSize: () => number
 }
 
 type SettingsSection = 'remote' | 'tasks' | 'skills' | 'search' | 'prompts' | 'models' | 'updates'
@@ -433,17 +434,38 @@ function handleSidebarCollapse(): void {
   sidebarOpen.value = false
   if (sidebarTransitionTimer) clearTimeout(sidebarTransitionTimer)
   sidebarTransitionTimer = setTimeout(() => {
-    sidebarVisible.value = false
+    // A continuous drag can expand the panel again before this animation ends.
+    // Only hide its contents if it is still collapsed when the timer fires.
+    if (!sidebarOpen.value && (sidebarPanel.value?.getSize() ?? 0) <= 0) {
+      sidebarVisible.value = false
+    }
     sidebarTransitioning.value = false
   }, 180)
 }
 
-function handleSidebarExpand(): void {
+function restoreExpandedSidebar(): void {
   sidebarOpen.value = true
+  sidebarVisible.value = true
   if (sidebarTransitionTimer) clearTimeout(sidebarTransitionTimer)
+}
+
+function handleSidebarExpand(): void {
+  restoreExpandedSidebar()
+  // The panel may expand during the same pointer drag that collapsed it. In
+  // that case the content was hidden by the collapse animation and must be
+  // restored immediately, without waiting for a separate toggle action.
   sidebarTransitionTimer = setTimeout(() => {
     sidebarTransitioning.value = false
   }, 180)
+}
+
+function handleSidebarResize(size: number): void {
+  // Resize is emitted for every layout change and is more reliable than the
+  // expand edge event while the same pointer remains captured by the handle.
+  if (size > 0 && (!sidebarOpen.value || !sidebarVisible.value)) {
+    restoreExpandedSidebar()
+    sidebarTransitioning.value = false
+  }
 }
 
 function openSettings(section: SettingsSection = 'remote'): void {
@@ -462,8 +484,7 @@ async function openTaskResult(sessionId: string): Promise<void> {
     taskResultTargetId.value = sessionId
     taskResultsOpen.value = true
   } catch (error) {
-    sessionError.value =
-      error instanceof Error ? error.message : t('errors.taskResultMissing')
+    sessionError.value = error instanceof Error ? error.message : t('errors.taskResultMissing')
   }
 }
 
@@ -506,6 +527,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
         :class="{ 'sidebar-transitioning': sidebarTransitioning }"
         @collapse="handleSidebarCollapse"
         @expand="handleSidebarExpand"
+        @resize="handleSidebarResize"
       >
         <AppSidebar
           v-show="sidebarVisible"
@@ -625,7 +647,9 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
 }
 
 #sidebar.sidebar-transitioning {
-  transition: flex-grow 180ms ease, flex-basis 180ms ease;
+  transition:
+    flex-grow 180ms ease,
+    flex-basis 180ms ease;
 }
 
 .splitter-handle {

@@ -8,6 +8,7 @@ import { closeBrowserManager } from './lib/agent/tools/browser-manager'
 import { remoteBotManager } from './lib/remote-bot/manager'
 import { appUpdateManager } from './lib/app-updater'
 import { scheduledTaskManager } from './lib/scheduled-task-manager'
+import { loadWindowState, trackWindowState } from './lib/window-state'
 
 const APPLICATION_NAME = 'Lepus'
 const APPLICATION_ID = 'com.electron'
@@ -18,10 +19,16 @@ const APPLICATION_ID = 'com.electron'
 process.title = APPLICATION_NAME
 
 function createWindow(): void {
+  const windowState = loadWindowState()
+
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    x: windowState.x,
+    y: windowState.y,
+    width: windowState.width,
+    height: windowState.height,
+    minWidth: 720,
+    minHeight: 520,
     title: APPLICATION_NAME,
     show: false,
     ...(process.platform === 'darwin'
@@ -46,8 +53,11 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
+    if (windowState.maximized) mainWindow.maximize()
     mainWindow.show()
   })
+
+  trackWindowState(mainWindow)
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)

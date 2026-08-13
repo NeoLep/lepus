@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import { ArrowUp, LoaderCircle, Pencil, RotateCcw, Sparkles, UserRound, X } from '@lucide/vue'
+import { TooltipContent, TooltipPortal, TooltipRoot, TooltipTrigger } from 'reka-ui'
 import type {
   AgentRun,
   CompressionRecord,
@@ -57,14 +58,26 @@ const emit = defineEmits<{
 }>()
 
 const messageEnd = ref<HTMLElement | null>(null)
+const messageScroll = ref<HTMLElement | null>(null)
 const editingMessageId = ref<string | null>(null)
 const editDraft = ref('')
+const activeOutlineMessageId = ref<string | null>(null)
+const hoveredOutlineMessageId = ref<string | null>(null)
 const { t } = useI18n({ useScope: 'local' })
 const latestUserMessageId = computed(
   () => [...props.messages].reverse().find((message) => message.role === 'user')?.id ?? null
 )
 const latestAssistantMessageId = computed(() =>
   props.messages.at(-1)?.role === 'assistant' ? props.messages.at(-1)?.id : null
+)
+const conversationOutline = computed(() =>
+  props.messages
+    .filter((message) => message.role === 'user')
+    .map((message, index) => ({
+      id: message.id,
+      index: index + 1,
+      summary: summarizeMessage(message)
+    }))
 )
 const activeSubAgentRuns = computed(() => {
   const primaryRun = [...(props.agentRuns ?? [])]
@@ -95,6 +108,48 @@ function visibleToolCalls(calls: ToolCallRecord[] | undefined): ToolCallRecord[]
   return (calls ?? []).filter(
     (call) => call.name !== 'delegate_tasks' && !call.name.startsWith('browser_')
   )
+}
+
+function summarizeMessage(message: Message): string {
+  const plainText = message.content
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[#>*_`~[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const fallback = message.attachments?.[0]?.name ?? t('attachmentMessage')
+  const summary = plainText || fallback
+  return summary.length > 42 ? `${summary.slice(0, 42)}…` : summary
+}
+
+function scrollToConversation(messageId: string): void {
+  const target = messageScroll.value?.querySelector<HTMLElement>(`#chat-message-${messageId}`)
+  if (!target) return
+  activeOutlineMessageId.value = messageId
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function outlineWaveLevel(messageId: string): number | null {
+  if (!hoveredOutlineMessageId.value) return null
+  const focusIndex = conversationOutline.value.findIndex(
+    (entry) => entry.id === hoveredOutlineMessageId.value
+  )
+  const itemIndex = conversationOutline.value.findIndex((entry) => entry.id === messageId)
+  if (focusIndex < 0 || itemIndex < 0) return null
+  return Math.min(Math.abs(itemIndex - focusIndex), 3)
+}
+
+function updateActiveConversation(): void {
+  const container = messageScroll.value
+  if (!container || !conversationOutline.value.length) return
+  const threshold = container.getBoundingClientRect().top + 80
+  let activeId = conversationOutline.value[0].id
+
+  for (const entry of conversationOutline.value) {
+    const element = container.querySelector<HTMLElement>(`#chat-message-${entry.id}`)
+    if (!element || element.getBoundingClientRect().top > threshold) break
+    activeId = entry.id
+  }
+  activeOutlineMessageId.value = activeId
 }
 
 async function startEditing(message: Message): Promise<void> {
@@ -133,173 +188,361 @@ watch(
   async () => {
     await nextTick()
     messageEnd.value?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    updateActiveConversation()
+  }
+)
+
+watch(
+  () => props.sessionId,
+  async () => {
+    activeOutlineMessageId.value = null
+    await nextTick()
+    updateActiveConversation()
   }
 )
 </script>
 
 <template>
-  <div class="message-scroll">
-    <div v-if="messages.length === 0" class="welcome-state">
-      <div class="welcome-mark"><Sparkles :size="22" /></div>
-      <h1>{{ t('welcomeTitle') }}</h1>
-      <p>{{ t('welcomeDescription') }}</p>
-    </div>
+  <div class="conversation-browser">
+    <aside
+      v-if="conversationOutline.length > 3 && !readOnly"
+      class="conversation-outline"
+      :aria-label="t('outline')"
+    >
+      <nav @mouseleave="hoveredOutlineMessageId = null">
+        <TooltipRoot
+          v-for="entry in conversationOutline"
+          :key="entry.id"
+          :delay-duration="70"
+          disable-hoverable-content
+        >
+          <TooltipTrigger as-child>
+            <button
+              type="button"
+              :class="[
+                { active: entry.id === activeOutlineMessageId },
+                outlineWaveLevel(entry.id) === null
+                  ? undefined
+                  : `wave-${outlineWaveLevel(entry.id)}`
+              ]"
+              :aria-label="`${entry.index}. ${entry.summary}`"
+              @mouseenter="hoveredOutlineMessageId = entry.id"
+              @click="scrollToConversation(entry.id)"
+            >
+              <span></span>
+            </button>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent class="outline-tooltip" side="right" :side-offset="8" align="center">
+              <small>{{ String(entry.index).padStart(2, '0') }}</small>
+              <span>{{ entry.summary }}</span>
+            </TooltipContent>
+          </TooltipPortal>
+        </TooltipRoot>
+      </nav>
+    </aside>
 
-    <div v-else class="message-list" aria-live="polite">
-      <article v-for="message in messages" :key="message.id" class="message" :class="message.role">
-        <div class="message-avatar">
-          <UserRound v-if="message.role === 'user'" :size="16" />
-          <Sparkles v-else :size="16" />
-        </div>
-        <div class="message-body">
-          <strong>{{ message.role === 'user' ? (userLabel ?? t('you')) : 'Lepus' }}</strong>
-          <template v-if="message.role === 'user'">
-            <MessageAttachments
-              v-if="message.attachments?.length"
-              :session-id="sessionId"
-              :attachments="message.attachments"
-            />
-            <div v-if="editingMessageId === message.id" class="message-editor">
-              <textarea
-                v-model="editDraft"
-                rows="3"
-                :aria-label="t('editMessage')"
-                @keydown.meta.enter.prevent="submitEditing(message)"
-                @keydown.ctrl.enter.prevent="submitEditing(message)"
-                @keydown.esc.prevent="cancelEditing"
-              ></textarea>
-              <div class="editor-actions">
-                <button class="cancel-edit-button" type="button" @click="cancelEditing">
-                  <X :size="14" />
-                  {{ t('common.cancel') }}
-                </button>
-                <button
-                  class="submit-edit-button"
-                  type="button"
-                  :disabled="!editDraft.trim() || sending"
-                  @click="submitEditing(message)"
-                >
-                  <ArrowUp :size="14" />
-                  {{ t('send') }}
-                </button>
+    <div ref="messageScroll" class="message-scroll" @scroll.passive="updateActiveConversation">
+      <div v-if="messages.length === 0" class="welcome-state">
+        <div class="welcome-mark"><Sparkles :size="22" /></div>
+        <h1>{{ t('welcomeTitle') }}</h1>
+        <p>{{ t('welcomeDescription') }}</p>
+      </div>
+
+      <div v-else class="message-list" aria-live="polite">
+        <article
+          v-for="message in messages"
+          :id="`chat-message-${message.id}`"
+          :key="message.id"
+          class="message"
+          :class="message.role"
+        >
+          <div class="message-avatar">
+            <UserRound v-if="message.role === 'user'" :size="16" />
+            <Sparkles v-else :size="16" />
+          </div>
+          <div class="message-body">
+            <strong>{{ message.role === 'user' ? (userLabel ?? t('you')) : 'Lepus' }}</strong>
+            <template v-if="message.role === 'user'">
+              <MessageAttachments
+                v-if="message.attachments?.length"
+                :session-id="sessionId"
+                :attachments="message.attachments"
+              />
+              <div v-if="editingMessageId === message.id" class="message-editor">
+                <textarea
+                  v-model="editDraft"
+                  rows="3"
+                  :aria-label="t('editMessage')"
+                  @keydown.meta.enter.prevent="submitEditing(message)"
+                  @keydown.ctrl.enter.prevent="submitEditing(message)"
+                  @keydown.esc.prevent="cancelEditing"
+                ></textarea>
+                <div class="editor-actions">
+                  <button class="cancel-edit-button" type="button" @click="cancelEditing">
+                    <X :size="14" />
+                    {{ t('common.cancel') }}
+                  </button>
+                  <button
+                    class="submit-edit-button"
+                    type="button"
+                    :disabled="!editDraft.trim() || sending"
+                    @click="submitEditing(message)"
+                  >
+                    <ArrowUp :size="14" />
+                    {{ t('send') }}
+                  </button>
+                </div>
               </div>
-            </div>
+              <template v-else>
+                <p v-if="message.content" class="plain-content">{{ message.content }}</p>
+                <div v-if="!readOnly && message.id === latestUserMessageId" class="message-actions">
+                  <button
+                    type="button"
+                    :disabled="sending"
+                    :aria-label="t('editAndResend')"
+                    @click="startEditing(message)"
+                  >
+                    <Pencil :size="13" />
+                    {{ t('editAndResend') }}
+                  </button>
+                </div>
+              </template>
+            </template>
             <template v-else>
-              <p v-if="message.content" class="plain-content">{{ message.content }}</p>
-              <div v-if="!readOnly && message.id === latestUserMessageId" class="message-actions">
+              <SubAgentRunCards :runs="subAgentRunsForMessage(message.id)" />
+              <BrowserToolCards :calls="message.toolCalls ?? []" :session-id="sessionId" />
+              <ToolCallCards
+                v-if="showToolCallDetails"
+                :calls="visibleToolCalls(message.toolCalls)"
+              />
+              <GeneratedFileLinks :calls="message.toolCalls ?? []" />
+              <DownloadCards :calls="message.toolCalls ?? []" />
+              <FileInspectionCards :calls="message.toolCalls ?? []" />
+              <FileDiffCards :calls="message.toolCalls ?? []" />
+              <MarkdownContent :content="message.content" :sources="message.sources" />
+              <div
+                v-if="!readOnly && message.id === latestAssistantMessageId"
+                class="message-actions"
+              >
                 <button
                   type="button"
                   :disabled="sending"
-                  :aria-label="t('editAndResend')"
-                  @click="startEditing(message)"
+                  :aria-label="t('regenerate')"
+                  @click="emit('regenerate', message)"
                 >
-                  <Pencil :size="13" />
-                  {{ t('editAndResend') }}
+                  <RotateCcw :size="13" />
+                  {{ t('regenerate') }}
                 </button>
               </div>
             </template>
-          </template>
-          <template v-else>
-            <SubAgentRunCards :runs="subAgentRunsForMessage(message.id)" />
-            <BrowserToolCards :calls="message.toolCalls ?? []" :session-id="sessionId" />
+          </div>
+        </article>
+
+        <CompressionRecordDividers :records="compressionRecords ?? []" />
+        <div
+          v-if="compressing && !compressionRecords?.some((record) => record.status === 'running')"
+          class="compression-divider"
+          role="status"
+          aria-live="polite"
+        >
+          <span></span>
+          <strong><LoaderCircle :size="14" /> {{ compressionText ?? t('compressing') }}</strong>
+          <span></span>
+        </div>
+
+        <article v-if="sending" class="message assistant pending">
+          <div class="message-avatar"><Sparkles :size="16" /></div>
+          <div class="message-body">
+            <strong>Lepus</strong>
+            <div v-if="activeSkills?.length" class="active-skills" role="status">
+              <Sparkles :size="14" />
+              <span>{{ t('activeSkills') }}</span>
+              <strong v-for="skill in activeSkills" :key="skill.id" :title="skill.description">
+                {{ skill.name }}
+              </strong>
+            </div>
+            <SubAgentRunCards :runs="activeSubAgentRuns" />
+            <BrowserToolCards
+              :calls="activeToolCalls ?? []"
+              :session-id="sessionId"
+              active
+              @cancel="(toolCallId) => emit('cancelDownload', toolCallId)"
+            />
             <ToolCallCards
               v-if="showToolCallDetails"
-              :calls="visibleToolCalls(message.toolCalls)"
+              :calls="visibleToolCalls(activeToolCalls)"
+              active
+              @cancel="(toolCallId) => emit('cancelDownload', toolCallId)"
             />
-            <GeneratedFileLinks :calls="message.toolCalls ?? []" />
-            <DownloadCards :calls="message.toolCalls ?? []" />
-            <FileInspectionCards :calls="message.toolCalls ?? []" />
-            <FileDiffCards :calls="message.toolCalls ?? []" />
-            <MarkdownContent :content="message.content" :sources="message.sources" />
-            <div
-              v-if="!readOnly && message.id === latestAssistantMessageId"
-              class="message-actions"
+            <GeneratedFileLinks :calls="activeToolCalls ?? []" />
+            <DownloadCards
+              :calls="activeToolCalls ?? []"
+              active
+              @cancel="(toolCallId) => emit('cancelDownload', toolCallId)"
+            />
+            <FileInspectionCards :calls="activeToolCalls ?? []" />
+            <FileDiffCards :calls="activeToolCalls ?? []" />
+            <ToolApprovalCards
+              :approvals="approvals ?? []"
+              :resolving-ids="resolvingApprovalIds"
+              @resolve="(approval, decision) => emit('resolveApproval', approval, decision)"
+            />
+            <UserInputCards
+              :requests="userInputRequests ?? []"
+              :resolving-ids="resolvingUserInputIds ?? []"
+              @answer="
+                (request, answer, selectedOptionId) =>
+                  emit('answerUserInput', request, answer, selectedOptionId)
+              "
+            />
+            <MarkdownContent v-if="streamContent" :content="streamContent" />
+            <span
+              v-if="statusText && !approvals?.length && !userInputRequests?.length"
+              class="thinking"
+              ><LoaderCircle :size="15" /> {{ statusText ?? t('thinking') }}</span
             >
-              <button
-                type="button"
-                :disabled="sending"
-                :aria-label="t('regenerate')"
-                @click="emit('regenerate', message)"
-              >
-                <RotateCcw :size="13" />
-                {{ t('regenerate') }}
-              </button>
-            </div>
-          </template>
-        </div>
-      </article>
-
-      <CompressionRecordDividers :records="compressionRecords ?? []" />
-      <div
-        v-if="compressing && !compressionRecords?.some((record) => record.status === 'running')"
-        class="compression-divider"
-        role="status"
-        aria-live="polite"
-      >
-        <span></span>
-        <strong><LoaderCircle :size="14" /> {{ compressionText ?? t('compressing') }}</strong>
-        <span></span>
-      </div>
-
-      <article v-if="sending" class="message assistant pending">
-        <div class="message-avatar"><Sparkles :size="16" /></div>
-        <div class="message-body">
-          <strong>Lepus</strong>
-          <div v-if="activeSkills?.length" class="active-skills" role="status">
-            <Sparkles :size="14" />
-            <span>{{ t('activeSkills') }}</span>
-            <strong v-for="skill in activeSkills" :key="skill.id" :title="skill.description">
-              {{ skill.name }}
-            </strong>
           </div>
-          <SubAgentRunCards :runs="activeSubAgentRuns" />
-          <BrowserToolCards
-            :calls="activeToolCalls ?? []"
-            :session-id="sessionId"
-            active
-            @cancel="(toolCallId) => emit('cancelDownload', toolCallId)"
-          />
-          <ToolCallCards
-            v-if="showToolCallDetails"
-            :calls="visibleToolCalls(activeToolCalls)"
-            active
-            @cancel="(toolCallId) => emit('cancelDownload', toolCallId)"
-          />
-          <GeneratedFileLinks :calls="activeToolCalls ?? []" />
-          <DownloadCards
-            :calls="activeToolCalls ?? []"
-            active
-            @cancel="(toolCallId) => emit('cancelDownload', toolCallId)"
-          />
-          <FileInspectionCards :calls="activeToolCalls ?? []" />
-          <FileDiffCards :calls="activeToolCalls ?? []" />
-          <ToolApprovalCards
-            :approvals="approvals ?? []"
-            :resolving-ids="resolvingApprovalIds"
-            @resolve="(approval, decision) => emit('resolveApproval', approval, decision)"
-          />
-          <UserInputCards
-            :requests="userInputRequests ?? []"
-            :resolving-ids="resolvingUserInputIds ?? []"
-            @answer="
-              (request, answer, selectedOptionId) =>
-                emit('answerUserInput', request, answer, selectedOptionId)
-            "
-          />
-          <MarkdownContent v-if="streamContent" :content="streamContent" />
-          <span
-            v-if="statusText && !approvals?.length && !userInputRequests?.length"
-            class="thinking"
-            ><LoaderCircle :size="15" /> {{ statusText ?? t('thinking') }}</span
-          >
-        </div>
-      </article>
-      <div ref="messageEnd" class="message-end"></div>
+        </article>
+        <div ref="messageEnd" class="message-end"></div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.conversation-browser {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.conversation-outline {
+  display: flex;
+  width: 46px;
+  min-width: 46px;
+  align-items: center;
+  padding: 18px 0 18px 8px;
+  background: transparent;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.conversation-outline::-webkit-scrollbar {
+  display: none;
+}
+
+.conversation-outline nav {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.conversation-outline button {
+  display: grid;
+  width: 30px;
+  height: 8px;
+  padding: 0;
+  align-items: center;
+  justify-items: start;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.conversation-outline button span {
+  display: block;
+  width: 10px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--app-border-strong);
+  opacity: 0.65;
+  transition:
+    width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 70ms ease-in,
+    opacity 180ms ease;
+}
+
+.conversation-outline button.wave-0 span {
+  width: 25px;
+  height: 3px;
+  opacity: 1;
+}
+
+.conversation-outline button.wave-1 span {
+  width: 20px;
+  opacity: 0.9;
+}
+
+.conversation-outline button.wave-2 span {
+  width: 15px;
+  opacity: 0.78;
+}
+
+.conversation-outline button.wave-3 span {
+  width: 10px;
+}
+
+.conversation-outline button.active span {
+  background: var(--app-accent);
+  opacity: 1;
+}
+
+.conversation-outline button:hover span {
+  background: var(--app-text-tertiary);
+}
+
+.conversation-outline button.active:hover span {
+  background: var(--app-accent);
+}
+
+.conversation-outline button:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--app-accent);
+  outline-offset: 1px;
+}
+
+:global(.outline-tooltip) {
+  display: grid;
+  z-index: 100;
+  max-width: 280px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 8px;
+  background: var(--app-inverse-bg);
+  color: var(--app-agent-card-bg);
+  box-shadow: 0 8px 24px rgb(16 24 40 / 18%);
+  font-size: 11px;
+  line-height: 1.5;
+  transform-origin: left center;
+  animation: outline-tooltip-in 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:global(.outline-tooltip small) {
+  padding-top: 1px;
+  color: var(--app-text-muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes outline-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .message-scroll {
   min-height: 0;
   flex: 1;
@@ -353,6 +596,7 @@ watch(
   display: flex;
   gap: 12px;
   padding: 14px 4px;
+  scroll-margin-top: 22px;
   &.user {
     flex-direction: row-reverse;
     .message-body {
@@ -564,6 +808,12 @@ watch(
   height: 1px;
 }
 
+@media (max-width: 1120px) {
+  .conversation-outline {
+    display: none;
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -583,6 +833,8 @@ zh-CN:
   regenerate: 重新生成
   send: 发送
   activeSkills: 已启用 Skill
+  outline: 对话目录
+  attachmentMessage: 附件消息
 en:
   welcomeTitle: How can I help?
   welcomeDescription: Send a message to start a new conversation.
@@ -594,4 +846,6 @@ en:
   regenerate: Regenerate
   send: Send
   activeSkills: Active Skills
+  outline: Conversation outline
+  attachmentMessage: Attachment message
 </i18n>
