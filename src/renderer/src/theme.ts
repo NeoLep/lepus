@@ -12,16 +12,34 @@ function initialTheme(): AppTheme {
 
 const theme = ref<AppTheme>(initialTheme())
 
+function isModalOpen(): boolean {
+  return document.querySelector('[data-state="open"][class*="overlay"]') !== null
+}
+
+function syncTitleBarOverlay(): void {
+  void window.api.window.setTitleBarOverlay({ theme: theme.value, modalOpen: isModalOpen() })
+}
+
 function applyTheme(value: AppTheme): void {
   document.documentElement.dataset.theme = value
   document.documentElement.style.colorScheme = value
 }
 
 applyTheme(theme.value)
+syncTitleBarOverlay()
+
+const dialogObserver = new MutationObserver(syncTitleBarOverlay)
+dialogObserver.observe(document.body, {
+  attributes: true,
+  attributeFilter: ['class', 'data-state'],
+  childList: true,
+  subtree: true
+})
 
 watch(theme, (value) => {
   applyTheme(value)
   localStorage.setItem(STORAGE_KEY, value)
+  syncTitleBarOverlay()
 })
 
 export function useAppTheme(): {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { SplitterGroup, SplitterPanel, SplitterResizeHandle, TooltipProvider } from 'reka-ui'
 import AppSidebar from './components/layout/AppSidebar.vue'
 import AppTopbar from './components/layout/AppTopbar.vue'
@@ -19,7 +19,17 @@ type SplitterPanelInstance = {
 type SettingsSection = 'remote' | 'tasks' | 'skills' | 'search' | 'prompts' | 'models' | 'updates'
 
 const sidebarOpen = ref(true)
+const sidebarVisible = ref(true)
+const sidebarTransitioning = ref(false)
 const sidebarPanel = ref<SplitterPanelInstance | null>(null)
+let sidebarTransitionTimer: ReturnType<typeof setTimeout> | undefined
+const collapseSidebarBelowMinimum = (event: PointerEvent): void => {
+  const groupLeft = document.querySelector('.app-shell')?.getBoundingClientRect().left ?? 0
+  if (event.clientX - groupLeft < 250) {
+    sidebarTransitioning.value = true
+    sidebarPanel.value?.collapse()
+  }
+}
 const isMac = navigator.userAgent.includes('Mac')
 const sessions = ref<Session[]>([])
 const pendingSessionIds = ref(new Set<string>())
@@ -400,11 +410,40 @@ async function toggleTaskMode(session: Session, taskMode: TaskModePreference): P
 }
 
 function closeSidebar(): void {
+  sidebarTransitioning.value = true
   sidebarPanel.value?.collapse()
 }
 
 function openSidebar(): void {
-  sidebarPanel.value?.expand()
+  if (sidebarTransitionTimer) clearTimeout(sidebarTransitionTimer)
+  sidebarVisible.value = true
+  sidebarTransitioning.value = true
+  void nextTick(() => requestAnimationFrame(() => sidebarPanel.value?.expand()))
+}
+
+function handleSidebarDragging(isDragging: boolean): void {
+  if (isDragging) {
+    window.addEventListener('pointermove', collapseSidebarBelowMinimum, true)
+  } else {
+    window.removeEventListener('pointermove', collapseSidebarBelowMinimum, true)
+  }
+}
+
+function handleSidebarCollapse(): void {
+  sidebarOpen.value = false
+  if (sidebarTransitionTimer) clearTimeout(sidebarTransitionTimer)
+  sidebarTransitionTimer = setTimeout(() => {
+    sidebarVisible.value = false
+    sidebarTransitioning.value = false
+  }, 180)
+}
+
+function handleSidebarExpand(): void {
+  sidebarOpen.value = true
+  if (sidebarTransitionTimer) clearTimeout(sidebarTransitionTimer)
+  sidebarTransitionTimer = setTimeout(() => {
+    sidebarTransitioning.value = false
+  }, 180)
 }
 
 function openSettings(section: SettingsSection = 'remote'): void {
@@ -443,7 +482,11 @@ async function openTaskResults(): Promise<void> {
 const removeRemoteBotStatusListener = window.api.chat.onRemoteBotStatusChanged((status) => {
   if (status.lastEventAt) void refreshSessionsFromRemote(status.lastSessionId)
 })
-onBeforeUnmount(removeRemoteBotStatusListener)
+onBeforeUnmount(() => {
+  removeRemoteBotStatusListener()
+  if (sidebarTransitionTimer) clearTimeout(sidebarTransitionTimer)
+  window.removeEventListener('pointermove', collapseSidebarBelowMinimum, true)
+})
 onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
 </script>
 
@@ -454,16 +497,18 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
         id="sidebar"
         ref="sidebarPanel"
         :order="1"
-        :default-size="28"
-        :min-size="10"
-        :max-size="42"
+        size-unit="px"
+        :default-size="300"
+        :min-size="250"
+        :max-size="560"
         :collapsed-size="0"
         collapsible
-        @collapse="sidebarOpen = false"
-        @expand="sidebarOpen = true"
+        :class="{ 'sidebar-transitioning': sidebarTransitioning }"
+        @collapse="handleSidebarCollapse"
+        @expand="handleSidebarExpand"
       >
         <AppSidebar
-          v-if="sidebarOpen"
+          v-show="sidebarVisible"
           :is-mac="isMac"
           :sessions="persistedSessions"
           :active-session-id="activeSessionId"
@@ -486,6 +531,7 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
         id="sidebar-resize-handle"
         class="splitter-handle"
         :class="{ collapsed: !sidebarOpen }"
+        @dragging="handleSidebarDragging"
       />
 
       <SplitterPanel id="workspace" :order="2" :min-size="58">
@@ -576,6 +622,10 @@ onMounted(() => Promise.all([loadSessions(), loadModelConfigs()]))
   min-height: 0;
   min-width: 0;
   flex-direction: column;
+}
+
+#sidebar.sidebar-transitioning {
+  transition: flex-grow 180ms ease, flex-basis 180ms ease;
 }
 
 .splitter-handle {
