@@ -52,7 +52,10 @@ async function writeMetadata(name, matchingFiles) {
 
 const windowsPackages = filenames.filter((name) => /^Lepus-.+-x64-setup\.exe$/i.test(name))
 const macPackages = filenames.filter((name) => /^Lepus-.+-(?:arm64|x64)\.zip$/i.test(name))
-const linuxPackages = filenames.filter((name) => /^Lepus-.+-x64\.AppImage$/i.test(name))
+// electron-builder uses "x86_64" for Linux x64 artifacts, unlike its macOS
+// and Windows artifact names. Keep x64 support for releases made with older
+// configurations.
+const linuxPackages = filenames.filter((name) => /^Lepus-.+-(?:x64|x86_64)\.AppImage$/i.test(name))
 
 for (const arch of ['arm64', 'x64']) {
   if (!macPackages.some((name) => name.toLocaleLowerCase().endsWith(`-${arch}.zip`))) {
